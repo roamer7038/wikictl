@@ -126,6 +126,18 @@ func TestProfileErrors(t *testing.T) {
 		t.Error("bad pattern must error")
 	}
 
+	for yml, key := range map[string]string{
+		"repo: r\nprofiles:\n  a: {match: {remote: [\"h/*\"]}}\n": "remote",
+		"repo: r\nprofile:\n  a: {repo: r2}\n":                    "profile",
+		"repo: r\ndefault_profle: a\n":                            "default_profle",
+		"repo: r\nauthor: {nmae: n}\n":                            "nmae",
+	} {
+		os.WriteFile(p, []byte(yml), 0o600)
+		if _, err := Load(p, Selector{}); err == nil || !strings.Contains(err.Error(), `unknown field "`+key+`"`) || !strings.Contains(err.Error(), p) {
+			t.Errorf("unknown key %s must error: %v", key, err)
+		}
+	}
+
 	for _, rel := range []string{".", "work"} {
 		os.WriteFile(p, []byte("repo: r\nprofiles:\n  a: {match: {paths: [\""+rel+"\"]}}\n"), 0o600)
 		if _, err := Load(p, Selector{}); err == nil || !strings.Contains(err.Error(), "match.paths") {
@@ -158,6 +170,36 @@ func TestMatchPaths(t *testing.T) {
 	t.Setenv("HOME", d)
 	if ok, _ := (Match{Paths: []string{"~/real"}}).accepts("", resolvePath(filepath.Join(real, "sub"))); !ok {
 		t.Error("~ must expand")
+	}
+}
+
+func TestMatchRemotes(t *testing.T) {
+	for pat, cases := range map[string]map[string]bool{
+		"h/team/*": {
+			"h/team/app":     true,
+			"h/team/sub/app": true,
+			"h/team":         false,
+			"h/teamx/app":    false,
+			"":               false,
+		},
+		"h/*/app": {
+			"h/team/app":     true,
+			"h/team/sub/app": false,
+		},
+		"h/team/app": {
+			"h/team/app":   true,
+			"h/team/app/x": false,
+		},
+		"h/t*/*": {
+			"h/team/sub/app": true,
+			"h/x/team/app":   false,
+		},
+	} {
+		for remote, want := range cases {
+			if ok, err := (Match{Remotes: []string{pat}}).accepts(remote, ""); err != nil || ok != want {
+				t.Errorf("%s ~ %s: %v %v", pat, remote, ok, err)
+			}
+		}
 	}
 }
 

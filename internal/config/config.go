@@ -52,7 +52,7 @@ type Profile struct {
 
 // Match selects a profile automatically from the current directory.
 type Match struct {
-	Remotes []string `yaml:"remotes"` // globs over the origin remote in host/path form, such as github.com/org/*
+	Remotes []string `yaml:"remotes"` // globs over the origin remote in host/path form, such as github.com/org/*; a trailing /* matches any depth
 	Paths   []string `yaml:"paths"`   // directories; the current directory or any directory below them matches
 }
 
@@ -101,8 +101,8 @@ func Load(explicit string, sel Selector) (*Config, error) {
 		return nil, fmt.Errorf("config file %s: %w", p, err)
 	}
 	c := &Config{Path: p}
-	if err := yaml.Unmarshal(b, c); err != nil {
-		return nil, err
+	if err := yaml.UnmarshalWithOptions(b, c, yaml.DisallowUnknownField()); err != nil {
+		return nil, fmt.Errorf("config file %s: %s", p, yaml.FormatError(err, false, false))
 	}
 	if err := c.selectProfile(sel); err != nil {
 		return nil, fmt.Errorf("config file %s: %w", p, err)
@@ -208,9 +208,13 @@ func (c *Config) matching(sel Selector) ([]string, error) {
 func (m Match) accepts(remote, dir string) (bool, error) {
 	hit := false
 	for _, pat := range m.Remotes {
-		ok, err := path.Match(strings.ToLower(strings.TrimSuffix(pat, "/")), remote)
+		p := strings.ToLower(strings.TrimSuffix(pat, "/"))
+		ok, err := path.Match(p, remote)
 		if err != nil {
 			return false, fmt.Errorf("match.remotes %q: %w", pat, err)
+		}
+		if !ok && strings.HasSuffix(p, "/*") {
+			ok = below(strings.TrimSuffix(p, "/*"), remote)
 		}
 		hit = hit || (ok && remote != "")
 	}
@@ -232,6 +236,18 @@ func (m Match) accepts(remote, dir string) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// below reports whether remote has more path elements than the glob parent
+// and its leading elements match parent.
+func below(parent, remote string) bool {
+	n := strings.Count(parent, "/") + 1
+	parts := strings.SplitN(remote, "/", n+1)
+	if len(parts) <= n {
+		return false
+	}
+	ok, _ := path.Match(parent, strings.Join(parts[:n], "/"))
+	return ok
 }
 
 // NormalizeRemote rewrites a remote URL as host/path in lowercase, without

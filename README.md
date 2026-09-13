@@ -85,6 +85,8 @@ By default a command searches up to three directories: `global/`, `projects/<nam
 | `profiles` | no | Named profiles that override the keys above; see below |
 | `default_profile` | no | Profile to use when no other rule selects one |
 
+An unknown key, such as a misspelt `default_profle` or `match.remote`, is a configuration error (exit code 2) that names the key, so a typo never silently selects another wiki.
+
 ### Profiles
 
 Profiles keep several wikis, such as a personal one and a work one, in one file. The top-level keys are defaults; a profile overrides them:
@@ -111,7 +113,7 @@ The profile is chosen by the first of these that applies:
 
 1. `--profile <name>`
 2. `$WIKICTL_PROFILE`
-3. `match`: `remotes` are globs (`*` does not cross `/`) over the `origin` remote of the current directory, written as `host/path` in lowercase without scheme, user, port and `.git`, so SSH and HTTPS URLs of the same repository match the same pattern. `paths` are directories given as absolute paths or paths starting with `~`; the current directory or any directory below one matches. If more than one profile matches, the command fails with exit code 2.
+3. `match`: `remotes` are globs over the `origin` remote of the current directory, written as `host/path` in lowercase without scheme, user, port and `.git`, so SSH and HTTPS URLs of the same repository match the same pattern. A `*` in the middle matches one path element; a trailing `/*` matches every path below it. For example, `gitlab.example.com/team/*` matches `team/app` and the subgroup repository `team/sub/app`, but not `team` itself, while `gitlab.example.com/*/app` matches `team/app` but not `team/sub/app`. `paths` are directories given as absolute paths or paths starting with `~`; the current directory or any directory below one matches. If more than one profile matches, the command fails with exit code 2.
 4. `default_profile`
 5. No profile: only the top-level keys are used.
 
