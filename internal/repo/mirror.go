@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 )
 
 // Repo is the bare mirror of a wiki repository.
@@ -15,20 +14,13 @@ type Repo struct {
 	Branch string // branch read and written
 }
 
-// Open prepares the mirror at mirrorDir, creating it with "init --bare" and
-// "remote add" when it does not exist. When branch is empty, the branch saved
-// in the mirror's git config (wikictl.branch) is used; when that is empty too,
-// the remote HEAD is queried with "ls-remote --symref" and the result saved.
+// Open prepares the mirror at mirrorDir, creating it with create when it does
+// not exist. When branch is empty, the branch saved in the mirror's git config
+// (wikictl.branch) is used; when that is empty too, the remote HEAD is queried with "ls-remote --symref" and the result saved.
 func Open(mirrorDir, remote, branch string) (*Repo, error) {
 	r := &Repo{Dir: mirrorDir, Remote: remote}
 	if _, err := os.Stat(filepath.Join(mirrorDir, "HEAD")); err != nil {
-		if err := os.MkdirAll(mirrorDir, 0o755); err != nil {
-			return nil, err
-		}
-		if _, err := r.Git("init", "-q", "--bare"); err != nil {
-			return nil, err
-		}
-		if _, err := r.Git("remote", "add", "origin", remote); err != nil {
+		if err := r.create(); err != nil {
 			return nil, err
 		}
 	}
@@ -58,15 +50,58 @@ func Open(mirrorDir, remote, branch string) (*Repo, error) {
 			branch = "main"
 		}
 	}
-	// Save the branch only when it changed: concurrent processes writing the
-	// same config file would fail to lock it.
+	// Save the branch only when it changed, under the mirror lock: concurrent
+	// processes writing the same config file would fail to lock it.
 	if out, _ := r.Git("config", "--get", "wikictl.branch"); strings.TrimSpace(out) != branch {
-		if _, err := r.Git("config", "wikictl.branch", branch); err != nil {
+		unlock, err := r.lock()
+		if err != nil {
+			return nil, err
+		}
+		_, err = r.Git("config", "wikictl.branch", branch)
+		unlock()
+		if err != nil {
 			return nil, err
 		}
 	}
 	r.Branch = branch
 	return r, nil
+}
+
+// create builds the mirror with "init --bare" and "remote add" while holding
+// a lock on <mirror>.lock, so that concurrent processes initialize it once.
+// The repository is built in a temporary directory next to the mirror and
+// renamed into place, so that no process sees a mirror without its remote.
+func (r *Repo) create() error {
+	parent := filepath.Dir(r.Dir)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return err
+	}
+	unlock, err := lockFile(r.Dir + ".lock")
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if _, err := os.Stat(filepath.Join(r.Dir, "HEAD")); err == nil {
+		return nil
+	}
+	tmp, err := os.MkdirTemp(parent, filepath.Base(r.Dir)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp)
+	if err := os.Chmod(tmp, 0o755); err != nil {
+		return err
+	}
+	t := &Repo{Dir: tmp}
+	if _, err := t.Git("init", "-q", "--bare"); err != nil {
+		return err
+	}
+	if _, err := t.Git("remote", "add", "origin", r.Remote); err != nil {
+		return err
+	}
+	// A directory left at the mirror path makes the rename fail; remove it when empty.
+	os.Remove(r.Dir)
+	return os.Rename(tmp, r.Dir)
 }
 
 func (r *Repo) trackingRef() string { return "refs/remotes/origin/" + r.Branch }
@@ -98,13 +133,5 @@ func (r *Repo) Head() (string, error) {
 // processes on the same machine serialize their writes. The returned
 // function releases the lock.
 func (r *Repo) lock() (func(), error) {
-	f, err := os.OpenFile(filepath.Join(r.Dir, "wikictl.lock"), os.O_CREATE|os.O_RDWR, 0o644)
-	if err != nil {
-		return nil, err
-	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
-		f.Close()
-		return nil, err
-	}
-	return func() { syscall.Flock(int(f.Fd()), syscall.LOCK_UN); f.Close() }, nil
+	return lockFile(filepath.Join(r.Dir, "wikictl.lock"))
 }

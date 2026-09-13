@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -86,6 +87,33 @@ func TestOpenAndFetch(t *testing.T) {
 		t.Fatal(err)
 	}
 	unlock()
+}
+
+func TestOpenConcurrent(t *testing.T) {
+	remote := newRemote(t, true)
+	for round := 0; round < 5; round++ {
+		mirror := filepath.Join(t.TempDir(), "m")
+		var wg sync.WaitGroup
+		errs := make(chan error, 8)
+		for i := 0; i < 8; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				r, err := Open(mirror, remote, "")
+				if err == nil {
+					err = r.Fetch()
+				}
+				errs <- err
+			}()
+		}
+		wg.Wait()
+		close(errs)
+		for err := range errs {
+			if err != nil {
+				t.Fatalf("round %d: %v", round, err)
+			}
+		}
+	}
 }
 
 func TestOpenEmptyRemote(t *testing.T) {
