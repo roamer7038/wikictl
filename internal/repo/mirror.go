@@ -25,6 +25,10 @@ func Open(mirrorDir, remote, branch string) (*Repo, error) {
 			return nil, err
 		}
 	}
+	// The URL is left out of the message because it may hold credentials.
+	if out, _ := r.Git("config", "--get-all", "remote.origin.url"); strings.TrimSuffix(out, "\n") != remote {
+		return nil, errors.New("mirror " + mirrorDir + " is for another repository (its remote.origin.url is not the configured repo); delete it and run the command again")
+	}
 	if out, _ := r.Git("rev-parse", "--is-shallow-repository"); strings.TrimSpace(out) == "true" {
 		return nil, errors.New("mirror " + mirrorDir + " is a shallow repository; delete it and run the command again")
 	}
