@@ -313,7 +313,7 @@ With `--json`:
 
     {"error": "conflict", "reason": "<reason>", "path": "...", "sha": "...", "content": "...", "message": "..."}
 
-`<reason>` is `exists` when a page written without `--base` already exists, or `changed` when the page no longer has the sha given with `--base`. `sha` and `content` are empty when the page has been deleted.
+`<reason>` is `exists` when a page written without `--base` already exists, or `changed` when the page no longer has the sha given with `--base`. `sha` and `content` are empty when the page has been deleted. `message` explains the conflict: that the page already exists, that it changed, or that it was deleted.
 
 ### Exit codes
 
@@ -322,7 +322,7 @@ With `--json`:
 | 0 | success |
 | 1 | error, for example a missing page |
 | 2 | usage or configuration error |
-| 3 | conflict: the page changed since it was read |
+| 3 | conflict: the page already exists, or changed or was deleted since it was read |
 | 4 | the page violates the wiki format: `put` rejects invalid frontmatter or a bad path, and `mv` a bad destination path; `lint` exits with 4 on any finding |
 | 5 | a git command failed |
 

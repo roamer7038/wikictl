@@ -23,7 +23,7 @@ const (
 	ExitOK       = 0 // success
 	ExitError    = 1 // general error, such as a missing page
 	ExitUsage    = 2 // usage or configuration error
-	ExitConflict = 3 // the page changed since it was read
+	ExitConflict = 3 // the page already exists, or changed or was deleted since it was read
 	ExitInvalid  = 4 // the page violates the wiki format
 	ExitGit      = 5 // a git command failed
 )

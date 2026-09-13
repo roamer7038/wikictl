@@ -172,9 +172,9 @@ func TestPutRmInit(t *testing.T) {
 		t.Fatalf("code=%d %s", code, out)
 	}
 	code, out, _ = runCLI(t, cfg, "---\nsummary: x\n---\n", "put", "--json", "global/new.md")
-	var cf struct{ Error, Reason, Sha, Content string }
+	var cf struct{ Error, Reason, Sha, Content, Message string }
 	json.Unmarshal([]byte(out), &cf)
-	if code != 3 || cf.Error != "conflict" || cf.Reason != "exists" || cf.Sha != res.Sha {
+	if code != 3 || cf.Error != "conflict" || cf.Reason != "exists" || cf.Sha != res.Sha || !strings.Contains(cf.Message, "already exists") {
 		t.Errorf("code=%d %s", code, out)
 	}
 	code, out, _ = runCLI(t, cfg, "---\nsummary: updated page\n---\n# n2\n", "put", "--json", "--base", res.Sha, "global/new.md")
@@ -183,7 +183,7 @@ func TestPutRmInit(t *testing.T) {
 	}
 	code, out, _ = runCLI(t, cfg, "---\nsummary: z\n---\n", "put", "--json", "--base", res.Sha, "global/new.md")
 	json.Unmarshal([]byte(out), &cf)
-	if code != 3 || cf.Reason != "changed" || !strings.Contains(cf.Content, "updated page") {
+	if code != 3 || cf.Reason != "changed" || !strings.Contains(cf.Content, "updated page") || !strings.Contains(cf.Message, "changed since it was read") {
 		t.Errorf("code=%d %s", code, out)
 	}
 	// A missing summary, or no frontmatter at all, is only a warning; the write goes through.
@@ -222,6 +222,12 @@ func TestPutRmInit(t *testing.T) {
 	}
 	if code, _, _ := runCLI(t, cfg, "", "get", "global/new.md"); code != 1 {
 		t.Error("still exists")
+	}
+	code, out, _ = runCLI(t, cfg, "---\nsummary: z\n---\n", "put", "--json", "--base", res.Sha, "global/new.md")
+	cf = struct{ Error, Reason, Sha, Content, Message string }{}
+	json.Unmarshal([]byte(out), &cf)
+	if code != 3 || cf.Reason != "changed" || cf.Sha != "" || !strings.Contains(cf.Message, "deleted since it was read") {
+		t.Errorf("deleted: code=%d %s", code, out)
 	}
 }
 
