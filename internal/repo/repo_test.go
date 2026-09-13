@@ -111,13 +111,14 @@ func TestRead(t *testing.T) {
 		"README.md":          "not a page",
 		".hidden/z.md":       "---\nsummary: z\n---\n",
 		"global/notes.txt":   "lease",
+		"global/日本語.md":      "---\nsummary: non-ascii\n---\n# 日本語\nlease\n",
 	})
 	r := openFetched(t, remote)
 	list, err := r.List([]string{"global", "projects/a", "machines/h", "nope"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(list) != 4 {
+	if len(list) != 5 || list[2] != "global/日本語.md" {
 		t.Errorf("list=%v", list)
 	}
 	got, _ := r.Grep([]string{"LEASE", "force"}, true, []string{"global", "projects/a"})
@@ -125,7 +126,7 @@ func TestRead(t *testing.T) {
 		t.Errorf("all-match grep=%v", got)
 	}
 	got, _ = r.Grep([]string{"lease"}, true, []string{"global", "projects/a"})
-	if len(got) != 2 {
+	if len(got) != 3 {
 		t.Errorf("grep=%v", got)
 	}
 	if got, _ := r.Grep([]string{"zzz-none"}, true, nil); len(got) != 0 {
@@ -140,7 +141,7 @@ func TestRead(t *testing.T) {
 		t.Errorf("cat=%v", c)
 	}
 	up, _ := r.Updated([]string{"global"})
-	if up["global/git-push.md"].IsZero() {
+	if up["global/git-push.md"].IsZero() || up["global/日本語.md"].IsZero() {
 		t.Errorf("updated=%v", up)
 	}
 	h, _ := r.Head()

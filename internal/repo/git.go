@@ -36,8 +36,11 @@ func (r *Repo) Git(args ...string) (string, error) { return r.run(nil, nil, args
 // GitIn runs git in the mirror with stdin and returns its stdout.
 func (r *Repo) GitIn(stdin []byte, args ...string) (string, error) { return r.run(nil, stdin, args...) }
 
+// run executes git in the mirror. core.quotePath is turned off so that
+// ls-tree, grep and log print non-ASCII paths verbatim instead of quoting
+// them.
 func (r *Repo) run(extraEnv []string, stdin []byte, args ...string) (string, error) {
-	c := exec.Command("git", args...)
+	c := exec.Command("git", append([]string{"-c", "core.quotePath=false"}, args...)...)
 	c.Dir = r.Dir
 	c.Env = append(baseEnv(), extraEnv...)
 	if stdin != nil {
