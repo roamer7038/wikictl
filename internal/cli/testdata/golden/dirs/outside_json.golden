@@ -1,0 +1,5 @@
+$ wikictl dirs --json ../x
+-- exit 2 --
+-- stdout --
+{"error":"usage","message":"dirs: directory outside the wiki: ../x"}
+-- stderr --

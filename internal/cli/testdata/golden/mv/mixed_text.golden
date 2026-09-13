@@ -1,0 +1,7 @@
+$ wikictl mv projects/app/ global/x.md
+-- exit 2 --
+-- stdout --
+-- stderr --
+wikictl: mv: to move a directory, end both arguments with /
+Usage: wikictl mv [flags] <path> <newpath> | <dir>/ <newdir>/
+Run "wikictl help mv" for details.

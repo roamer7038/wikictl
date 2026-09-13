@@ -1,0 +1,5 @@
+$ wikictl init --json
+-- exit 1 --
+-- stdout --
+{"error":"error","message":"branch main already exists on the remote; init only works on an empty repository"}
+-- stderr --

@@ -1,0 +1,5 @@
+$ wikictl get --json global/push.md
+-- exit 0 --
+-- stdout --
+{"path":"global/push.md","sha":"<sha>","frontmatter":{"summary":"how to push","tags":["git"],"type":"policy"},"title":"push","body":"# push\nuse force-with-lease. [index](index.md)\n","links":[{"type":"part_of","target":"global/index.md","note":""}],"backlinks":[],"updated":"<time>"}
+-- stderr --

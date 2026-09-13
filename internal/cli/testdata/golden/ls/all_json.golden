@@ -1,0 +1,5 @@
+$ wikictl ls --json --all --dirs .
+-- exit 0 --
+-- stdout --
+{"items":[{"path":"global/Style_Name.md","summary":"","title":"style","type":"","updated":"<time>"},{"path":"global/broken.md","summary":"broken","title":"broken","type":"","updated":"<time>"},{"path":"global/index.md","summary":"entry point","title":"global","type":"","updated":"<time>"},{"path":"global/push.md","summary":"how to push","title":"push","type":"policy","updated":"<time>"},{"path":"machines/h1/y.md","summary":"y","title":"y","type":"","updated":"<time>"},{"path":"projects/app/sub/z.md","summary":"z","title":"z","type":"note","updated":"<time>"},{"path":"projects/app/x.md","summary":"x","title":"x","type":"","updated":"<time>"}]}
+-- stderr --

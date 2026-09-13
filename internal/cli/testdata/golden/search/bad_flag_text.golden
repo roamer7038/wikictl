@@ -1,0 +1,7 @@
+$ wikictl search --bogus lease
+-- exit 2 --
+-- stdout --
+-- stderr --
+wikictl: search: flag provided but not defined: -bogus
+Usage: wikictl search [flags] <word>...
+Run "wikictl help search" for details.

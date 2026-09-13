@@ -1,0 +1,5 @@
+$ wikictl mv ../ x/
+-- exit 4 --
+-- stdout --
+-- stderr --
+wikictl: bad_path: "../" is not a directory of the wiki

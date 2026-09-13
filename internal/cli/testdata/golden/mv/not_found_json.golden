@@ -1,0 +1,5 @@
+$ wikictl mv --json global/none.md global/other.md
+-- exit 1 --
+-- stdout --
+{"error":"error","message":"page not found: global/none.md"}
+-- stderr --

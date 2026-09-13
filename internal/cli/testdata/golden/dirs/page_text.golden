@@ -1,0 +1,7 @@
+$ wikictl dirs global/index.md
+-- exit 2 --
+-- stdout --
+-- stderr --
+wikictl: dirs: not a directory: global/index.md
+Usage: wikictl dirs [<dir>...]
+Run "wikictl help dirs" for details.

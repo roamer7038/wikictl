@@ -1,0 +1,9 @@
+$ wikictl put --json --base <sha> global/index.md
+-- stdin --
+---
+summary: x
+---
+-- exit 3 --
+-- stdout --
+{"error":"conflict","reason":"changed","path":"global/index.md","sha":"<sha>","content":"---\nsummary: entry point\n---\n# global\n","message":"the page changed since it was read; re-read the current content and reapply the change"}
+-- stderr --

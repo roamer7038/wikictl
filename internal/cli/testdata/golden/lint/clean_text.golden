@@ -1,0 +1,4 @@
+$ wikictl lint --dirs projects/app
+-- exit 0 --
+-- stdout --
+-- stderr --

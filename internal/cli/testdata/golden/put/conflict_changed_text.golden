@@ -1,0 +1,13 @@
+$ wikictl put --base <sha> global/index.md
+-- stdin --
+---
+summary: x
+---
+-- exit 3 --
+-- stdout --
+---
+summary: entry point
+---
+# global
+-- stderr --
+wikictl: conflict (changed): global/index.md sha=<sha>

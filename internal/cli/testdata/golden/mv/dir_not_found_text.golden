@@ -1,0 +1,5 @@
+$ wikictl mv none/ other/
+-- exit 1 --
+-- stdout --
+-- stderr --
+wikictl: no pages under none/

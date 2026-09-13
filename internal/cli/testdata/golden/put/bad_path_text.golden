@@ -1,0 +1,9 @@
+$ wikictl put global/my page.md
+-- stdin --
+---
+summary: a
+---
+-- exit 4 --
+-- stdout --
+-- stderr --
+wikictl: bad_path: name "my page" contains whitespace

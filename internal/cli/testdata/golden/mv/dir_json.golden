@@ -1,0 +1,5 @@
+$ wikictl mv --json global/ shared/
+-- exit 0 --
+-- stdout --
+{"commit":"<sha>","moved":2,"path":"shared/","rewritten":0}
+-- stderr --

@@ -1,0 +1,6 @@
+$ wikictl search --dirs global,projects/app,machines/h1 lease
+-- exit 0 --
+-- stdout --
+global/push.md	how to push
+projects/app/x.md	x
+-- stderr --

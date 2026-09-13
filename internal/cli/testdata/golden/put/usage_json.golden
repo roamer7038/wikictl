@@ -1,0 +1,5 @@
+$ wikictl put --json
+-- exit 2 --
+-- stdout --
+{"error":"usage","message":"put: missing argument"}
+-- stderr --

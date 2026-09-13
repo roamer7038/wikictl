@@ -1,0 +1,5 @@
+$ wikictl bogus
+-- exit 2 --
+-- stdout --
+-- stderr --
+wikictl: unknown command: bogus; run "wikictl help" for the list of commands

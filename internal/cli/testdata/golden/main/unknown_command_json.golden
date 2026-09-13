@@ -1,0 +1,5 @@
+$ wikictl --json bogus
+-- exit 2 --
+-- stdout --
+{"error":"usage","message":"unknown command: bogus; run \"wikictl help\" for the list of commands"}
+-- stderr --

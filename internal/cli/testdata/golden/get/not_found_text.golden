@@ -1,0 +1,5 @@
+$ wikictl get global/none.md
+-- exit 1 --
+-- stdout --
+-- stderr --
+wikictl: page not found: global/none.md

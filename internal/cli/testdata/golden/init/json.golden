@@ -1,0 +1,5 @@
+$ wikictl init --json
+-- exit 0 --
+-- stdout --
+{"commit":"<sha>"}
+-- stderr --

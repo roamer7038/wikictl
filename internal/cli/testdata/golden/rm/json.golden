@@ -1,0 +1,5 @@
+$ wikictl rm --json global/push.md
+-- exit 0 --
+-- stdout --
+{"commit":"<sha>","path":"global/push.md"}
+-- stderr --

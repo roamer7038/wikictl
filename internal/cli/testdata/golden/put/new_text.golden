@@ -1,0 +1,10 @@
+$ wikictl put global/new.md
+-- stdin --
+---
+summary: new page
+---
+# n
+-- exit 0 --
+-- stdout --
+global/new.md	<sha>	<sha>
+-- stderr --

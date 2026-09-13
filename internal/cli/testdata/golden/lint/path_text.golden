@@ -1,0 +1,6 @@
+$ wikictl lint global/broken.md
+-- exit 4 --
+-- stdout --
+global/broken.md:5: broken_link: link target does not exist: global/gone.md
+global/broken.md:8: links_syntax: line is not of the form `- <type>: <target> | <note>` or `- <target>`
+-- stderr --

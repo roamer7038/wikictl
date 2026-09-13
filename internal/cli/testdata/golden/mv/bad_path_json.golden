@@ -1,0 +1,5 @@
+$ wikictl mv --json global/push.md global/a b.md
+-- exit 4 --
+-- stdout --
+{"error":"invalid","message":"bad_path: name \"a b\" contains whitespace"}
+-- stderr --

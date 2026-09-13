@@ -10,7 +10,22 @@ import (
 	"testing"
 )
 
+// seedFiles are the pages committed to the wiki created by setup.
+var seedFiles = map[string]string{
+	"global/index.md":   "---\nsummary: entry point\n---\n# global\n",
+	"global/push.md":    "---\nsummary: how to push\ntype: policy\ntags: [git]\n---\n# push\nuse force-with-lease. [index](index.md)\n\n## Links\n- part_of: [index](index.md)\n",
+	"projects/app/x.md": "---\nsummary: x\n---\n# x\nlease\n",
+	"machines/h1/y.md":  "---\nsummary: y\nstatus: deprecated\n---\n# y\nlease\n",
+}
+
 func setup(t *testing.T) (cfgPath string) {
+	t.Helper()
+	return setupFiles(t, seedFiles)
+}
+
+// setupFiles creates a wiki whose first commit contains files and returns the
+// path of a config file that points to it.
+func setupFiles(t *testing.T, files map[string]string) (cfgPath string) {
 	t.Helper()
 	isolateGit(t)
 	t.Setenv("WIKICTL_PROFILE", "")
@@ -19,12 +34,6 @@ func setup(t *testing.T) (cfgPath string) {
 	mustRun(t, "", "git", "init", "-q", "--bare", "-b", "main", remote)
 	work := filepath.Join(d, "work")
 	mustRun(t, "", "git", "clone", "-q", remote, work)
-	files := map[string]string{
-		"global/index.md":   "---\nsummary: entry point\n---\n# global\n",
-		"global/push.md":    "---\nsummary: how to push\ntype: policy\ntags: [git]\n---\n# push\nuse force-with-lease. [index](index.md)\n\n## Links\n- part_of: [index](index.md)\n",
-		"projects/app/x.md": "---\nsummary: x\n---\n# x\nlease\n",
-		"machines/h1/y.md":  "---\nsummary: y\nstatus: deprecated\n---\n# y\nlease\n",
-	}
 	for p, c := range files {
 		os.MkdirAll(filepath.Dir(filepath.Join(work, p)), 0o755)
 		os.WriteFile(filepath.Join(work, p), []byte(c), 0o644)
@@ -54,85 +63,105 @@ func runCLI(t *testing.T, cfg string, stdin string, args ...string) (int, string
 	return code, out.String(), errb.String()
 }
 
+// decodeJSON unmarshals out into v and stops the test when out is not valid JSON.
+func decodeJSON(t *testing.T, out string, v any) {
+	t.Helper()
+	if err := json.Unmarshal([]byte(out), v); err != nil {
+		t.Fatalf("unmarshal %q: %v", out, err)
+	}
+}
+
 func TestSearchGetLs(t *testing.T) {
 	cfg := setup(t)
-	code, out, errs := runCLI(t, cfg, "", "search", "--json", "--dirs", "global,projects/app,machines/h1", "lease")
-	if code != 0 {
-		t.Fatalf("code=%d %s", code, errs)
-	}
-	var res struct {
-		Items []struct {
-			Path, Summary string
-			Matched       []string
+	t.Run("search", func(t *testing.T) {
+		code, out, errs := runCLI(t, cfg, "", "search", "--json", "--dirs", "global,projects/app,machines/h1", "lease")
+		if code != 0 {
+			t.Fatalf("code=%d %s", code, errs)
 		}
-	}
-	json.Unmarshal([]byte(out), &res)
-	if len(res.Items) != 2 {
-		t.Errorf("%s", out)
-	}
-	_, out, _ = runCLI(t, cfg, "", "search", "--json", "--all", "--dirs", "global,projects/app,machines/h1", "lease")
-	json.Unmarshal([]byte(out), &res)
-	if len(res.Items) != 3 {
-		t.Errorf("--all: %s", out)
-	}
-	_, out, _ = runCLI(t, cfg, "", "search", "--json", "--dirs", "global", "zzz-none")
-	json.Unmarshal([]byte(out), &res)
-	if !strings.Contains(out, `"items":[]`) {
-		t.Errorf("empty: %s", out)
-	}
-	code, out, _ = runCLI(t, cfg, "", "get", "--json", "global/push.md")
-	var g struct {
-		Path, Sha, Title, Body string
-		Links                  []struct{ Type, Target, Note string }
-		Backlinks              []struct{ Path, Type string }
-	}
-	json.Unmarshal([]byte(out), &g)
-	if code != 0 || len(g.Sha) != 40 || g.Title != "push" || len(g.Links) != 1 || g.Links[0].Target != "global/index.md" || strings.Contains(g.Body, "## Links") {
-		t.Errorf("%s", out)
-	}
-	_, out, _ = runCLI(t, cfg, "", "get", "--json", "global/index.md")
-	json.Unmarshal([]byte(out), &g)
-	if len(g.Backlinks) != 1 || g.Backlinks[0].Path != "global/push.md" || g.Backlinks[0].Type != "part_of" {
-		t.Errorf("backlinks: %s", out)
-	}
-	_, out, _ = runCLI(t, cfg, "", "ls", "--json", "--dirs", "global")
-	var ls struct {
-		Items []struct{ Path, Summary, Type string }
-	}
-	json.Unmarshal([]byte(out), &ls)
-	if len(ls.Items) != 2 {
-		t.Errorf("ls: %s", out)
-	}
-	code, out, _ = runCLI(t, cfg, "", "context", "--json")
-	if code != 0 || !strings.Contains(out, "machines/h1") || !strings.Contains(out, `"machine":"h1"`) {
-		t.Errorf("context: %s", out)
-	}
-	var cx struct{ Dirs []string }
-	json.Unmarshal([]byte(out), &cx)
-	if len(cx.Dirs) < 2 || cx.Dirs[0] != "global" || cx.Dirs[1] != "personal" {
-		t.Errorf("context dirs: %v", cx.Dirs)
-	}
-	_, out, _ = runCLI(t, cfg, "", "ls", "--json", "--dirs", "global", "--tag", "git")
-	json.Unmarshal([]byte(out), &ls)
-	if len(ls.Items) != 1 || ls.Items[0].Path != "global/push.md" {
-		t.Errorf("ls --tag: %s", out)
-	}
-	// Global flags may follow the command; "--" ends flag parsing.
-	if code, out, _ := runCLI(t, cfg, "", "lint", "--", "global/push.md"); code != 0 || out != "" {
-		t.Errorf("lint -- path: code=%d out=%q", code, out)
-	}
-	if code, _, _ := runCLI(t, cfg, "", "lint", "global/none.md"); code != 1 {
-		t.Errorf("lint of a missing page must fail with 1, got %d", code)
-	}
-	if code, out, _ := runCLI(t, cfg, "", "--json", "bogus"); code != 2 || !strings.HasPrefix(out, `{"error":"usage"`) {
-		t.Errorf("unknown command with --json: code=%d out=%q", code, out)
-	}
-	if code, _, _ = runCLI(t, cfg, "", "get", "global/none.md"); code != 1 {
-		t.Errorf("missing get code=%d", code)
-	}
-	if code, _, _ = runCLI(t, cfg, "", "bogus"); code != 2 {
-		t.Errorf("unknown command code=%d", code)
-	}
+		var res struct {
+			Items []struct {
+				Path, Summary string
+				Matched       []string
+			}
+		}
+		decodeJSON(t, out, &res)
+		if len(res.Items) != 2 {
+			t.Errorf("%s", out)
+		}
+		_, out, _ = runCLI(t, cfg, "", "search", "--json", "--all", "--dirs", "global,projects/app,machines/h1", "lease")
+		decodeJSON(t, out, &res)
+		if len(res.Items) != 3 {
+			t.Errorf("--all: %s", out)
+		}
+		_, out, _ = runCLI(t, cfg, "", "search", "--json", "--dirs", "global", "zzz-none")
+		decodeJSON(t, out, &res)
+		if !strings.Contains(out, `"items":[]`) {
+			t.Errorf("empty: %s", out)
+		}
+	})
+	t.Run("get", func(t *testing.T) {
+		code, out, _ := runCLI(t, cfg, "", "get", "--json", "global/push.md")
+		var g struct {
+			Path, Sha, Title, Body string
+			Links                  []struct{ Type, Target, Note string }
+			Backlinks              []struct{ Path, Type string }
+		}
+		decodeJSON(t, out, &g)
+		if code != 0 || len(g.Sha) != 40 || g.Title != "push" || len(g.Links) != 1 || g.Links[0].Target != "global/index.md" || strings.Contains(g.Body, "## Links") {
+			t.Errorf("%s", out)
+		}
+		_, out, _ = runCLI(t, cfg, "", "get", "--json", "global/index.md")
+		decodeJSON(t, out, &g)
+		if len(g.Backlinks) != 1 || g.Backlinks[0].Path != "global/push.md" || g.Backlinks[0].Type != "part_of" {
+			t.Errorf("backlinks: %s", out)
+		}
+		if code, _, _ = runCLI(t, cfg, "", "get", "global/none.md"); code != 1 {
+			t.Errorf("missing get code=%d", code)
+		}
+	})
+	t.Run("ls", func(t *testing.T) {
+		_, out, _ := runCLI(t, cfg, "", "ls", "--json", "--dirs", "global")
+		var ls struct {
+			Items []struct{ Path, Summary, Type string }
+		}
+		decodeJSON(t, out, &ls)
+		if len(ls.Items) != 2 {
+			t.Errorf("ls: %s", out)
+		}
+		_, out, _ = runCLI(t, cfg, "", "ls", "--json", "--dirs", "global", "--tag", "git")
+		decodeJSON(t, out, &ls)
+		if len(ls.Items) != 1 || ls.Items[0].Path != "global/push.md" {
+			t.Errorf("ls --tag: %s", out)
+		}
+	})
+	t.Run("context", func(t *testing.T) {
+		code, out, _ := runCLI(t, cfg, "", "context", "--json")
+		if code != 0 || !strings.Contains(out, "machines/h1") || !strings.Contains(out, `"machine":"h1"`) {
+			t.Errorf("context: %s", out)
+		}
+		var cx struct{ Dirs []string }
+		decodeJSON(t, out, &cx)
+		if len(cx.Dirs) < 2 || cx.Dirs[0] != "global" || cx.Dirs[1] != "personal" {
+			t.Errorf("context dirs: %v", cx.Dirs)
+		}
+	})
+	t.Run("lint", func(t *testing.T) {
+		// Global flags may follow the command; "--" ends flag parsing.
+		if code, out, _ := runCLI(t, cfg, "", "lint", "--", "global/push.md"); code != 0 || out != "" {
+			t.Errorf("lint -- path: code=%d out=%q", code, out)
+		}
+		if code, _, _ := runCLI(t, cfg, "", "lint", "global/none.md"); code != 1 {
+			t.Errorf("lint of a missing page must fail with 1, got %d", code)
+		}
+	})
+	t.Run("unknown command", func(t *testing.T) {
+		if code, out, _ := runCLI(t, cfg, "", "--json", "bogus"); code != 2 || !strings.HasPrefix(out, `{"error":"usage"`) {
+			t.Errorf("unknown command with --json: code=%d out=%q", code, out)
+		}
+		if code, _, _ := runCLI(t, cfg, "", "bogus"); code != 2 {
+			t.Errorf("unknown command code=%d", code)
+		}
+	})
 }
 
 func TestPersonalScope(t *testing.T) {
@@ -143,7 +172,7 @@ func TestPersonalScope(t *testing.T) {
 		Items []struct{ Path string }
 	}
 	code, out, errs := runCLI(t, cfg, "", "search", "--json", "conventional-commits")
-	json.Unmarshal([]byte(out), &res)
+	decodeJSON(t, out, &res)
 	if code != 0 || len(res.Items) != 0 {
 		t.Fatalf("search without personal/: code=%d out=%s %s", code, out, errs)
 	}
@@ -157,7 +186,7 @@ func TestPersonalScope(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("search: code=%d %s", code, errs)
 	}
-	json.Unmarshal([]byte(out), &res)
+	decodeJSON(t, out, &res)
 	if len(res.Items) != 1 || res.Items[0].Path != "personal/commits.md" {
 		t.Errorf("search: %s", out)
 	}
@@ -165,64 +194,72 @@ func TestPersonalScope(t *testing.T) {
 
 func TestPutRmInit(t *testing.T) {
 	cfg := setup(t)
-	code, out, _ := runCLI(t, cfg, "---\nsummary: new page\n---\n# n\n", "put", "--json", "global/new.md")
-	var res struct{ Path, Sha, Commit string }
-	json.Unmarshal([]byte(out), &res)
-	if code != 0 || len(res.Sha) != 40 {
-		t.Fatalf("code=%d %s", code, out)
-	}
-	code, out, _ = runCLI(t, cfg, "---\nsummary: x\n---\n", "put", "--json", "global/new.md")
-	var cf struct{ Error, Reason, Sha, Content string }
-	json.Unmarshal([]byte(out), &cf)
-	if code != 3 || cf.Error != "conflict" || cf.Reason != "exists" || cf.Sha != res.Sha {
-		t.Errorf("code=%d %s", code, out)
-	}
-	code, out, _ = runCLI(t, cfg, "---\nsummary: updated page\n---\n# n2\n", "put", "--json", "--base", res.Sha, "global/new.md")
-	if code != 0 {
-		t.Fatalf("%s", out)
-	}
-	code, out, _ = runCLI(t, cfg, "---\nsummary: z\n---\n", "put", "--json", "--base", res.Sha, "global/new.md")
-	json.Unmarshal([]byte(out), &cf)
-	if code != 3 || cf.Reason != "changed" || !strings.Contains(cf.Content, "updated page") {
-		t.Errorf("code=%d %s", code, out)
-	}
-	// A missing summary, or no frontmatter at all, is only a warning; the write goes through.
-	if code, _, errs := runCLI(t, cfg, "# no fm\n", "put", "global/nofm.md"); code != 0 || !strings.Contains(errs, "missing_summary") {
-		t.Errorf("no frontmatter: code=%d errs=%q", code, errs)
-	}
-	if code, _, errs := runCLI(t, cfg, "---\ntype: note\n---\n# no summary\n", "put", "global/nosum.md"); code != 0 || !strings.Contains(errs, "missing_summary") {
-		t.Errorf("no summary: code=%d errs=%q", code, errs)
-	}
-	if code, _, _ := runCLI(t, cfg, "---\nsummary: [\n---\n", "put", "global/bad.md"); code != 4 {
-		t.Errorf("invalid frontmatter code=%d", code)
-	}
-	if code, _, errs := runCLI(t, cfg, "---\nsummary: a\n---\n", "put", "global/my page.md"); code != 4 || !strings.Contains(errs, "bad_path") {
-		t.Errorf("bad path: code=%d errs=%q", code, errs)
-	}
-	if code, _, errs := runCLI(t, cfg, "---\nsummary: a\n---\n", "put", "global/a`b.md"); code != 4 || !strings.Contains(errs, "bad_path") {
-		t.Errorf("put name with '`': code=%d errs=%q", code, errs)
-	}
-	// A name outside the recommended form is only a warning.
-	if code, _, errs := runCLI(t, cfg, "---\nsummary: a\n---\n", "put", "global/Bad_Name.md"); code != 0 || !strings.Contains(errs, "name_style") {
-		t.Errorf("style name: code=%d errs=%q", code, errs)
-	}
-	if code, _, errs := runCLI(t, cfg, "---\nsummary: a\n---\n", "put", "global/日本語.md"); code != 0 || !strings.Contains(errs, "name_style") {
-		t.Errorf("non-ascii name: code=%d errs=%q", code, errs)
-	}
-	if code, _, _ := runCLI(t, cfg, "", "get", "global/日本語.md"); code != 0 {
-		t.Errorf("non-ascii get code=%d", code)
-	}
-	// A broken link is only a warning; the write goes through.
-	code, _, errs := runCLI(t, cfg, "---\nsummary: w\n---\n# w\n[g](gone.md)\n", "put", "global/warn.md")
-	if code != 0 || !strings.Contains(errs, "warning") {
-		t.Errorf("code=%d errs=%q", code, errs)
-	}
-	if code, _, _ = runCLI(t, cfg, "", "rm", "global/new.md"); code != 0 {
-		t.Error("rm failed")
-	}
-	if code, _, _ := runCLI(t, cfg, "", "get", "global/new.md"); code != 1 {
-		t.Error("still exists")
-	}
+	t.Run("conflicts", func(t *testing.T) {
+		code, out, _ := runCLI(t, cfg, "---\nsummary: new page\n---\n# n\n", "put", "--json", "global/new.md")
+		var res struct{ Path, Sha, Commit string }
+		decodeJSON(t, out, &res)
+		if code != 0 || len(res.Sha) != 40 {
+			t.Fatalf("code=%d %s", code, out)
+		}
+		code, out, _ = runCLI(t, cfg, "---\nsummary: x\n---\n", "put", "--json", "global/new.md")
+		var cf struct{ Error, Reason, Sha, Content string }
+		decodeJSON(t, out, &cf)
+		if code != 3 || cf.Error != "conflict" || cf.Reason != "exists" || cf.Sha != res.Sha {
+			t.Errorf("code=%d %s", code, out)
+		}
+		code, out, _ = runCLI(t, cfg, "---\nsummary: updated page\n---\n# n2\n", "put", "--json", "--base", res.Sha, "global/new.md")
+		if code != 0 {
+			t.Fatalf("%s", out)
+		}
+		code, out, _ = runCLI(t, cfg, "---\nsummary: z\n---\n", "put", "--json", "--base", res.Sha, "global/new.md")
+		decodeJSON(t, out, &cf)
+		if code != 3 || cf.Reason != "changed" || !strings.Contains(cf.Content, "updated page") {
+			t.Errorf("code=%d %s", code, out)
+		}
+	})
+	t.Run("warnings", func(t *testing.T) {
+		// A missing summary, or no frontmatter at all, is only a warning; the write goes through.
+		if code, _, errs := runCLI(t, cfg, "# no fm\n", "put", "global/nofm.md"); code != 0 || !strings.Contains(errs, "missing_summary") {
+			t.Errorf("no frontmatter: code=%d errs=%q", code, errs)
+		}
+		if code, _, errs := runCLI(t, cfg, "---\ntype: note\n---\n# no summary\n", "put", "global/nosum.md"); code != 0 || !strings.Contains(errs, "missing_summary") {
+			t.Errorf("no summary: code=%d errs=%q", code, errs)
+		}
+		// A name outside the recommended form is only a warning.
+		if code, _, errs := runCLI(t, cfg, "---\nsummary: a\n---\n", "put", "global/Bad_Name.md"); code != 0 || !strings.Contains(errs, "name_style") {
+			t.Errorf("style name: code=%d errs=%q", code, errs)
+		}
+		if code, _, errs := runCLI(t, cfg, "---\nsummary: a\n---\n", "put", "global/日本語.md"); code != 0 || !strings.Contains(errs, "name_style") {
+			t.Errorf("non-ascii name: code=%d errs=%q", code, errs)
+		}
+		if code, _, _ := runCLI(t, cfg, "", "get", "global/日本語.md"); code != 0 {
+			t.Errorf("non-ascii get code=%d", code)
+		}
+		// A broken link is only a warning; the write goes through.
+		if code, _, errs := runCLI(t, cfg, "---\nsummary: w\n---\n# w\n[g](gone.md)\n", "put", "global/warn.md"); code != 0 || !strings.Contains(errs, "warning") {
+			t.Errorf("code=%d errs=%q", code, errs)
+		}
+	})
+	t.Run("rejected", func(t *testing.T) {
+		if code, _, _ := runCLI(t, cfg, "---\nsummary: [\n---\n", "put", "global/bad.md"); code != 4 {
+			t.Errorf("invalid frontmatter code=%d", code)
+		}
+		if code, _, errs := runCLI(t, cfg, "---\nsummary: a\n---\n", "put", "global/my page.md"); code != 4 || !strings.Contains(errs, "bad_path") {
+			t.Errorf("bad path: code=%d errs=%q", code, errs)
+		}
+		if code, _, errs := runCLI(t, cfg, "---\nsummary: a\n---\n", "put", "global/a`b.md"); code != 4 || !strings.Contains(errs, "bad_path") {
+			t.Errorf("put name with '`': code=%d errs=%q", code, errs)
+		}
+	})
+	t.Run("rm", func(t *testing.T) {
+		runCLI(t, cfg, "---\nsummary: r\n---\n# r\n", "put", "global/rm-me.md")
+		if code, _, errs := runCLI(t, cfg, "", "rm", "global/rm-me.md"); code != 0 {
+			t.Errorf("rm failed: code=%d %s", code, errs)
+		}
+		if code, _, _ := runCLI(t, cfg, "", "get", "global/rm-me.md"); code != 1 {
+			t.Error("still exists")
+		}
+	})
 }
 
 // isolateGit keeps the user's global git configuration (hooks, gpgsign,
@@ -254,74 +291,84 @@ func TestInit(t *testing.T) {
 
 func TestMvAndLint(t *testing.T) {
 	cfg := setup(t)
-	code, out, errs := runCLI(t, cfg, "", "mv", "--json", "global/push.md", "projects/app/push-notes.md")
-	if code != 0 {
-		t.Fatalf("mv code=%d %s %s", code, out, errs)
-	}
-	_, out, _ = runCLI(t, cfg, "", "get", "--json", "projects/app/push-notes.md")
-	var g struct {
-		Body        string
-		Frontmatter map[string]any
-		Links       []struct{ Target string }
-	}
-	json.Unmarshal([]byte(out), &g)
-	if !strings.Contains(g.Body, "](../../global/index.md)") || len(g.Links) != 1 || g.Links[0].Target != "global/index.md" {
-		t.Errorf("self links not rewritten: %s", out)
-	}
-	if al, _ := g.Frontmatter["aliases"].([]any); len(al) != 1 || al[0] != "push" {
-		t.Errorf("aliases: %v", g.Frontmatter["aliases"])
-	}
-	runCLI(t, cfg, "---\nsummary: x\n---\n# x\n[p](push-notes.md)\n", "put", "--base", getSha(t, cfg, "projects/app/x.md"), "projects/app/x.md")
-	if code, _, e := runCLI(t, cfg, "", "mv", "projects/app/push-notes.md", "global/push.md"); code != 0 {
-		t.Fatalf("mv back: %s", e)
-	}
-	_, out, _ = runCLI(t, cfg, "", "get", "--json", "projects/app/x.md")
-	if !strings.Contains(out, "](../../global/push.md)") {
-		t.Errorf("referrer not rewritten: %s", out)
-	}
-	if code, _, _ := runCLI(t, cfg, "", "mv", "global/push.md", "global/index.md"); code != 1 {
-		t.Error("mv onto existing must fail")
-	}
-	if code, _, errs := runCLI(t, cfg, "", "mv", "global/push.md", "global/a b.md"); code != 4 || !strings.Contains(errs, "bad_path") {
-		t.Errorf("mv to bad path: code=%d errs=%q", code, errs)
-	}
-	if code, _, errs := runCLI(t, cfg, "", "mv", "global/push.md", "global/a:b.md"); code != 4 || !strings.Contains(errs, "bad_path") {
-		t.Errorf("mv to name with ':': code=%d errs=%q", code, errs)
-	}
-	if code, _, errs := runCLI(t, cfg, "", "mv", "global/push.md", "global/a`b.md"); code != 4 || !strings.Contains(errs, "bad_path") {
-		t.Errorf("mv to name with '`': code=%d errs=%q", code, errs)
-	}
-	if code, _, errs := runCLI(t, cfg, "", "mv", "global/push.md", "global/Push.md"); code != 0 || !strings.Contains(errs, "name_style") {
-		t.Errorf("mv to style name: code=%d errs=%q", code, errs)
-	}
-	runCLI(t, cfg, "", "mv", "global/Push.md", "global/push.md")
-	runCLI(t, cfg, "---\nsummary: b\n---\n# b\n[gone](gone.md)\n\n## Links\n- x\n* see_also: [i](index.md)\n  + index.md | untyped\n", "put", "global/broken.md")
-	_, out, _ = runCLI(t, cfg, "", "get", "--json", "global/broken.md")
-	var b struct {
-		Links []struct{ Type, Target, Note string }
-	}
-	json.Unmarshal([]byte(out), &b)
-	if len(b.Links) != 2 || b.Links[0].Type != "see_also" || b.Links[1].Type != "see_also" || b.Links[1].Target != "global/index.md" || b.Links[1].Note != "untyped" {
-		t.Errorf("tolerant links: %s", out)
-	}
-	code, out, _ = runCLI(t, cfg, "", "lint", "--json", "--dirs", "global")
-	var li struct {
-		Items []struct {
-			Path, Code string
-			Line       int
+	t.Run("mv rewrites links", func(t *testing.T) {
+		code, out, errs := runCLI(t, cfg, "", "mv", "--json", "global/push.md", "projects/app/push-notes.md")
+		if code != 0 {
+			t.Fatalf("mv code=%d %s %s", code, out, errs)
 		}
-	}
-	json.Unmarshal([]byte(out), &li)
-	codes := map[string]int{}
-	for _, it := range li.Items {
-		codes[it.Code]++
-	}
-	if code != 4 || codes["broken_link"] != 1 || codes["links_syntax"] != 1 {
-		t.Errorf("code=%d %s", code, out)
-	}
-	if code, _, _ := runCLI(t, cfg, "", "lint", "--dirs", "projects/app"); code != 0 {
-		t.Error("clean dir must pass")
-	}
+		_, out, _ = runCLI(t, cfg, "", "get", "--json", "projects/app/push-notes.md")
+		var g struct {
+			Body        string
+			Frontmatter map[string]any
+			Links       []struct{ Target string }
+		}
+		decodeJSON(t, out, &g)
+		if !strings.Contains(g.Body, "](../../global/index.md)") || len(g.Links) != 1 || g.Links[0].Target != "global/index.md" {
+			t.Errorf("self links not rewritten: %s", out)
+		}
+		if al, _ := g.Frontmatter["aliases"].([]any); len(al) != 1 || al[0] != "push" {
+			t.Errorf("aliases: %v", g.Frontmatter["aliases"])
+		}
+		runCLI(t, cfg, "---\nsummary: x\n---\n# x\n[p](push-notes.md)\n", "put", "--base", getSha(t, cfg, "projects/app/x.md"), "projects/app/x.md")
+		if code, _, e := runCLI(t, cfg, "", "mv", "projects/app/push-notes.md", "global/push.md"); code != 0 {
+			t.Fatalf("mv back: %s", e)
+		}
+		_, out, _ = runCLI(t, cfg, "", "get", "--json", "projects/app/x.md")
+		if !strings.Contains(out, "](../../global/push.md)") {
+			t.Errorf("referrer not rewritten: %s", out)
+		}
+	})
+	t.Run("mv rejects", func(t *testing.T) {
+		if code, _, _ := runCLI(t, cfg, "", "mv", "global/push.md", "global/index.md"); code != 1 {
+			t.Error("mv onto existing must fail")
+		}
+		if code, _, errs := runCLI(t, cfg, "", "mv", "global/push.md", "global/a b.md"); code != 4 || !strings.Contains(errs, "bad_path") {
+			t.Errorf("mv to bad path: code=%d errs=%q", code, errs)
+		}
+		if code, _, errs := runCLI(t, cfg, "", "mv", "global/push.md", "global/a:b.md"); code != 4 || !strings.Contains(errs, "bad_path") {
+			t.Errorf("mv to name with ':': code=%d errs=%q", code, errs)
+		}
+		if code, _, errs := runCLI(t, cfg, "", "mv", "global/push.md", "global/a`b.md"); code != 4 || !strings.Contains(errs, "bad_path") {
+			t.Errorf("mv to name with '`': code=%d errs=%q", code, errs)
+		}
+	})
+	t.Run("mv style name", func(t *testing.T) {
+		if code, _, errs := runCLI(t, cfg, "", "mv", "global/push.md", "global/Push.md"); code != 0 || !strings.Contains(errs, "name_style") {
+			t.Errorf("mv to style name: code=%d errs=%q", code, errs)
+		}
+		runCLI(t, cfg, "", "mv", "global/Push.md", "global/push.md")
+	})
+	t.Run("tolerant links", func(t *testing.T) {
+		runCLI(t, cfg, "---\nsummary: b\n---\n# b\n[gone](gone.md)\n\n## Links\n- x\n* see_also: [i](index.md)\n  + index.md | untyped\n", "put", "global/broken.md")
+		_, out, _ := runCLI(t, cfg, "", "get", "--json", "global/broken.md")
+		var b struct {
+			Links []struct{ Type, Target, Note string }
+		}
+		decodeJSON(t, out, &b)
+		if len(b.Links) != 2 || b.Links[0].Type != "see_also" || b.Links[1].Type != "see_also" || b.Links[1].Target != "global/index.md" || b.Links[1].Note != "untyped" {
+			t.Errorf("tolerant links: %s", out)
+		}
+	})
+	t.Run("lint", func(t *testing.T) {
+		code, out, _ := runCLI(t, cfg, "", "lint", "--json", "--dirs", "global")
+		var li struct {
+			Items []struct {
+				Path, Code string
+				Line       int
+			}
+		}
+		decodeJSON(t, out, &li)
+		codes := map[string]int{}
+		for _, it := range li.Items {
+			codes[it.Code]++
+		}
+		if code != 4 || codes["broken_link"] != 1 || codes["links_syntax"] != 1 {
+			t.Errorf("code=%d %s", code, out)
+		}
+		if code, _, _ := runCLI(t, cfg, "", "lint", "--dirs", "projects/app"); code != 0 {
+			t.Error("clean dir must pass")
+		}
+	})
 }
 
 func TestLintNames(t *testing.T) {
@@ -335,7 +382,7 @@ func TestLintNames(t *testing.T) {
 			Path, Code, Message string
 		}
 	}
-	json.Unmarshal([]byte(out), &li)
+	decodeJSON(t, out, &li)
 	got := map[string]string{}
 	for _, it := range li.Items {
 		got[it.Path+" "+it.Code] = it.Message
@@ -360,7 +407,7 @@ func getSha(t *testing.T, cfg, p string) string {
 	t.Helper()
 	_, out, _ := runCLI(t, cfg, "", "get", "--json", p)
 	var g struct{ Sha string }
-	json.Unmarshal([]byte(out), &g)
+	decodeJSON(t, out, &g)
 	return g.Sha
 }
 
@@ -431,50 +478,56 @@ func TestOptionalSummary(t *testing.T) {
 		}
 		return m
 	}
-	code, out, errs := runCLI(t, cfg, "", "search", "--json", "--dirs", "global", "lease")
-	if code != 0 {
-		t.Fatalf("code=%d %s", code, errs)
-	}
-	json.Unmarshal([]byte(out), &res)
-	got := byPath(res.Items)
-	if it := got["global/nosum.md"]; it.Summary != "" || it.Title != "Heading Title" {
-		t.Errorf("search nosum: %+v", it)
-	}
-	if it := got["global/desc.md"]; it.Summary != "from description" || it.Title != "d" {
-		t.Errorf("search desc: %+v", it)
-	}
-	if it := got["global/nofm.md"]; it.Summary != "" || it.Title != "nofm" {
-		t.Errorf("search nofm: %+v", it)
-	}
-	if it := got["global/push.md"]; it.Summary != "how to push" || it.Title != "push" {
-		t.Errorf("search push: %+v", it)
-	}
-	_, out, _ = runCLI(t, cfg, "", "search", "--dirs", "global", "lease")
-	for _, want := range []string{"global/nosum.md\tHeading Title\n", "global/desc.md\tfrom description\n", "global/nofm.md\tnofm\n", "global/push.md\thow to push\n"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("search text missing %q in %q", want, out)
+	t.Run("search", func(t *testing.T) {
+		code, out, errs := runCLI(t, cfg, "", "search", "--json", "--dirs", "global", "lease")
+		if code != 0 {
+			t.Fatalf("code=%d %s", code, errs)
 		}
-	}
-	_, out, _ = runCLI(t, cfg, "", "ls", "--json", "--dirs", "global")
-	json.Unmarshal([]byte(out), &res)
-	got = byPath(res.Items)
-	if it := got["global/nosum.md"]; it.Summary != "" || it.Title != "Heading Title" {
-		t.Errorf("ls nosum: %+v", it)
-	}
-	if it := got["global/desc.md"]; it.Summary != "from description" {
-		t.Errorf("ls desc: %+v", it)
-	}
-	_, out, _ = runCLI(t, cfg, "", "ls", "--dirs", "global")
-	for _, want := range []string{"global/nosum.md\tHeading Title\n", "global/nofm.md\tnofm\n", "global/index.md\tentry point\n"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("ls text missing %q in %q", want, out)
+		decodeJSON(t, out, &res)
+		got := byPath(res.Items)
+		if it := got["global/nosum.md"]; it.Summary != "" || it.Title != "Heading Title" {
+			t.Errorf("search nosum: %+v", it)
 		}
-	}
-	// lint still reports the missing summary.
-	code, out, _ = runCLI(t, cfg, "", "lint", "global/nosum.md", "global/nofm.md", "global/desc.md")
-	if code != 4 || strings.Count(out, "missing_summary") != 2 || strings.Contains(out, "desc.md") {
-		t.Errorf("lint: code=%d out=%q", code, out)
-	}
+		if it := got["global/desc.md"]; it.Summary != "from description" || it.Title != "d" {
+			t.Errorf("search desc: %+v", it)
+		}
+		if it := got["global/nofm.md"]; it.Summary != "" || it.Title != "nofm" {
+			t.Errorf("search nofm: %+v", it)
+		}
+		if it := got["global/push.md"]; it.Summary != "how to push" || it.Title != "push" {
+			t.Errorf("search push: %+v", it)
+		}
+		_, out, _ = runCLI(t, cfg, "", "search", "--dirs", "global", "lease")
+		for _, want := range []string{"global/nosum.md\tHeading Title\n", "global/desc.md\tfrom description\n", "global/nofm.md\tnofm\n", "global/push.md\thow to push\n"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("search text missing %q in %q", want, out)
+			}
+		}
+	})
+	t.Run("ls", func(t *testing.T) {
+		_, out, _ := runCLI(t, cfg, "", "ls", "--json", "--dirs", "global")
+		decodeJSON(t, out, &res)
+		got := byPath(res.Items)
+		if it := got["global/nosum.md"]; it.Summary != "" || it.Title != "Heading Title" {
+			t.Errorf("ls nosum: %+v", it)
+		}
+		if it := got["global/desc.md"]; it.Summary != "from description" {
+			t.Errorf("ls desc: %+v", it)
+		}
+		_, out, _ = runCLI(t, cfg, "", "ls", "--dirs", "global")
+		for _, want := range []string{"global/nosum.md\tHeading Title\n", "global/nofm.md\tnofm\n", "global/index.md\tentry point\n"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("ls text missing %q in %q", want, out)
+			}
+		}
+	})
+	t.Run("lint", func(t *testing.T) {
+		// lint still reports the missing summary.
+		code, out, _ := runCLI(t, cfg, "", "lint", "global/nosum.md", "global/nofm.md", "global/desc.md")
+		if code != 4 || strings.Count(out, "missing_summary") != 2 || strings.Contains(out, "desc.md") {
+			t.Errorf("lint: code=%d out=%q", code, out)
+		}
+	})
 }
 
 func TestDirs(t *testing.T) {
@@ -486,85 +539,90 @@ func TestDirs(t *testing.T) {
 			Pages        int
 		}
 	}
-	decode := func(out string) dirsRes {
+	decode := func(t *testing.T, out string) dirsRes {
 		t.Helper()
 		var res dirsRes
-		if err := json.Unmarshal([]byte(out), &res); err != nil {
-			t.Fatalf("unmarshal %q: %v", out, err)
-		}
+		decodeJSON(t, out, &res)
 		return res
 	}
-	code, out, errs := runCLI(t, cfg, "", "dirs", "--json")
-	if code != 0 {
-		t.Fatalf("code=%d %s", code, errs)
-	}
-	res := decode(out)
 	want := []struct {
 		dir, summary string
 		pages        int
 	}{{"global/", "entry point", 2}, {"machines/h1/", "", 1}, {"projects/app/", "", 1}, {"projects/app/sub/", "", 1}}
-	if len(res.Items) != len(want) {
-		t.Fatalf("dirs: %s", out)
-	}
-	for i, w := range want {
-		it := res.Items[i]
-		if it.Dir != w.dir || it.Summary != w.summary || it.Pages != w.pages {
-			t.Errorf("item %d: got %+v want %+v", i, it, w)
+	t.Run("json", func(t *testing.T) {
+		code, out, errs := runCLI(t, cfg, "", "dirs", "--json")
+		if code != 0 {
+			t.Fatalf("code=%d %s", code, errs)
 		}
-	}
-	_, out, _ = runCLI(t, cfg, "", "dirs", "--json", "projects")
-	res = decode(out)
-	if len(res.Items) != 2 || res.Items[0].Dir != "projects/app/" || res.Items[1].Dir != "projects/app/sub/" {
-		t.Errorf("dirs projects: %s", out)
-	}
-	_, out, _ = runCLI(t, cfg, "", "dirs", "--json", "global/", "machines")
-	res = decode(out)
-	if len(res.Items) != 2 || res.Items[0].Dir != "global/" || res.Items[1].Dir != "machines/h1/" {
-		t.Errorf("dirs with two args: %s", out)
-	}
-	_, out, _ = runCLI(t, cfg, "", "dirs", "--json", "--dirs", "global")
-	if res = decode(out); len(res.Items) != len(want) {
-		t.Errorf("dirs must ignore --dirs: %s", out)
-	}
-	if code, out, _ := runCLI(t, cfg, "", "dirs", "--json", "none"); code != 0 || !strings.Contains(out, `"items":[]`) {
-		t.Errorf("dirs none: code=%d out=%s", code, out)
-	}
-	for _, arg := range []string{"../x", "/abs", "global/index.md"} {
-		if code, _, errs := runCLI(t, cfg, "", "dirs", arg); code != ExitUsage {
-			t.Errorf("dirs %s: code=%d errs=%q", arg, code, errs)
+		res := decode(t, out)
+		if len(res.Items) != len(want) {
+			t.Fatalf("dirs: %s", out)
 		}
-	}
-	code, out, _ = runCLI(t, cfg, "", "dirs")
-	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
-	if code != 0 || len(lines) != 4 || !strings.HasPrefix(lines[0], "global/") || !strings.HasSuffix(lines[0], "entry point") || !strings.HasSuffix(lines[1], "(no index)") {
-		t.Errorf("dirs text: code=%d out=%q", code, out)
-	}
-	if f := strings.Fields(lines[0]); len(f) < 3 || f[1] != "2" {
-		t.Errorf("dirs text count: %q", lines[0])
-	}
-
-	// An index.md without a summary, committed directly to the wiki repository.
-	cfgData, err := os.ReadFile(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	remote := strings.TrimPrefix(strings.SplitN(string(cfgData), "\n", 2)[0], "repo: ")
-	work := filepath.Join(t.TempDir(), "work")
-	mustRun(t, "", "git", "clone", "-q", remote, work)
-	os.WriteFile(filepath.Join(work, "projects/app/index.md"), []byte("# app\n"), 0o644)
-	mustRun(t, work, "git", "add", "-A")
-	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "index")
-	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
-	_, out, _ = runCLI(t, cfg, "", "dirs", "--json", "projects/app")
-	res = decode(out)
-	if len(res.Items) != 2 || res.Items[0].Dir != "projects/app/" || res.Items[0].Pages != 2 || res.Items[0].Summary != "" {
-		t.Errorf("index without summary: %s", out)
-	}
-	_, out, _ = runCLI(t, cfg, "", "dirs", "projects/app")
-	lines = strings.Split(strings.TrimRight(out, "\n"), "\n")
-	if len(lines) != 2 || strings.Contains(lines[0], "(no index)") || !strings.HasSuffix(lines[1], "(no index)") {
-		t.Errorf("index without summary text: %q", out)
-	}
+		for i, w := range want {
+			it := res.Items[i]
+			if it.Dir != w.dir || it.Summary != w.summary || it.Pages != w.pages {
+				t.Errorf("item %d: got %+v want %+v", i, it, w)
+			}
+		}
+	})
+	t.Run("arguments", func(t *testing.T) {
+		_, out, _ := runCLI(t, cfg, "", "dirs", "--json", "projects")
+		res := decode(t, out)
+		if len(res.Items) != 2 || res.Items[0].Dir != "projects/app/" || res.Items[1].Dir != "projects/app/sub/" {
+			t.Errorf("dirs projects: %s", out)
+		}
+		_, out, _ = runCLI(t, cfg, "", "dirs", "--json", "global/", "machines")
+		res = decode(t, out)
+		if len(res.Items) != 2 || res.Items[0].Dir != "global/" || res.Items[1].Dir != "machines/h1/" {
+			t.Errorf("dirs with two args: %s", out)
+		}
+		_, out, _ = runCLI(t, cfg, "", "dirs", "--json", "--dirs", "global")
+		if res = decode(t, out); len(res.Items) != len(want) {
+			t.Errorf("dirs must ignore --dirs: %s", out)
+		}
+		if code, out, _ := runCLI(t, cfg, "", "dirs", "--json", "none"); code != 0 || !strings.Contains(out, `"items":[]`) {
+			t.Errorf("dirs none: code=%d out=%s", code, out)
+		}
+		for _, arg := range []string{"../x", "/abs", "global/index.md"} {
+			if code, _, errs := runCLI(t, cfg, "", "dirs", arg); code != ExitUsage {
+				t.Errorf("dirs %s: code=%d errs=%q", arg, code, errs)
+			}
+		}
+	})
+	t.Run("text", func(t *testing.T) {
+		code, out, _ := runCLI(t, cfg, "", "dirs")
+		lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+		if code != 0 || len(lines) != 4 || !strings.HasPrefix(lines[0], "global/") || !strings.HasSuffix(lines[0], "entry point") || !strings.HasSuffix(lines[1], "(no index)") {
+			t.Fatalf("dirs text: code=%d out=%q", code, out)
+		}
+		if f := strings.Fields(lines[0]); len(f) < 3 || f[1] != "2" {
+			t.Errorf("dirs text count: %q", lines[0])
+		}
+	})
+	t.Run("index without summary", func(t *testing.T) {
+		// An index.md without a summary, committed directly to the wiki repository.
+		cfgData, err := os.ReadFile(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		remote := strings.TrimPrefix(strings.SplitN(string(cfgData), "\n", 2)[0], "repo: ")
+		work := filepath.Join(t.TempDir(), "work")
+		mustRun(t, "", "git", "clone", "-q", remote, work)
+		os.WriteFile(filepath.Join(work, "projects/app/index.md"), []byte("# app\n"), 0o644)
+		mustRun(t, work, "git", "add", "-A")
+		mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "index")
+		mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
+		_, out, _ := runCLI(t, cfg, "", "dirs", "--json", "projects/app")
+		res := decode(t, out)
+		if len(res.Items) != 2 || res.Items[0].Dir != "projects/app/" || res.Items[0].Pages != 2 || res.Items[0].Summary != "" {
+			t.Errorf("index without summary: %s", out)
+		}
+		_, out, _ = runCLI(t, cfg, "", "dirs", "projects/app")
+		lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+		if len(lines) != 2 || strings.Contains(lines[0], "(no index)") || !strings.HasSuffix(lines[1], "(no index)") {
+			t.Errorf("index without summary text: %q", out)
+		}
+	})
 }
 
 func TestContextPages(t *testing.T) {
@@ -701,7 +759,7 @@ profiles:
 			Repo          string `json:"repo"`
 			Mirror        string `json:"mirror"`
 		}
-		json.Unmarshal([]byte(out), &raw)
+		decodeJSON(t, out, &raw)
 		return ctxOut{raw.Profile, raw.ProfileSource, raw.Repo, raw.Mirror}
 	}
 	byRemote, byPath, byDefault := contextIn(app), contextIn(labDir), contextIn(other)

@@ -1,0 +1,6 @@
+$ wikictl mv global/push.md global/Push.md
+-- exit 0 --
+-- stdout --
+global/push.md -> global/Push.md	<sha>
+-- stderr --
+wikictl: warning: global/Push.md:0: name_style: name "Push": lowercase ASCII letters, digits and hyphens are recommended

@@ -1,0 +1,5 @@
+$ wikictl mv --json projects/app/ global/x.md
+-- exit 2 --
+-- stdout --
+{"error":"usage","message":"mv: to move a directory, end both arguments with /"}
+-- stderr --

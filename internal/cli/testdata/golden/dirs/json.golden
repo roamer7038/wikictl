@@ -1,0 +1,5 @@
+$ wikictl dirs --json
+-- exit 0 --
+-- stdout --
+{"items":[{"dir":"global/","pages":4,"summary":"entry point"},{"dir":"machines/h1/","pages":1,"summary":""},{"dir":"projects/app/","pages":1,"summary":""},{"dir":"projects/app/sub/","pages":1,"summary":""}]}
+-- stderr --

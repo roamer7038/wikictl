@@ -1,0 +1,8 @@
+$ wikictl lint --dirs global
+-- exit 4 --
+-- stdout --
+global/Style_Name.md:0: name_style: name "Style_Name": lowercase ASCII letters, digits and hyphens are recommended
+global/Style_Name.md:1: missing_summary: frontmatter is missing
+global/broken.md:5: broken_link: link target does not exist: global/gone.md
+global/broken.md:8: links_syntax: line is not of the form `- <type>: <target> | <note>` or `- <target>`
+-- stderr --

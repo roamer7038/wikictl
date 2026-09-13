@@ -1,0 +1,5 @@
+$ wikictl mv global/ shared/
+-- exit 0 --
+-- stdout --
+global/ -> shared/ (2 pages)	<sha>
+-- stderr --

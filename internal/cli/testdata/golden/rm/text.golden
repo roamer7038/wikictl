@@ -1,0 +1,5 @@
+$ wikictl rm global/push.md
+-- exit 0 --
+-- stdout --
+global/push.md	<sha>
+-- stderr --

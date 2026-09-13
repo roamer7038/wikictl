@@ -1,0 +1,5 @@
+$ wikictl mv global/index.md global/start.md
+-- exit 0 --
+-- stdout --
+global/index.md -> global/start.md	<sha>
+-- stderr --

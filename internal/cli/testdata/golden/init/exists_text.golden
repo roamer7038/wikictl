@@ -1,0 +1,5 @@
+$ wikictl init
+-- exit 1 --
+-- stdout --
+-- stderr --
+wikictl: branch main already exists on the remote; init only works on an empty repository

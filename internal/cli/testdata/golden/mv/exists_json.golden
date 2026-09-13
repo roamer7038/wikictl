@@ -1,0 +1,5 @@
+$ wikictl mv --json global/push.md global/index.md
+-- exit 1 --
+-- stdout --
+{"error":"error","message":"page already exists: global/index.md"}
+-- stderr --

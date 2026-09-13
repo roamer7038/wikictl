@@ -1,0 +1,5 @@
+$ wikictl get --json
+-- exit 2 --
+-- stdout --
+{"error":"usage","message":"get: missing argument"}
+-- stderr --

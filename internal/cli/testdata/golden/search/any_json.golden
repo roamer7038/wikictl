@@ -1,0 +1,5 @@
+$ wikictl search --json --any --dirs . lease push
+-- exit 0 --
+-- stdout --
+{"items":[{"path":"global/push.md","summary":"how to push","title":"push","matched":["lease","push"],"updated":"<time>"},{"path":"projects/app/x.md","summary":"x","title":"x","matched":["lease"],"updated":"<time>"}]}
+-- stderr --

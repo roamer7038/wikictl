@@ -1,0 +1,12 @@
+$ wikictl get global/index.md
+-- exit 0 --
+-- stdout --
+path: global/index.md
+sha: <sha>
+updated: <time>
+
+# global
+
+backlinks:
+  global/push.md (part_of)
+-- stderr --

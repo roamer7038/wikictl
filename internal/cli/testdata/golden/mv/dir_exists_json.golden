@@ -1,0 +1,5 @@
+$ wikictl mv --json projects/app/ global/
+-- exit 1 --
+-- stdout --
+{"error":"error","message":"pages already exist under global/"}
+-- stderr --

@@ -1,0 +1,5 @@
+$ wikictl dirs --json none
+-- exit 0 --
+-- stdout --
+{"items":[]}
+-- stderr --

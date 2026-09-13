@@ -1,0 +1,15 @@
+$ wikictl context
+-- exit 0 --
+-- stdout --
+config: <tmp>/config.yaml
+profile: 
+profile_source: none
+repo: <tmp>/remote.git
+mirror: <tmp>/cache/wikictl/<tmp>_remote.git
+branch: main
+author: agent
+machine: h1
+project: 
+remote: 
+dirs: global (4 pages), personal (0 pages), machines/h1 (1 page)
+-- stderr --

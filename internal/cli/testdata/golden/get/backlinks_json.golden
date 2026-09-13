@@ -1,0 +1,5 @@
+$ wikictl get --json global/index.md
+-- exit 0 --
+-- stdout --
+{"path":"global/index.md","sha":"<sha>","frontmatter":{"summary":"entry point"},"title":"global","body":"# global\n","links":[],"backlinks":[{"path":"global/push.md","type":"part_of"}],"updated":"<time>"}
+-- stderr --

@@ -1,0 +1,7 @@
+$ wikictl rm
+-- exit 2 --
+-- stdout --
+-- stderr --
+wikictl: rm: missing argument
+Usage: wikictl rm [flags] <path>
+Run "wikictl help rm" for details.

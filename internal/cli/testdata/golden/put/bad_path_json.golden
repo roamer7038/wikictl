@@ -1,0 +1,9 @@
+$ wikictl put --json global/my page.md
+-- stdin --
+---
+summary: a
+---
+-- exit 4 --
+-- stdout --
+{"error":"invalid","message":"bad_path: name \"my page\" contains whitespace"}
+-- stderr --

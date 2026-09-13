@@ -1,0 +1,4 @@
+$ wikictl search --dirs global zzz-none
+-- exit 0 --
+-- stdout --
+-- stderr --

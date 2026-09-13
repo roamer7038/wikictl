@@ -1,0 +1,5 @@
+$ wikictl ls --dirs . --type note
+-- exit 0 --
+-- stdout --
+projects/app/sub/z.md	z
+-- stderr --

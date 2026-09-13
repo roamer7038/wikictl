@@ -1,0 +1,7 @@
+$ wikictl put
+-- exit 2 --
+-- stdout --
+-- stderr --
+wikictl: put: missing argument
+Usage: wikictl put [flags] <path> < content
+Run "wikictl help put" for details.

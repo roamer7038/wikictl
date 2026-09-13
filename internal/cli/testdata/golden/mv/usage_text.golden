@@ -1,0 +1,7 @@
+$ wikictl mv global/push.md
+-- exit 2 --
+-- stdout --
+-- stderr --
+wikictl: mv: missing argument
+Usage: wikictl mv [flags] <path> <newpath> | <dir>/ <newdir>/
+Run "wikictl help mv" for details.

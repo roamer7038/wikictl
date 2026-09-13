@@ -1,0 +1,5 @@
+$ wikictl context --json --dirs global,projects,.,projects/none
+-- exit 0 --
+-- stdout --
+{"author":"agent","branch":"main","config":"<tmp>/config.yaml","dirs":["global","projects",".","projects/none"],"machine":"h1","mirror":"<tmp>/cache/wikictl/<tmp>_remote.git","pages":{".":7,"global":4,"projects":2,"projects/none":0},"profile":"","profile_source":"none","project":"","remote":"","repo":"<tmp>/remote.git"}
+-- stderr --

@@ -1,0 +1,5 @@
+$ wikictl mv --json global/index.md global/start.md
+-- exit 0 --
+-- stdout --
+{"commit":"<sha>","path":"global/start.md","rewritten":1}
+-- stderr --

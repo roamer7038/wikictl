@@ -1,0 +1,7 @@
+$ wikictl get
+-- exit 2 --
+-- stdout --
+-- stderr --
+wikictl: get: missing argument
+Usage: wikictl get <path>
+Run "wikictl help get" for details.

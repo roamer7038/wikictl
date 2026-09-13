@@ -1,0 +1,10 @@
+$ wikictl put --json --base <sha:projects/app/x.md> projects/app/x.md
+-- stdin --
+---
+summary: x2
+---
+# x
+-- exit 0 --
+-- stdout --
+{"commit":"<sha>","path":"projects/app/x.md","sha":"<sha>"}
+-- stderr --

@@ -1,0 +1,5 @@
+$ wikictl lint --json global/none.md
+-- exit 1 --
+-- stdout --
+{"error":"error","message":"page not found: global/none.md"}
+-- stderr --

@@ -1,0 +1,7 @@
+$ wikictl context extra
+-- exit 2 --
+-- stdout --
+-- stderr --
+wikictl: context: too many arguments: extra
+Usage: wikictl context
+Run "wikictl help context" for details.

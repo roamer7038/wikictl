@@ -1,0 +1,5 @@
+$ wikictl search --json
+-- exit 2 --
+-- stdout --
+{"error":"usage","message":"search: missing argument"}
+-- stderr --

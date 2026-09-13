@@ -1,0 +1,5 @@
+$ wikictl lint --json --dirs projects/app
+-- exit 0 --
+-- stdout --
+{"items":[]}
+-- stderr --

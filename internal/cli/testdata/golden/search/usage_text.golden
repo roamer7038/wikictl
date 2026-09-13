@@ -1,0 +1,7 @@
+$ wikictl search
+-- exit 2 --
+-- stdout --
+-- stderr --
+wikictl: search: missing argument
+Usage: wikictl search [flags] <word>...
+Run "wikictl help search" for details.

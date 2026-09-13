@@ -1,0 +1,12 @@
+$ wikictl put global/bad.md
+-- stdin --
+---
+summary: [
+---
+-- exit 4 --
+-- stdout --
+-- stderr --
+wikictl: frontmatter_invalid: [1:10] sequence end token ']' not found
+>  1 | summary: [
+                ^
+

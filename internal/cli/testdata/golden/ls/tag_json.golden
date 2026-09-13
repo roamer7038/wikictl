@@ -1,0 +1,5 @@
+$ wikictl ls --json --dirs global --tag git
+-- exit 0 --
+-- stdout --
+{"items":[{"path":"global/push.md","summary":"how to push","title":"push","type":"policy","updated":"<time>"}]}
+-- stderr --

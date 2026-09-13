@@ -1,0 +1,5 @@
+$ wikictl mv global/push.md global/index.md
+-- exit 1 --
+-- stdout --
+-- stderr --
+wikictl: page already exists: global/index.md

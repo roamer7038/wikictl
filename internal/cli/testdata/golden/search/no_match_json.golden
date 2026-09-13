@@ -1,0 +1,5 @@
+$ wikictl search --json --dirs global zzz-none
+-- exit 0 --
+-- stdout --
+{"items":[]}
+-- stderr --

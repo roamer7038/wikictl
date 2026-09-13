@@ -1,0 +1,7 @@
+$ wikictl dirs ../x
+-- exit 2 --
+-- stdout --
+-- stderr --
+wikictl: dirs: directory outside the wiki: ../x
+Usage: wikictl dirs [<dir>...]
+Run "wikictl help dirs" for details.

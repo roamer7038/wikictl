@@ -1,0 +1,5 @@
+$ wikictl dirs --json projects machines/
+-- exit 0 --
+-- stdout --
+{"items":[{"dir":"machines/h1/","pages":1,"summary":""},{"dir":"projects/app/","pages":1,"summary":""},{"dir":"projects/app/sub/","pages":1,"summary":""}]}
+-- stderr --

@@ -1,0 +1,9 @@
+$ wikictl put --json global/bad.md
+-- stdin --
+---
+summary: [
+---
+-- exit 4 --
+-- stdout --
+{"error":"invalid","message":"frontmatter_invalid: [1:10] sequence end token ']' not found\n>  1 | summary: [\n                ^\n"}
+-- stderr --

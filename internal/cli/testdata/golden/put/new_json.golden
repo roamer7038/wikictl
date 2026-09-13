@@ -1,0 +1,10 @@
+$ wikictl put --json global/new.md
+-- stdin --
+---
+summary: new page
+---
+# n
+-- exit 0 --
+-- stdout --
+{"commit":"<sha>","path":"global/new.md","sha":"<sha>"}
+-- stderr --

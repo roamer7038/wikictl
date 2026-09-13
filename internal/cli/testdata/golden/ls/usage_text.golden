@@ -1,0 +1,7 @@
+$ wikictl ls extra
+-- exit 2 --
+-- stdout --
+-- stderr --
+wikictl: ls: too many arguments: extra
+Usage: wikictl ls [flags]
+Run "wikictl help ls" for details.

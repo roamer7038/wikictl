@@ -1,0 +1,8 @@
+$ wikictl ls --dirs global
+-- exit 0 --
+-- stdout --
+global/Style_Name.md	style
+global/broken.md	broken
+global/index.md	entry point
+global/push.md	how to push
+-- stderr --

@@ -1,0 +1,5 @@
+$ wikictl context --json
+-- exit 0 --
+-- stdout --
+{"author":"agent","branch":"main","config":"<tmp>/config.yaml","dirs":["global","personal","machines/h1"],"machine":"h1","mirror":"<tmp>/cache/wikictl/<tmp>_remote.git","pages":{"global":4,"machines/h1":1,"personal":0},"profile":"","profile_source":"none","project":"","remote":"","repo":"<tmp>/remote.git"}
+-- stderr --

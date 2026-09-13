@@ -1,0 +1,5 @@
+$ wikictl mv global/push.md global/a b.md
+-- exit 4 --
+-- stdout --
+-- stderr --
+wikictl: bad_path: name "a b" contains whitespace

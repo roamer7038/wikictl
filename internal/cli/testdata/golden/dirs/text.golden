@@ -1,0 +1,8 @@
+$ wikictl dirs
+-- exit 0 --
+-- stdout --
+global/            4  entry point
+machines/h1/       1  (no index)
+projects/app/      1  (no index)
+projects/app/sub/  1  (no index)
+-- stderr --

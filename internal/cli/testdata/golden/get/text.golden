@@ -1,0 +1,13 @@
+$ wikictl get global/push.md
+-- exit 0 --
+-- stdout --
+path: global/push.md
+sha: <sha>
+updated: <time>
+
+# push
+use force-with-lease. [index](index.md)
+
+links:
+  part_of: global/index.md
+-- stderr --

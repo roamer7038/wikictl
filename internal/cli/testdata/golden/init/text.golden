@@ -1,0 +1,5 @@
+$ wikictl init
+-- exit 0 --
+-- stdout --
+initialized: <sha>
+-- stderr --
