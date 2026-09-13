@@ -57,6 +57,7 @@ Pages with "status: deprecated" are skipped unless --all is given. Results
 are ordered by last update, newest first; with --any, pages matching more
 words come first. Text output shows the summary of each page, or its title
 (first heading, else the file name) when the page has no summary.
+Control characters other than tab are shown as \xNN in text output.
 
 Output: items[] {path, summary, title, matched, updated}.`,
 		flags: func(fs *flag.FlagSet) { searchFlags(fs) }, run: (*app).cmdSearch},
@@ -74,7 +75,8 @@ Output: {path, sha, frontmatter, title, body, links[], backlinks[], updated}.`,
 		detail: `List the pages under the search directories with their summary and type.
 Pages with "status: deprecated" are skipped unless --all is given. Text
 output shows the summary of each page, or its title (first heading, else the
-file name) when the page has no summary.
+file name) when the page has no summary. Control characters other than tab
+are shown as \xNN in text output.
 
 Output: items[] {path, summary, title, type, updated}.`,
 		flags: func(fs *flag.FlagSet) { lsFlags(fs) }, run: (*app).cmdLs},
@@ -135,6 +137,9 @@ A Links line is "- <type>: <target> | <note>", or "- <target>" for an untyped
 see_also relation (an untyped URL must be "<scheme>://..."); the bullet may
 be "-", "*" or "+" and may be indented.
 
+Control characters other than tab in a message are shown as \xNN in text
+output.
+
 Output: items[] {path, line, code, message}.`,
 		run: (*app).cmdLint},
 	{name: "dirs", args: "[<dir>...]", maxArgs: -1,
@@ -145,7 +150,8 @@ and the summary of its index.md, or "(no index)" when it has none. Deprecated
 pages are counted. The whole wiki is listed regardless of the search
 directories, so --dirs has no effect; arguments restrict the output to the
 directories at or below each <dir>, which must be a directory path inside the
-wiki, not a page path.
+wiki, not a page path. Control characters other than tab in the summary are
+shown as \xNN in text output.
 
 Output: items[] {dir, pages, summary}; summary is "" without an index.md.`,
 		run: (*app).cmdDirs},

@@ -299,6 +299,8 @@ An unknown profile name is an error (exit code 2). In a profile, `author.name` a
 
 Without `--json`, commands print text on standard output. With `--json`, every command except `help` prints one JSON object; `wikictl help <command>` lists its fields.
 
+In text output, control characters other than tab (U+0000–U+001F, U+007F and U+0080–U+009F) in the summaries and titles printed by `ls`, `search` and `dirs` and in the messages printed by `lint` are shown as `\xNN` (for example, ESC as `\x1b`), so that page content cannot control the terminal. JSON output and the body printed by `get` are not changed.
+
 Warnings go to standard error in both modes, one per line:
 
     wikictl: warning: <path>:<line>: <code>: <message>

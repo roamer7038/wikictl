@@ -82,7 +82,7 @@ func (a *app) cmdSearch(c *command, args []string) int {
 	}
 	a.emit(map[string]any{"items": hits}, func(w io.Writer) {
 		for _, h := range hits {
-			fmt.Fprintf(w, "%s\t%s\n", h.Path, summaryOrTitle(h.Summary, h.Title))
+			fmt.Fprintf(w, "%s\t%s\n", h.Path, escapeControl(summaryOrTitle(h.Summary, h.Title)))
 		}
 	})
 	return ExitOK
@@ -235,7 +235,7 @@ func (a *app) cmdLs(c *command, args []string) int {
 	}
 	a.emit(map[string]any{"items": items}, func(w io.Writer) {
 		for _, it := range items {
-			fmt.Fprintf(w, "%s\t%s\n", it.Path, summaryOrTitle(it.Summary, it.Title))
+			fmt.Fprintf(w, "%s\t%s\n", it.Path, escapeControl(summaryOrTitle(it.Summary, it.Title)))
 		}
 	})
 	return ExitOK
@@ -341,7 +341,7 @@ func (a *app) cmdDirs(c *command, args []string) int {
 			nw = max(nw, len(strconv.Itoa(it.Pages)))
 		}
 		for _, it := range items {
-			s := it.Summary
+			s := escapeControl(it.Summary)
 			if _, ok := contents[it.Dir+"index.md"]; !ok {
 				s = "(no index)"
 			}
