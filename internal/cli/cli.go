@@ -46,9 +46,9 @@ var commands = []*command{
 		summary: "Create the initial pages in an empty repository",
 		detail: `Create README.md and global/index.md, as a single commit, in the repository
 given by repo in the config file or its selected profile. The repository
-itself must already exist and be empty; it may be on a Git host, on a server
-reached over SSH, or a local bare repository. Fails with exit code 1 if the
-branch already exists.`,
+itself must already exist; it may be on a Git host, on a server reached over
+SSH, or a local bare repository. Fails with exit code 1 if the branch already
+exists.`,
 		run: (*app).cmdInit},
 	{name: "search", args: "<word>...", minArgs: 1, maxArgs: -1,
 		summary: "Find pages containing the given words",
@@ -191,7 +191,7 @@ func (a *app) globalFlags(fs *flag.FlagSet) {
 	fs.StringVar(&a.profile, "profile", "", "use the profile `name` from the config file instead of $WIKICTL_PROFILE, match or default_profile")
 	fs.StringVar(&a.dirsArg, "dirs", "", "search only the comma-separated `dirs` instead of the defaults; . is the whole wiki")
 	fs.BoolVar(&a.json, "json", false, "print JSON")
-	fs.BoolVar(&a.noFetch, "no-fetch", false, "do not fetch from the remote before running")
+	fs.BoolVar(&a.noFetch, "no-fetch", false, "do not fetch from the remote before reading; writes still fetch before committing")
 	fs.BoolVar(&a.version, "version", false, "print the version and exit")
 }
 

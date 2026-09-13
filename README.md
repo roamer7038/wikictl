@@ -2,30 +2,30 @@
 
 [日本語版](README.ja.md)
 
-wikictl is a command-line tool for a Markdown wiki kept in a Git repository. It is built for a knowledge base shared between AI agents and people: agents search and write pages from the shell, and people read and edit the same pages in a Git host's web UI or in a clone opened with an editor such as Obsidian.
+wikictl is a command-line tool for a Markdown wiki kept in a Git repository. It is built for a knowledge base shared between AI agents and people: agents search and write pages from the shell, and people read and edit the same pages in a Git host's web UI or in a clone opened with an editor such as Obsidian. People who edit in a clone commit and push as usual; wikictl never uses those clones, and its changes and theirs meet in the repository.
 
-The repository can be on a Git host (GitHub, GitLab, Gitea, ...), on a server reachable over SSH, or in a local directory; no hosting service is required.
+The repository can be on a Git host (GitHub, GitLab, Gitea, ...), on a server reachable over SSH or in a local directory; no hosting service is required.
 
-wikictl runs no server, keeps no index and uses no working tree. It fetches into a bare mirror and reads with `git grep`, `git cat-file` and `git log`; it writes by building a commit with git plumbing and pushing it with `--force-with-lease`. The wiki does not depend on wikictl: it is plain Markdown that any editor can handle.
+wikictl runs no server, keeps no index and uses no working tree. To read, it fetches into a bare mirror and uses `git grep`, `git cat-file` and `git log`; to write, it builds a commit with git plumbing and pushes it with `--force-with-lease`. The wiki does not depend on wikictl: it is plain Markdown that any editor can handle.
 
 ```mermaid
 flowchart LR
   agent["AI agent or shell"] -->|wikictl| mirror["bare mirror<br>~/.cache/wikictl/"]
-  mirror -->|"fetch / push --force-with-lease"| repo[("wiki repository")]
-  person["person"] -->|"web UI, or clone and push"| repo
+  mirror <-->|"fetch / push --force-with-lease"| repo[("wiki repository")]
+  person["person"] <-->|"web UI, or clone and push"| repo
 ```
 
 ## Requirements
 
 - Linux or macOS.
 - `git` on `PATH`.
-- A wiki repository that you can fetch from and push to without any prompt (a credential helper, an SSH agent, or file access for a local path). wikictl runs git with prompts disabled, so a command that needs a password fails instead of waiting. Every command fetches first, so this applies to reading as well.
+- Fetch and push access to the wiki repository without any prompt (a credential helper, an SSH agent or file access for a local path). wikictl runs git with prompts disabled, so a command that needs a password fails instead of waiting. Every command fetches first, so this applies to reading as well.
 - Direct pushes to the wiki branch. Branch protection that requires pull requests blocks every write.
 - For the install script: `curl`, and `sha256sum` or `shasum`. For building from source: Go 1.26.5 or later.
 
 ### Where the wiki repository can live
 
-`repo` in the configuration is passed to git as it is, so any URL or path that git can push to works:
+`repo` in the configuration (see [Configuration](#configuration)) is passed to git as it is, so any URL or path that git can push to works:
 
 | Location | Example of `repo` |
 |---|---|
@@ -33,13 +33,11 @@ flowchart LR
 | Server over SSH | `ssh://you@server.example/srv/git/wiki.git` |
 | Local directory | `/home/you/wiki.git` |
 
-On a server or in a local directory, create an empty bare repository with the branch name given:
+On a server or in a local directory, create an empty bare repository, specifying the initial branch:
 
     git init --bare -b main ~/wiki.git
 
 In an empty repository wikictl cannot read the branch from the remote HEAD and writes to `main`. If the repository was created without `-b main` and its HEAD points to `master`, `git clone` then warns that the remote HEAD refers to a nonexistent ref and checks out nothing. Either create it with `-b main` or set `branch` in the configuration to the branch the HEAD points to.
-
-People who do not use a Git host's web UI clone the repository, edit, commit and push as usual. wikictl never uses those clones; its changes and theirs meet in the repository.
 
 ## Install
 
@@ -57,7 +55,7 @@ Binaries for Linux and macOS (x86_64 and arm64) and their checksums are on the [
 
 ## Quick start
 
-1. Create an empty repository, on your Git host or with `git init --bare -b main` (see [Where the wiki repository can live](#where-the-wiki-repository-can-live)), and make sure `git push` to it works without prompting.
+1. Create an empty repository on your Git host or with `git init --bare -b main` (see [Where the wiki repository can live](#where-the-wiki-repository-can-live)), and make sure `git push` to it works without prompting.
 2. Write `~/.config/wikictl/config.yaml`:
 
        repo: git@github.com:you/wiki.git
@@ -75,7 +73,7 @@ Binaries for Linux and macOS (x86_64 and arm64) and their checksums are on the [
        wikictl get global/git-force-with-lease.md
        wikictl lint
 
-Add `--json` to any command for machine-readable output.
+Add `--json` to any command except `help` for machine-readable output.
 
 ## Wiki layout
 
@@ -96,7 +94,7 @@ Place a page in the narrowest scope that fits: only this project → `projects/<
 
 `personal/` assumes one person uses the wiki. Everyone who shares a wiki searches the same `personal/`, so in a wiki shared by several people either do not use `personal/`, or set `dirs` in the configuration to choose the search directories.
 
-`init` creates only `global/`. The other directories appear with the first `put` into them.
+`init` creates only `global/`. The other directories appear when the first page is put into them.
 
 ### Search directories
 
@@ -104,14 +102,14 @@ By default, `search`, `ls` and `lint` look at up to four directories:
 
 - `global/`
 - `personal/`
-- `projects/<name>/`, where `<name>` is the repository name in the URL of the `origin` remote of the current directory: its last path element, without `.git`, in lowercase. The `projects` key of the configuration maps this name to another directory name. The directory is skipped when the current directory is not in a git repository or has no `origin` remote.
-- `machines/<name>/`, where `<name>` is the `machine` key of the configuration, or else the hostname up to the first `.`, in lowercase.
+- `projects/<name>/`: `<name>` is the repository name in the URL of the `origin` remote of the current directory, that is, its last path element without `.git`, in lowercase. The `projects` key of the configuration maps this name to another directory name. The directory is skipped when the current directory is not inside a git repository or has no `origin` remote.
+- `machines/<name>/`: `<name>` is the `machine` key of the configuration, or else the hostname up to the first `.`, in lowercase.
 
 `--dirs a,b` on the command line, or `dirs` in the configuration, replaces the list. `--dirs .` covers the whole wiki. Directories that do not exist are ignored. `wikictl context` shows the list with the number of pages at any depth under each directory.
 
 ### Page format
 
-A page is a Markdown file in a subdirectory (never at the root). Its frontmatter should have a one-line `summary`:
+A page is a Markdown file inside a directory, never at the root of the repository. Its frontmatter should have a one-line `summary`:
 
 ```markdown
 ---
@@ -129,32 +127,36 @@ Body. Link to other pages with relative paths: [index](index.md).
 
 Frontmatter:
 
-- `summary` is recommended, not required. Without it, `put` still writes the page with a `missing_summary` warning, `lint` reports `missing_summary`, and `search` and `ls` show the title (the first heading, else the file name) instead. A page without frontmatter is treated the same way.
-- `description` is read as a synonym of `summary`; `summary` wins when both are present.
-- Optional keys: `type`, `status`, `tags`, `aliases`, `review_after`. A line `status: deprecated` hides the page from `search` and `ls` unless `--all` is given.
+- `summary` is recommended, not required. A page without `summary` is still written by `put`, with a `missing_summary` warning; `lint` reports `missing_summary`; and `search` and `ls` show the title (the first heading, else the file name) instead. A page without frontmatter is treated the same way.
+- `description` is read as a synonym of `summary`; `summary` wins when it is a non-empty string.
+- The keys wikictl interprets are `type` (`ls --type`), `tags` written as a YAML list (`ls --tag`), `aliases` (`mv` adds the old file name to it) and `status`. Any other key, such as `review_after`, may be written and is not interpreted.
+- A line `status: deprecated` (unquoted) anywhere in the file hides the page from `search` and `ls` unless `--all` is given.
 
 Links:
 
 - A link to a page is a relative path ending in `.md`, optionally with a `#fragment`. Absolute paths and paths that leave the wiki are not page links.
-- The `## Links` section, when present, is the last heading. Each line is `- <type>: <target> | <note>`, where `<target>` is a relative path or a URL and `| <note>` is optional.
+- A `## Links` heading starts the Links section only when it is the last heading of the page. If another heading follows it, the lines are read as body and their relations are ignored without a warning.
+- Each line of the section is `- <type>: <target> | <note>`, where `<target>` is a relative path or a URL and `| <note>` is optional.
 - A line with only a target, `- <target>`, is a `see_also` relation; an untyped URL target must be of the form `<scheme>://...`.
 - The bullet may be `-`, `*` or `+` and may be indented.
 - Links in the body, of the form `[text](path)`, are also read: `get` lists them in the target's backlinks as `mentions`, and `lint` reports them when their target is missing.
 - Write page targets as `[text](path)`. `mv` rewrites only links of that form; a bare path such as `- part_of: index.md` or `- index.md` is left unchanged and becomes a broken link when its target moves.
-- Code fences are never interpreted: a `## Links` heading inside a fence does not start the section. Links inside fences, and inside code spans in the body, are not read as body links.
+- Code fences are never interpreted: a `## Links` heading inside a fence does not start the section. Links inside fences, and inside code spans in the body, are not read as body links (`mv` still rewrites links inside code spans).
 
 File and directory names:
 
-- A name must not be empty, start with `.` or `<`, or contain whitespace, control characters or any of ``" \ # ? : ( ) ` ``, and a page ends in `.md`. `put` and `mv` reject other paths (`bad_path`, exit code 4).
-- Lowercase ASCII letters, digits and hyphens are recommended. `lint` reports other names as `name_style`, and names in one directory that differ only by case (which collide on case-insensitive file systems) as `case_collision`.
+- A name must not be empty, start with `.` or `<`, or contain whitespace, control characters or any of ``" \ # ? : ( ) ` ``. A page's file name must end in `.md`. `put` and `mv` reject other paths (`bad_path`, exit code 4).
+- Lowercase ASCII letters, digits and hyphens, not starting with a hyphen, are recommended. `lint` reports other names as `name_style`, and names in one directory that differ only by case (which collide on case-insensitive file systems) as `case_collision`.
 
-Give each directory an `index.md` whose `summary` states what the directory holds, and link the other pages in it to the index with `- part_of: [index](index.md)`. `wikictl get <dir>/index.md` then lists those pages as `backlinks`, and `wikictl dirs` shows the summary next to the directory, so the structure of the wiki describes itself without any generated content.
+`index.md`:
+
+Give each directory an `index.md` whose `summary` states what the directory holds, and link the other pages in it to the index with `- part_of: [index](index.md)`. `wikictl get <dir>/index.md` then lists those pages as `backlinks`, and `wikictl dirs` shows the `summary` next to the directory, so the structure of the wiki describes itself without any generated content.
 
 ## Commands
 
 | Command | Purpose |
 |---|---|
-| `init` | Create `README.md` and `global/index.md` in an empty repository |
+| `init` | Create `README.md` and `global/index.md` in a repository without the branch |
 | `search <word>...` | Find pages containing all of the words |
 | `get <path>` | Show one page with its sha, frontmatter, body, links and backlinks |
 | `ls` | List the pages under the search directories |
@@ -168,38 +170,40 @@ Give each directory an `index.md` whose `summary` states what the directory hold
 | `help [<command>]` | Show the list of commands, or the details and flags of one command |
 | `version` | Print the version |
 
-Command flags:
+Command flags must come before the arguments, as in `wikictl search -n 5 lease`. A flag written after an argument is taken as an argument: `wikictl search lease -n 5` searches for the three words `lease`, `-n` and `5`.
 
 | Flag | Commands | Meaning |
 |---|---|---|
 | `--any` | `search` | Find pages containing any of the words instead of all of them |
 | `-n <N>` | `search` | Show at most N results (default 20) |
 | `--all` | `search`, `ls` | Include pages with `status: deprecated` |
-| `--type <type>` | `ls` | Only pages with this `type` |
-| `--tag <tag>` | `ls` | Only pages with this tag |
-| `--base <sha>` | `put` | Blob sha of the existing page, as printed by `get` |
-| `-m <message>` | `put`, `mv`, `rm` | Commit message (default: `wikictl: <command> <arguments>`) |
+| `--type <type>` | `ls` | Show only pages with this `type` |
+| `--tag <tag>` | `ls` | Show only pages with this tag |
+| `--base <sha>` | `put` | Write only if the page still has this blob sha, as printed by `get` |
+| `-m <message>` | `put`, `mv`, `rm` | Use this commit message (default: `wikictl: <command> <arguments>`) |
 
 Global flags, accepted before or after the command:
 
 | Flag | Meaning |
 |---|---|
-| `--json` | Print JSON |
+| `--json` | Print JSON (not for `help`) |
 | `--dirs a,b` | Search only these directories; `.` is the whole wiki |
 | `--config <path>` | Read the configuration from this file |
 | `--profile <name>` | Use this profile |
-| `--no-fetch` | Skip the fetch that normally precedes every command |
+| `--no-fetch` | Skip the fetch before reading |
 | `--version` | Print the version |
+
+`--no-fetch` does not skip the fetch that a write performs before committing. `mv`, however, builds its changes from the unfetched mirror and can overwrite newer changes, so do not combine it with `--no-fetch`.
 
 Details of each command:
 
-- `init` writes both files in one commit. It fails with exit code 1 if the branch already exists.
+- `init` writes both files to the branch in one commit. It fails with exit code 1 if the branch already exists.
 - `search` matches the words as fixed strings, ignoring case, anywhere in the file, frontmatter included. Results are ordered by last update, newest first; with `--any`, pages matching more words come first.
-- `get` prints the page parsed: the body without the frontmatter and the Links section, the links, and the backlinks from other pages. The frontmatter is included only with `--json`. It does not print the file as stored.
-- `put` reads the whole page, frontmatter included. An invalid frontmatter or a bad path is rejected with exit code 4; other problems (`missing_summary`, `broken_link`, `links_syntax`, `name_style`) are printed as warnings and the page is written.
-- `mv` rewrites the links inside the moved page and the links to it from other pages in the same commit, and adds the old file name (without `.md`) to `aliases` when the file name changes. It fails with exit code 1 if the destination exists. The directory form fails if any page exists under `<newdir>/`.
+- `get` prints the parsed page, not the file as stored. As text, it shows the body without the frontmatter and the Links section, the links and the backlinks from other pages; the frontmatter is included only with `--json`.
+- `put` takes the whole page, frontmatter included, on standard input. Invalid frontmatter or a bad path is rejected with exit code 4; other problems (`missing_summary`, `broken_link`, `links_syntax`, `name_style`) are printed as warnings and the page is written.
+- `mv` rewrites the links inside the moved page and the links to it from other pages in the same commit. It also normalises relative page links written in another form, such as `./b.md` to `b.md`, in any page of the wiki, so pages unrelated to the move can be part of the commit; the body of a rewritten page gets LF line endings, and a BOM is removed. When the file name changes, the old file name (without `.md`) is added to `aliases` if the page has frontmatter. `mv` fails with exit code 1 if the destination exists; the directory form fails if any page exists under `<newdir>/`.
 - `rm` leaves the pages that link to the deleted page unchanged; `lint` reports those links as `broken_link`.
-- `lint` checks the given pages, or every page under the search directories. `case_collision` is checked against the whole wiki.
+- `lint` checks the given pages, or every page under the search directories; `wikictl --dirs . lint` checks the whole wiki. `case_collision` is always checked against the whole wiki.
 - `dirs` lists every directory that directly contains a page, with the number of pages directly in it (deprecated pages included) and the `summary` of its `index.md`, or `(no index)`. It ignores the search directories; `wikictl dirs projects` restricts the list to the directories under `projects/`.
 - `context` shows the configuration file, the selected profile and how it was selected, the repository, the mirror, the branch, the author, the machine and project names, the `origin` remote of the current directory, and the search directories with their page counts.
 
@@ -209,35 +213,44 @@ Details of each command:
 
 ### Updating a page without overwriting someone else's change
 
-1. `wikictl get <path>` prints the blob `sha` of the page.
-2. Write the new content and pass the sha back: `wikictl put --base <sha> <path> < page.md`.
+1. Run `wikictl get <path>` and note the blob `sha` of the page.
+2. Write the new content and pass the sha with `--base`:
+
+       wikictl put --base <sha> <path> < page.md
+
 3. If the page changed in between, `put` exits with code 3 and prints the current content and `sha` (see [Output](#output)). Re-read, reapply your change and `put` again.
 
-Writing to an existing page without `--base` is also a conflict (exit code 3). No merge state is ever created.
+Writing to an existing page without `--base` is also a conflict (exit code 3). wikictl never merges, and never leaves a page in a conflicted state.
 
-`get` does not print the page as stored: the frontmatter and the Links section appear only as parsed fields in `--json`. The stored content is printed when `put` reports a conflict.
+`get` prints the parsed page, not the file as stored. The stored content is printed when `put` reports a conflict.
 
-wikictl processes on one machine take a lock on the mirror and write one at a time. When another push reaches the repository first, wikictl fetches, checks `--base` again and retries, up to three attempts. `mv` and `rm` take no `--base`: `mv` writes the pages it rewrites as they were when it read them, so a change pushed to one of those pages in the meantime is overwritten.
+wikictl processes that use the same mirror take a lock on it and write one at a time. There is one mirror per `repo` value and cache directory, so processes with a different `XDG_CACHE_HOME`, or with `repo` written differently (SSH and HTTPS, for example), do not share the lock. When another push reaches the repository first, wikictl fetches, checks `--base` again and retries; if the third attempt also fails, it exits with code 5.
 
 ### Moving and deleting pages
 
-`wikictl mv global/old.md global/new.md` moves a page and rewrites every `[text](path)` link to it. `wikictl mv projects/app/ projects/app-v2/` moves a whole directory. Links written as bare paths are not rewritten; run `wikictl lint` afterwards to find them.
+`wikictl mv global/old.md global/new.md` moves a page and rewrites every `[text](path)` link to it. `wikictl mv projects/app/ projects/app-v2/` moves a whole directory. Links written as bare paths are not rewritten; run `wikictl --dirs . lint` afterwards to find them in the whole wiki.
 
-`wikictl rm <path>` deletes a page without touching the pages that link to it; `wikictl lint` lists the links that are now broken.
+`mv` takes no `--base`. A change pushed to a linking page between the time `mv` reads it and the time `mv` pushes is overwritten. `--no-fetch` makes this more likely.
+
+`wikictl rm <path>` deletes a page without touching the pages that link to it; `wikictl --dirs . lint` lists the links that are now broken.
 
 ### Seeing the structure of the wiki
 
-Before deciding where a page goes, `wikictl dirs` shows every directory of the wiki with its page count and the summary of its `index.md`. `wikictl context` shows which directories `search`, `ls` and `lint` look at from the current directory.
+Before deciding where a page goes, `wikictl dirs` shows every directory of the wiki with its page count and the `summary` of its `index.md`. `wikictl context` shows which directories `search`, `ls` and `lint` look at from the current directory.
 
 ## Configuration
 
-wikictl reads the file given by `--config <path>`; otherwise the file named by `$WIKICTL_CONFIG`; otherwise `$XDG_CONFIG_HOME/wikictl/config.yaml` (`~/.config/wikictl/config.yaml` when `$XDG_CONFIG_HOME` is not set).
+wikictl reads the configuration from the first of these that applies:
+
+1. the file given by `--config <path>`
+2. the file named by `$WIKICTL_CONFIG`
+3. `$XDG_CONFIG_HOME/wikictl/config.yaml` (`~/.config/wikictl/config.yaml` when `$XDG_CONFIG_HOME` is not set)
 
 | Key | Required | Meaning |
 |---|---|---|
 | `repo` | yes | URL or path of the wiki repository; may be set in a profile instead |
-| `branch` | no | Branch to use; when omitted, taken from the remote HEAD, or `main` when that cannot be determined (see [Mirror](#mirror)) |
-| `author.name`, `author.email` | no | Commit author and committer; falls back to `git config user.name` and `user.email`. A write fails with exit code 2 when neither is set |
+| `branch` | no | Branch to use. When omitted: the branch saved in the mirror, else the remote HEAD, else `main` (see [Mirror](#mirror)) |
+| `author.name`, `author.email` | no | Commit author and committer. Each falls back separately to `git config user.name` or `user.email` as seen from the current directory; a write fails with exit code 2 when either stays empty |
 | `machine` | no | Name for `machines/<name>/`; defaults to the hostname up to the first `.` |
 | `dirs` | no | Fixed list of search directories instead of the default four |
 | `projects` | no | Map from the repository name of the `origin` remote to the directory name under `projects/` |
@@ -273,7 +286,7 @@ The profile is chosen by the first of these that applies:
 1. `--profile <name>`
 2. `$WIKICTL_PROFILE`
 3. `match`: a profile matches when any of its `remotes` or `paths` matches.
-   - `remotes` are globs over the `origin` remote of the current directory, written as `host/path` in lowercase without scheme, user, port and `.git`, so the SSH and HTTPS URLs of the same repository match the same pattern.
+   - `remotes` are globs over the `origin` remote of the current directory. The remote is normalised to lowercase `host/path` without scheme, user, port and `.git` before the comparison, so the SSH and HTTPS URLs of the same repository match the same pattern.
    - A `*` in the middle matches one path element; a trailing `/*` matches every path below it. For example, `gitlab.example.com/team/*` matches `team/app` and the subgroup repository `team/sub/app`, but not `team` itself, while `gitlab.example.com/*/app` matches `team/app` but not `team/sub/app`.
    - `paths` are directories given as absolute paths or paths starting with `~`; the current directory matches when it is one of them or below one.
    - If more than one profile matches, the command fails with exit code 2.
@@ -284,7 +297,7 @@ An unknown profile name is an error (exit code 2). In a profile, `author.name` a
 
 ## Output
 
-Without `--json`, commands print text on standard output. With `--json`, they print one JSON object; `wikictl help <command>` lists its fields.
+Without `--json`, commands print text on standard output. With `--json`, every command except `help` prints one JSON object; `wikictl help <command>` lists its fields.
 
 Warnings go to standard error in both modes, one per line:
 
@@ -292,7 +305,7 @@ Warnings go to standard error in both modes, one per line:
 
 Errors go to standard error as `wikictl: <message>`. With `--json`, they are printed on standard output as `{"error": "<kind>", "message": "..."}`, where `<kind>` is `error`, `usage`, `conflict`, `invalid` or `git`.
 
-A conflict from `put` carries the current page. As text, one line goes to standard error and the current content to standard output:
+When `put` reports a conflict, it also prints the current content of the page. As text, one line goes to standard error and the current content to standard output:
 
     wikictl: conflict (<reason>): <path> sha=<sha>
 
@@ -310,7 +323,7 @@ With `--json`:
 | 1 | error, for example a missing page |
 | 2 | usage or configuration error |
 | 3 | conflict: the page changed since it was read |
-| 4 | the page violates the wiki format: `put` and `mv` reject invalid frontmatter or a bad path; `lint` exits with 4 on any finding |
+| 4 | the page violates the wiki format: `put` rejects invalid frontmatter or a bad path, and `mv` a bad destination path; `lint` exits with 4 on any finding |
 | 5 | a git command failed |
 
 ### Lint codes
@@ -324,14 +337,14 @@ With `--json`:
 | `missing_summary` | No `summary` or `description`, or no frontmatter | warning |
 | `links_syntax` | A line in the Links section is not a valid link line | warning |
 | `broken_link` | A link points to a page that does not exist | warning |
-| `name_style` | A name is not lowercase ASCII letters, digits and hyphens | warning |
+| `name_style` | A name is not made of lowercase ASCII letters, digits and hyphens, or starts with a hyphen | warning |
 | `case_collision` | Names in one directory differ only by case | not checked |
 
 ## Mirror
 
-wikictl keeps one bare mirror per repository under `$XDG_CACHE_HOME/wikictl/` (`~/.cache/wikictl/` when `$XDG_CACHE_HOME` is not set). `wikictl context` shows its path.
+wikictl keeps one bare mirror per `repo` value under `$XDG_CACHE_HOME/wikictl/` (`~/.cache/wikictl/` when `$XDG_CACHE_HOME` is not set). `wikictl context` shows its path.
 
-- When `branch` is not configured, the branch is taken from the remote HEAD the first time and saved in the mirror. A later change of the remote's default branch is not followed; set `branch`, or delete the mirror.
+- The branch in use is saved in the mirror. When `branch` is not configured, the saved branch is used, and the remote HEAD is read only when nothing is saved yet. A later change of the remote's default branch, or the removal of `branch` from the configuration, is therefore not followed until you set `branch` or delete the mirror. A profile without `branch` uses whichever branch another profile with the same `repo` saved last.
 - If the mirror ever breaks, delete it; the next command recreates it.
 
 ## Development
