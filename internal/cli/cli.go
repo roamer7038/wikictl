@@ -124,8 +124,10 @@ Output: items[] {dir, pages, summary}; summary is "" without an index.md.`,
 		detail: `Show the config file, mirror directory, branch, author, the machine and
 project names (as used for machines/<name>/ and projects/<name>/), the origin
 remote of the current directory, and the search directories that other
-commands use by default, each with the number of pages directly in it; 0
-means no page is directly in it, even if it has subdirectories with pages.
+commands use by default, each with the number of pages at any depth under it
+("." counts the whole wiki); 0 means the directory has no page yet. Unlike
+dirs, which counts only the pages directly in each directory, pages in
+subdirectories are included.
 
 Output: {config, mirror, branch, author, machine, project, remote, dirs, pages}.`,
 		run: (*app).cmdContext},

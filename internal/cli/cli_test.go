@@ -407,3 +407,27 @@ func TestContextPages(t *testing.T) {
 		t.Errorf("context text: %s", out)
 	}
 }
+
+func TestContextPagesRecursive(t *testing.T) {
+	cfg := setup(t)
+	code, out, _ := runCLI(t, cfg, "", "context", "--json", "--dirs", "projects,.,./,projects/,./global,projects/none")
+	var res struct {
+		Pages map[string]int
+	}
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("unmarshal %q: %v", out, err)
+	}
+	if code != 0 {
+		t.Fatalf("context: code=%d %s", code, out)
+	}
+	want := map[string]int{"projects": 1, ".": 4, "./": 4, "projects/": 1, "./global": 2, "projects/none": 0}
+	for d, n := range want {
+		if res.Pages[d] != n {
+			t.Errorf("pages[%s]=%d want %d: %s", d, res.Pages[d], n, out)
+		}
+	}
+	_, out, _ = runCLI(t, cfg, "", "context", "--dirs", ".")
+	if !strings.Contains(out, "dirs: . (4 pages)\n") {
+		t.Errorf("context text: %s", out)
+	}
+}

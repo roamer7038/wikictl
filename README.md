@@ -69,7 +69,7 @@ Global flags, accepted before or after the command: `--json`, `--dirs a,b`, `--c
 
 ### Where commands look
 
-By default a command searches up to three directories: `global/`, `projects/<name>/` where `<name>` comes from the `origin` remote of the current directory (skipped outside a git repository), and `machines/<name>/` where `<name>` is the hostname. `--dirs a,b` overrides the list and `wikictl context` shows it, with the number of pages directly in each directory (0 when no page is directly in it).
+By default a command searches up to three directories: `global/`, `projects/<name>/` where `<name>` comes from the `origin` remote of the current directory (skipped outside a git repository), and `machines/<name>/` where `<name>` is the hostname. `--dirs a,b` overrides the list and `wikictl context` shows it, with the number of pages at any depth under each directory (0 when the directory has no page yet; unlike `wikictl dirs`, pages in subdirectories are included).
 
 To see the structure of the whole wiki before deciding where a page goes, `wikictl dirs` lists every directory that directly contains a page, with its page count and the `summary` of its `index.md` (`(no index)` when there is none). It ignores the search directories; `wikictl dirs projects` restricts the list to the directories under `projects/`.
 

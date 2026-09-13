@@ -261,10 +261,9 @@ func (a *app) cmdContext(c *command, args []string) int {
 	if err != nil {
 		return a.fail(ExitGit, "git", err.Error())
 	}
-	counts := countPages(paths)
 	pages := map[string]int{}
 	for _, d := range a.dirs {
-		pages[d] = counts[strings.TrimSuffix(d, "/")+"/"]
+		pages[d] = countPagesUnder(paths, d)
 	}
 	out := map[string]any{"config": a.cfg.Path, "mirror": a.repo.Dir, "branch": a.repo.Branch, "author": au.Name,
 		"machine": machine, "project": project, "remote": remote, "dirs": a.dirs, "pages": pages}
@@ -348,6 +347,22 @@ func countPages(paths []string) map[string]int {
 		counts[path.Dir(p)+"/"]++
 	}
 	return counts
+}
+
+// countPagesUnder returns the number of paths at any depth below dir;
+// "." counts every path.
+func countPagesUnder(paths []string, dir string) int {
+	d := path.Clean(dir)
+	if d == "." {
+		return len(paths)
+	}
+	n := 0
+	for _, p := range paths {
+		if strings.HasPrefix(p, d+"/") {
+			n++
+		}
+	}
+	return n
 }
 
 func plural(n int, unit string) string {
