@@ -26,11 +26,12 @@ type Issue struct {
 }
 
 var (
-	reScheme   = regexp.MustCompile(`^[a-z][a-z0-9+.-]*:`)
-	reLinkLine = regexp.MustCompile(`^- ([a-z][a-z0-9_]*): (.+)$`)
-	reMDLink   = regexp.MustCompile(`\]\(([^)]*)\)`)
-	reInline   = regexp.MustCompile("`[^`]*`")
-	reBracket  = regexp.MustCompile(`^\[[^\]]*\]\(([^)]*)\)$`)
+	reScheme  = regexp.MustCompile(`^[a-z][a-z0-9+.-]*:`)
+	reBullet  = regexp.MustCompile(`^\s*[-*+]\s+(.+)$`)
+	reTyped   = regexp.MustCompile(`^([a-z][a-z0-9_]*): (.+)$`)
+	reMDLink  = regexp.MustCompile(`\]\(([^)]*)\)`)
+	reInline  = regexp.MustCompile("`[^`]*`")
+	reBracket = regexp.MustCompile(`^\[[^\]]*\]\(([^)]*)\)$`)
 )
 
 // ErrBadDest is returned for link destinations that cannot refer to a page:
@@ -62,34 +63,53 @@ func ResolveDest(pagePath, dest string) (target string, isURL bool, err error) {
 }
 
 // ParseLinks interprets the Links section. lines starts with the heading line.
+// A line is a bullet ("-", "*" or "+", possibly indented) followed by
+// "<type>: <target> | <note>"; a bullet holding only "<target> | <note>" is
+// an untyped relation of type "see_also".
 func ParseLinks(lines []Line, pagePath string) ([]Link, []Issue) {
 	var links []Link
 	var issues []Issue
 	if len(lines) == 0 {
 		return nil, nil
 	}
+	const syntaxMsg = "line is not of the form `- <type>: <target> | <note>` or `- <target>`"
 	for _, l := range lines[1:] {
 		if strings.TrimSpace(l.Text) == "" {
 			continue
 		}
-		m := reLinkLine.FindStringSubmatch(l.Text)
+		m := reBullet.FindStringSubmatch(l.Text)
 		if m == nil {
-			issues = append(issues, Issue{Path: pagePath, Line: l.N, Code: "links_syntax", Message: "line is not of the form `- <type>: <target> | <note>`"})
+			issues = append(issues, Issue{Path: pagePath, Line: l.N, Code: "links_syntax", Message: syntaxMsg})
 			continue
 		}
-		target, note := m[2], ""
+		typ, target, note := "", m[1], ""
+		if t := reTyped.FindStringSubmatch(target); t != nil {
+			typ, target = t[1], t[2]
+		}
 		if i := strings.Index(target, " | "); i >= 0 {
 			target, note = target[:i], strings.TrimSpace(target[i+3:])
 		}
-		if b := reBracket.FindStringSubmatch(strings.TrimSpace(target)); b != nil {
+		target = strings.TrimSpace(target)
+		if b := reBracket.FindStringSubmatch(target); b != nil {
 			target = b[1]
+		}
+		if typ == "" && strings.ContainsAny(target, " \t") {
+			issues = append(issues, Issue{Path: pagePath, Line: l.N, Code: "links_syntax", Message: syntaxMsg})
+			continue
 		}
 		got, isURL, err := ResolveDest(pagePath, target)
 		if err != nil {
-			issues = append(issues, Issue{Path: pagePath, Line: l.N, Code: "links_syntax", Message: "invalid link destination: " + target})
+			msg := syntaxMsg
+			if typ != "" {
+				msg = "invalid link destination: " + target
+			}
+			issues = append(issues, Issue{Path: pagePath, Line: l.N, Code: "links_syntax", Message: msg})
 			continue
 		}
-		links = append(links, Link{Type: m[1], Target: got, Note: note, Line: l.N, IsURL: isURL})
+		if typ == "" {
+			typ = "see_also"
+		}
+		links = append(links, Link{Type: typ, Target: got, Note: note, Line: l.N, IsURL: isURL})
 	}
 	return links, issues
 }
