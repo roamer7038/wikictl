@@ -345,6 +345,7 @@ With `--json`:
 wikictl keeps one bare mirror per `repo` value under `$XDG_CACHE_HOME/wikictl/` (`~/.cache/wikictl/` when `$XDG_CACHE_HOME` is not set). `wikictl context` shows its path.
 
 - The branch in use is saved in the mirror. When `branch` is not configured, the saved branch is used, and the remote HEAD is read only when nothing is saved yet. A later change of the remote's default branch, or the removal of `branch` from the configuration, is therefore not followed until you set `branch` or delete the mirror. A profile without `branch` uses whichever branch another profile with the same `repo` saved last.
+- git in the mirror runs without the repository-local variables listed by `git rev-parse --local-env-vars` (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE` and others) and without `GIT_NAMESPACE`, so wikictl works on the wiki repository even when called from a git hook or alias of another repository. Settings passed with `git -c` or `GIT_CONFIG_COUNT` are among these variables and do not apply to the mirror; put such settings in a git configuration file instead. Other variables, such as `GIT_SSH_COMMAND` and `GIT_CONFIG_GLOBAL`, are passed on.
 - If the mirror ever breaks, delete it; the next command recreates it.
 
 ## Development
