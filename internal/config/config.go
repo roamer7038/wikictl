@@ -248,10 +248,10 @@ func NormalizeRemote(remote string) string {
 		if j := strings.LastIndex(host, "@"); j >= 0 {
 			host = host[j+1:]
 		}
-		r = host + "/" + r[i+1:]
+		r = host + "/" + strings.TrimPrefix(r[i+1:], "/")
 	}
-	r = strings.TrimSuffix(strings.TrimSuffix(r, "/"), ".git")
-	return strings.ToLower(r)
+	r = strings.ToLower(strings.TrimSuffix(r, "/"))
+	return strings.TrimSuffix(r, ".git")
 }
 
 // expandHome replaces a leading ~ with the home directory.

@@ -160,6 +160,8 @@ func TestNormalizeRemote(t *testing.T) {
 		"https://github.com/org/app":      "github.com/org/app",
 		"https://u:p@github.com/org/app/": "github.com/org/app",
 		"ssh://git@h:2222/x/y.git":        "h/x/y",
+		"git@h:/x/y.git":                  "h/x/y",
+		"git@github.com:org/App.GIT":      "github.com/org/app",
 		"/srv/git/wiki.git":               "/srv/git/wiki",
 		"":                                "",
 	} {
