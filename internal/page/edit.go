@@ -35,7 +35,7 @@ func AddAlias(content []byte, alias string) []byte {
 		lines = nil
 	}
 	entry := yamlString(alias)
-	var value ast.Node
+	var key, value ast.Node
 	switch b := body.(type) {
 	case nil:
 	case *ast.MappingNode:
@@ -44,7 +44,7 @@ func AddAlias(content []byte, alias string) []byte {
 		}
 		for _, mv := range b.Values {
 			if mv.Key.GetToken().Value == "aliases" {
-				value = mv.Value
+				key, value = mv.Key, mv.Value
 				break
 			}
 		}
@@ -55,13 +55,38 @@ func AddAlias(content []byte, alias string) []byte {
 	case nil:
 		lines = append(lines, "aliases:", "  - "+entry)
 	case *ast.NullNode:
-		tk := v.GetToken()
-		l := tk.Position.Line - 1
-		i := byteIndex(lines[l], tk.Position.Column)
-		if strings.HasPrefix(lines[l][i:], tk.Value) {
-			lines[l] = lines[l][:i] + "[" + yamlFlowString(alias) + "]" + lines[l][i+len(tk.Value):]
-		} else {
-			lines = insertLine(lines, l+1, "  - "+entry)
+		// The value is read from the text after the key's colon because the
+		// parser does not report a reliable column for a null scalar followed
+		// by spaces or tabs.
+		kl := key.GetToken().Position.Line - 1
+		colon := mappingColon(lines[kl], byteIndex(lines[kl], key.GetToken().Position.Column))
+		if colon < 0 {
+			return content
+		}
+		l := kl
+		start, end := scalarSpan(lines[l], colon+1)
+		if start == end {
+			indent := len(lines[kl]) - len(strings.TrimLeft(lines[kl], " "))
+			for i := kl + 1; i < len(lines); i++ {
+				t := strings.TrimRight(lines[i], " \t\r")
+				s := strings.TrimLeft(t, " ")
+				if s == "" || s[0] == '#' {
+					continue
+				}
+				if len(t)-len(s) > indent {
+					l = i
+					start, end = scalarSpan(lines[i], 0)
+				}
+				break
+			}
+		}
+		switch lines[l][start:end] {
+		case "":
+			lines = insertLine(lines, kl+1, "  - "+entry)
+		case "~", "null", "Null", "NULL":
+			lines[l] = lines[l][:start] + "[" + yamlFlowString(alias) + "]" + lines[l][end:]
+		default:
+			return content
 		}
 	case *ast.SequenceNode:
 		for _, item := range v.Values {
@@ -121,6 +146,38 @@ func byteIndex(line string, column int) int {
 		n++
 	}
 	return len(line)
+}
+
+// mappingColon returns the byte index of the colon that ends the mapping key
+// starting at byte from of line, or -1 when there is none.
+func mappingColon(line string, from int) int {
+	for i := from; i < len(line); i++ {
+		if line[i] == ':' && (i+1 == len(line) || strings.IndexByte(" \t\r", line[i+1]) >= 0) {
+			return i
+		}
+	}
+	return -1
+}
+
+// scalarSpan returns the byte range of the text of line after byte from,
+// without a trailing comment and surrounding spaces, tabs, and carriage
+// returns. The range is empty when there is no such text.
+func scalarSpan(line string, from int) (start, end int) {
+	end = len(line)
+	for i := from; i < len(line); i++ {
+		if line[i] == '#' && (i == from || line[i-1] == ' ' || line[i-1] == '\t') {
+			end = i
+			break
+		}
+	}
+	start = from
+	for start < end && strings.IndexByte(" \t\r", line[start]) >= 0 {
+		start++
+	}
+	for end > start && strings.IndexByte(" \t\r", line[end-1]) >= 0 {
+		end--
+	}
+	return start, end
 }
 
 // lastNonSpace returns the last non-space character before byte i of line l.
