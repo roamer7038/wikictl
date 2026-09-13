@@ -333,8 +333,6 @@ func TestLinkExistence(t *testing.T) {
 	mustRun(t, "", "git", "clone", "-q", remote, work)
 	os.MkdirAll(filepath.Join(work, "global/sub.md"), 0o755)
 	os.WriteFile(filepath.Join(work, "README.md"), []byte("# wiki\n"), 0o644)
-	os.MkdirAll(filepath.Join(work, "misc"), 0o755)
-	os.WriteFile(filepath.Join(work, "misc", "a b.md"), []byte("---\nsummary: a\n---\n"), 0o644)
 	os.WriteFile(filepath.Join(work, "global/sub.md/a.md"), []byte("---\nsummary: a\n---\n"), 0o644)
 	mustRun(t, work, "git", "add", "-A")
 	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "extra")
