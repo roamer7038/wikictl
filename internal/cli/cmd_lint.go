@@ -20,10 +20,6 @@ func (a *app) cmdLint(c *command, args []string) int {
 	if err != nil {
 		return a.fail(ExitGit, "git", err.Error())
 	}
-	exists := map[string]bool{}
-	for _, p := range all {
-		exists[p] = true
-	}
 	checked := map[string]bool{}
 	for _, p := range paths {
 		checked[p] = true
@@ -42,15 +38,17 @@ func (a *app) cmdLint(c *command, args []string) int {
 			items = append(items, is)
 		}
 	}
+	var pages []*page.Page
 	for _, p := range paths {
 		pg := page.Parse(p, contents[p])
 		items = append(items, pg.Issues...)
-		for _, l := range append(pg.Links, pg.Mentions...) {
-			if !l.IsURL && !exists[l.Target] {
-				items = append(items, page.Issue{Path: p, Line: l.Line, Code: "broken_link", Message: "link target does not exist: " + l.Target})
-			}
-		}
+		pages = append(pages, pg)
 	}
+	broken, err := a.brokenLinks(pages)
+	if err != nil {
+		return a.fail(ExitGit, "git", err.Error())
+	}
+	items = append(items, broken...)
 	sort.SliceStable(items, func(i, j int) bool {
 		if items[i].Path != items[j].Path {
 			return items[i].Path < items[j].Path
@@ -66,4 +64,34 @@ func (a *app) cmdLint(c *command, args []string) int {
 		return ExitInvalid
 	}
 	return ExitOK
+}
+
+// brokenLinks returns a broken_link issue for every link and mention whose
+// target is not a file in the wiki. lint and put share it so that both agree
+// on which targets exist.
+func (a *app) brokenLinks(pages []*page.Page) ([]page.Issue, error) {
+	var targets []string
+	for _, pg := range pages {
+		for _, l := range append(pg.Links, pg.Mentions...) {
+			if !l.IsURL {
+				targets = append(targets, l.Target)
+			}
+		}
+	}
+	if len(targets) == 0 {
+		return nil, nil
+	}
+	found, err := a.repo.Cat(targets)
+	if err != nil {
+		return nil, err
+	}
+	var items []page.Issue
+	for _, pg := range pages {
+		for _, l := range append(pg.Links, pg.Mentions...) {
+			if _, ok := found[l.Target]; !l.IsURL && !ok {
+				items = append(items, page.Issue{Path: pg.Path, Line: l.Line, Code: "broken_link", Message: "link target does not exist: " + l.Target})
+			}
+		}
+	}
+	return items, nil
 }

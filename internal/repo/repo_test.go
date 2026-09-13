@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -88,6 +89,71 @@ func TestOpenAndFetch(t *testing.T) {
 	unlock()
 }
 
+func TestOpenConcurrent(t *testing.T) {
+	remote := newRemote(t, true)
+	for round := 0; round < 5; round++ {
+		mirror := filepath.Join(t.TempDir(), "m")
+		var wg sync.WaitGroup
+		errs := make(chan error, 8)
+		for i := 0; i < 8; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				r, err := Open(mirror, remote, "")
+				if err == nil {
+					err = r.Fetch()
+				}
+				errs <- err
+			}()
+		}
+		wg.Wait()
+		close(errs)
+		for err := range errs {
+			if err != nil {
+				t.Fatalf("round %d: %v", round, err)
+			}
+		}
+	}
+}
+
+func TestOpenLeftoverDir(t *testing.T) {
+	remote := newRemote(t, true)
+	empty := filepath.Join(t.TempDir(), "m")
+	if err := os.MkdirAll(empty, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r, err := Open(empty, remote, "")
+	if err != nil {
+		t.Fatalf("empty dir: %v", err)
+	}
+	if err := r.Fetch(); err != nil {
+		t.Fatal(err)
+	}
+	for name, setup := range map[string]func(string) error{
+		"non-empty dir": func(p string) error {
+			if err := os.MkdirAll(p, 0o755); err != nil {
+				return err
+			}
+			return os.WriteFile(filepath.Join(p, "stray"), nil, 0o644)
+		},
+		"file": func(p string) error { return os.WriteFile(p, nil, 0o644) },
+	} {
+		mirror := filepath.Join(t.TempDir(), "m")
+		if err := setup(mirror); err != nil {
+			t.Fatal(err)
+		}
+		_, err := Open(mirror, remote, "")
+		if err == nil || !strings.Contains(err.Error(), "is not a git repository; delete it") {
+			t.Errorf("%s: err=%v", name, err)
+		}
+		if name == "non-empty dir" {
+			if _, err := os.Stat(filepath.Join(mirror, "stray")); err != nil {
+				t.Errorf("stray file must be kept: %v", err)
+			}
+		}
+	}
+}
+
 func TestOpenEmptyRemote(t *testing.T) {
 	remote := newRemote(t, false)
 	r, err := Open(filepath.Join(t.TempDir(), "m"), remote, "main")
@@ -151,6 +217,19 @@ func TestRead(t *testing.T) {
 	}
 	if s, _ := r.BlobSHA(h, "none.md"); s != "" {
 		t.Error("missing must be empty")
+	}
+}
+
+func TestCatSkipsTrees(t *testing.T) {
+	remote := newRemote(t, true)
+	seedRemote(t, remote, map[string]string{"global/sub.md/a.md": "---\nsummary: a\n---\n"})
+	r := openFetched(t, remote)
+	c, err := r.Cat([]string{"global/sub.md", "global/index.md"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := c["global/sub.md"]; ok || !strings.HasPrefix(string(c["global/index.md"]), "---") {
+		t.Errorf("cat=%q", c)
 	}
 }
 

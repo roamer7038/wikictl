@@ -17,7 +17,7 @@ flowchart LR
 
 ## Requirements
 
-- Linux or macOS.
+- Linux or macOS. wikictl also builds on other operating systems such as Windows, but there every command that reads or writes the wiki fails with exit code 5, because wikictl cannot lock the mirror.
 - `git` on `PATH`.
 - Fetch and push access to the wiki repository without any prompt (a credential helper, an SSH agent or file access for a local path). wikictl runs git with prompts disabled, so a command that needs a password fails instead of waiting. Every command fetches first, so this applies to reading as well.
 - Direct pushes to the wiki branch. Branch protection that requires pull requests blocks every write.
@@ -201,7 +201,7 @@ Details of each command:
 - `search` matches the words as fixed strings, ignoring case, anywhere in the file, frontmatter included. Results are ordered by last update, newest first; with `--any`, pages matching more words come first.
 - `get` prints the parsed page, not the file as stored. As text, it shows the body without the frontmatter and the Links section, the links and the backlinks from other pages; the frontmatter is included only with `--json`.
 - `put` takes the whole page, frontmatter included, on standard input. Invalid frontmatter or a bad path is rejected with exit code 4; other problems (`missing_summary`, `broken_link`, `links_syntax`, `name_style`) are printed as warnings and the page is written.
-- `mv` rewrites the links inside the moved page and the links to it from other pages in the same commit. It also normalises relative page links written in another form, such as `./b.md` to `b.md`, in any page of the wiki, so pages unrelated to the move can be part of the commit; the body of a rewritten page gets LF line endings, and a BOM is removed. When the file name changes, the old file name (without `.md`) is added to `aliases` if the page has frontmatter. `mv` fails with exit code 1 if the destination exists; the directory form fails if any page exists under `<newdir>/`.
+- `mv` rewrites the links inside the moved page and the links to it from other pages in the same commit. It also normalises relative page links written in another form, such as `./b.md` to `b.md`, in any page of the wiki, so pages unrelated to the move can be part of the commit; the body of a rewritten page gets LF line endings, and a BOM is removed. When the file name changes, the old file name (without `.md`) is added to `aliases` unless it is already listed. The alias is added only when the page has frontmatter that is empty or a block-style YAML mapping, and `aliases` is absent, a sequence (block or flow style) or null (`aliases:`, `aliases: ~` or `aliases: null`). Otherwise, for example when `aliases` is a string or the page has no frontmatter, the page is moved without adding the alias and no warning is printed. `mv` fails with exit code 1 if the destination exists; the directory form fails if any page exists under `<newdir>/`.
 - `rm` leaves the pages that link to the deleted page unchanged; `lint` reports those links as `broken_link`.
 - `lint` checks the given pages, or every page under the search directories; `wikictl --dirs . lint` checks the whole wiki. `case_collision` is always checked against the whole wiki.
 - `dirs` lists every directory that directly contains a page, with the number of pages directly in it (deprecated pages included) and the `summary` of its `index.md`, or `(no index)`. It ignores the search directories; `wikictl dirs projects` restricts the list to the directories under `projects/`.
@@ -336,7 +336,7 @@ With `--json`:
 | `frontmatter_invalid` | The frontmatter is not valid YAML | rejected |
 | `missing_summary` | No `summary` or `description`, or no frontmatter | warning |
 | `links_syntax` | A line in the Links section is not a valid link line | warning |
-| `broken_link` | A link points to a page that does not exist | warning |
+| `broken_link` | A link points to a file that does not exist in the wiki repository | warning |
 | `name_style` | A name is not made of lowercase ASCII letters, digits and hyphens, or starts with a hyphen | warning |
 | `case_collision` | Names in one directory differ only by case | not checked |
 
@@ -345,14 +345,18 @@ With `--json`:
 wikictl keeps one bare mirror per `repo` value under `$XDG_CACHE_HOME/wikictl/` (`~/.cache/wikictl/` when `$XDG_CACHE_HOME` is not set). `wikictl context` shows its path.
 
 - The branch in use is saved in the mirror. When `branch` is not configured, the saved branch is used, and the remote HEAD is read only when nothing is saved yet. A later change of the remote's default branch, or the removal of `branch` from the configuration, is therefore not followed until you set `branch` or delete the mirror. A profile without `branch` uses whichever branch another profile with the same `repo` saved last.
+- git in the mirror runs without the repository-local variables listed by `git rev-parse --local-env-vars` (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE` and others) and without `GIT_NAMESPACE`, so wikictl works on the wiki repository even when called from a git hook or alias of another repository. Settings passed with `git -c` or `GIT_CONFIG_COUNT` are among these variables and do not apply to the mirror; put such settings in a git configuration file instead. Other variables, such as `GIT_SSH_COMMAND` and `GIT_CONFIG_GLOBAL`, are passed on.
 - If the mirror ever breaks, delete it; the next command recreates it.
+- When the mirror does not exist yet but its path holds a file or a non-empty directory that is not a git repository, wikictl leaves it untouched and exits with code 5 (`mirror <path> is not a git repository; delete it and run the command again`). An empty directory there is replaced by the mirror.
 
 ## Development
 
     go test ./...
     go build -o wikictl ./cmd/wikictl
 
-GitHub Actions runs `gofmt -l`, `go vet` and `go test` on pushes to `main` and on pull requests. Pushing a tag that starts with `v` builds the binaries and `checksums.txt` with GoReleaser and publishes them as a release.
+On pushes to `main` and on pull requests, GitHub Actions runs `gofmt -l`, `go vet` and `go test -race` on Linux, `go test -race` on macOS, `staticcheck` together with a check that `go mod tidy` leaves `go.mod` and `go.sum` unchanged, and `govulncheck`. Pushing a tag that starts with `v` builds the binaries and `checksums.txt` with GoReleaser and publishes them as a release.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the branch, pull request and release rules.
 
 ## License
 

@@ -110,7 +110,7 @@ func (r *Repo) GrepDeprecated(dirs []string) (map[string]bool, error) {
 }
 
 // Cat returns the contents of paths using one "cat-file --batch" call.
-// Paths that do not exist are absent from the result.
+// Paths that do not exist or are not files are absent from the result.
 func (r *Repo) Cat(paths []string) (map[string][]byte, error) {
 	res := map[string][]byte{}
 	if len(paths) == 0 {
@@ -131,7 +131,7 @@ func (r *Repo) Cat(paths []string) (map[string][]byte, error) {
 			break
 		}
 		f := strings.Fields(hdr)
-		if len(f) < 3 || f[1] != "blob" {
+		if len(f) < 3 {
 			continue // "<object> missing"
 		}
 		n, _ := strconv.Atoi(f[2])
@@ -140,7 +140,9 @@ func (r *Repo) Cat(paths []string) (map[string][]byte, error) {
 			return nil, err
 		}
 		rd.ReadByte()
-		res[p] = buf
+		if f[1] == "blob" {
+			res[p] = buf
+		}
 	}
 	return res, nil
 }

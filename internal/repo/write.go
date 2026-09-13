@@ -2,9 +2,12 @@ package repo
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"math/rand/v2"
 	"os"
 	"strings"
+	"time"
 )
 
 // Change is one file in a commit. Base is the optimistic-lock check used by
@@ -41,8 +44,9 @@ const zeroSHA = "0000000000000000000000000000000000000000"
 
 // Commit fetches, checks every Base, builds a commit on top of the remote
 // branch and pushes it with --force-with-lease. When another push wins the
-// race the whole sequence is retried, up to three attempts. It never creates
-// a working tree or a merge state.
+// race the whole sequence is retried, up to three attempts, after a random
+// wait so that writers rejected together do not retry together. It never
+// creates a working tree or a merge state.
 func (r *Repo) Commit(changes []Change, msg string, au Author) (*Result, error) {
 	unlock, err := r.lock()
 	if err != nil {
@@ -50,7 +54,12 @@ func (r *Repo) Commit(changes []Change, msg string, au Author) (*Result, error) 
 	}
 	defer unlock()
 	var last error
+	var wait time.Duration
 	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			time.Sleep(retryWait(wait, attempt))
+		}
+		start := time.Now()
 		if err := r.Fetch(); err != nil {
 			return nil, err
 		}
@@ -75,8 +84,20 @@ func (r *Repo) Commit(changes []Change, msg string, au Author) (*Result, error) 
 		if !retry {
 			return nil, err
 		}
+		wait = time.Since(start)
 	}
 	return nil, last
+}
+
+// retryWait returns a random duration in [0, 2^(attempt+3)*d), where d is
+// how long the rejected attempt took. Scaling by d keeps the writers spread
+// out whether a push takes milliseconds or seconds.
+func retryWait(d time.Duration, attempt int) time.Duration {
+	n := int64(d) << (attempt + 3)
+	if n <= 0 {
+		return 0
+	}
+	return time.Duration(rand.Int64N(n))
 }
 
 func (r *Repo) conflict(path, reason, sha string) *Conflict {
@@ -89,8 +110,8 @@ func (r *Repo) conflict(path, reason, sha string) *Conflict {
 }
 
 // buildAndPush creates the commit with plumbing commands in a temporary index
-// and pushes it. retry is true when the push was rejected because the remote
-// moved (stale lease).
+// and pushes it. retry is true when the push was rejected because another push
+// moved or locked the remote branch.
 func (r *Repo) buildAndPush(head string, changes []Change, msg string, au Author) (res *Result, retry bool, err error) {
 	idx, err := os.CreateTemp("", "wikictl-index-*")
 	if err != nil {
@@ -162,11 +183,33 @@ func (r *Repo) buildAndPush(head string, changes []Change, msg string, au Author
 	case "stale":
 		return nil, true, fmt.Errorf("push rejected: the remote branch moved")
 	default:
+		retry := r.remoteMoved(head, pout, perr)
 		if perr != nil {
-			return nil, false, perr
+			return nil, retry, perr
 		}
-		return nil, false, fmt.Errorf("push failed: %s", strings.TrimSpace(pout))
+		return nil, retry, fmt.Errorf("push failed: %s", strings.TrimSpace(pout))
 	}
+}
+
+// remoteMoved reports whether a failed push lost a race with another push.
+// The server rejects the ref update with "cannot lock ref" when another push
+// updated or locked the branch first; that message appears in the porcelain
+// line or on stderr depending on the server. Otherwise the branch is fetched
+// and compared with head.
+func (r *Repo) remoteMoved(head, pout string, perr error) bool {
+	msg := pout
+	var ge *GitError
+	if errors.As(perr, &ge) {
+		msg += ge.Stderr
+	}
+	if strings.Contains(msg, "cannot lock ref") {
+		return true
+	}
+	if r.Fetch() != nil {
+		return false
+	}
+	cur, _ := r.Head()
+	return cur != head
 }
 
 // pushStatus classifies the refspec line of "push --porcelain" output as

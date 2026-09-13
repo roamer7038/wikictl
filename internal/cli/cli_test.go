@@ -373,6 +373,38 @@ func TestMvAndLint(t *testing.T) {
 	})
 }
 
+// TestLinkExistence checks that put and lint agree on which link targets exist:
+// any file in the tree counts, and a directory does not.
+func TestLinkExistence(t *testing.T) {
+	cfg := setup(t)
+	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
+	work := filepath.Join(t.TempDir(), "w")
+	mustRun(t, "", "git", "clone", "-q", remote, work)
+	os.MkdirAll(filepath.Join(work, "global/sub.md"), 0o755)
+	os.WriteFile(filepath.Join(work, "README.md"), []byte("# wiki\n"), 0o644)
+	os.WriteFile(filepath.Join(work, "global/sub.md/a.md"), []byte("---\nsummary: a\n---\n"), 0o644)
+	mustRun(t, work, "git", "add", "-A")
+	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "extra")
+	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
+
+	code, _, errs := runCLI(t, cfg, "---\nsummary: r\n---\n# r\n[r](../README.md)\n", "put", "global/r.md")
+	if code != 0 || strings.Contains(errs, "broken_link") {
+		t.Errorf("put link to README.md: code=%d errs=%q", code, errs)
+	}
+	if code, out, _ := runCLI(t, cfg, "", "lint", "global/r.md"); code != 0 {
+		t.Errorf("lint link to README.md: code=%d out=%q", code, out)
+	}
+
+	code, _, errs = runCLI(t, cfg, "---\nsummary: d\n---\n# d\n[d](sub.md) [i](index.md)\n", "put", "global/d.md")
+	if code != 0 || !strings.Contains(errs, "broken_link") || !strings.Contains(errs, "global/sub.md") || strings.Contains(errs, "global/index.md") {
+		t.Errorf("put link to a directory: code=%d errs=%q", code, errs)
+	}
+	code, out, _ := runCLI(t, cfg, "", "lint", "global/d.md")
+	if code != 4 || strings.Count(out, "broken_link") != 1 || !strings.Contains(out, "global/sub.md") {
+		t.Errorf("lint link to a directory: code=%d out=%q", code, out)
+	}
+}
+
 func TestLintNames(t *testing.T) {
 	cfg := setup(t)
 	runCLI(t, cfg, "---\nsummary: i\n---\n", "put", "global/Index.md")
@@ -794,4 +826,49 @@ profiles:
 	if code, _, errs := runCLI(t, cfg, "", "context"); code != ExitUsage || !strings.Contains(errs, `unknown field "remote"`) {
 		t.Errorf("unknown key: code=%d %s", code, errs)
 	}
+}
+
+// A GIT_DIR inherited from a git hook or alias must not redirect the
+// mirror's git commands to the caller's repository.
+func TestPutIgnoresCallerGitDir(t *testing.T) {
+	cfg := setup(t)
+	d := t.TempDir()
+	projRemote := filepath.Join(d, "proj.git")
+	mustRun(t, "", "git", "init", "-q", "--bare", "-b", "main", projRemote)
+	proj := filepath.Join(d, "proj")
+	mustRun(t, "", "git", "clone", "-q", projRemote, proj)
+	mustRun(t, proj, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "proj")
+	mustRun(t, proj, "git", "push", "-q", "origin", "HEAD:main")
+	projHead := gitOut(t, "--git-dir", projRemote, "rev-parse", "main")
+	if code, _, errs := runCLI(t, cfg, "", "get", "global/index.md"); code != 0 {
+		t.Fatalf("get code=%d %s", code, errs)
+	}
+
+	t.Setenv("GIT_DIR", filepath.Join(proj, ".git"))
+	t.Setenv("GIT_WORK_TREE", proj)
+	if code, _, errs := runCLI(t, cfg, "---\nsummary: n\n---\n# n\n", "put", "global/note.md"); code != 0 {
+		t.Fatalf("put code=%d %s", code, errs)
+	}
+	os.Unsetenv("GIT_DIR")
+	os.Unsetenv("GIT_WORK_TREE")
+
+	wikiRemote := filepath.Join(filepath.Dir(cfg), "remote.git")
+	if err := exec.Command("git", "--git-dir", wikiRemote, "cat-file", "-e", "main:global/note.md").Run(); err != nil {
+		t.Error("note.md not pushed to the wiki remote")
+	}
+	if got := gitOut(t, "--git-dir", projRemote, "rev-parse", "main"); got != projHead {
+		t.Errorf("project remote main moved: %s -> %s", projHead, got)
+	}
+	if out, _ := exec.Command("git", "--git-dir", filepath.Join(proj, ".git"), "config", "--get", "wikictl.branch").Output(); len(out) != 0 {
+		t.Errorf("wikictl.branch written to the project repository: %s", out)
+	}
+}
+
+func gitOut(t *testing.T, args ...string) string {
+	t.Helper()
+	out, err := exec.Command("git", args...).Output()
+	if err != nil {
+		t.Fatalf("git %v: %v", args, err)
+	}
+	return strings.TrimSpace(string(out))
 }
