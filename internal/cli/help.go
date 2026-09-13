@@ -27,7 +27,7 @@ func Version() string {
 	return "dev"
 }
 
-const description = `wikictl reads and writes a Markdown wiki hosted on a Git host using only
+const description = `wikictl reads and writes a Markdown wiki in a Git repository using only
 git: no daemon, no index, no working tree. Pages are found with git grep and
 written as commits pushed with --force-with-lease.`
 
