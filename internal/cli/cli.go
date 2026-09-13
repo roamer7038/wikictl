@@ -90,6 +90,10 @@ pages are rewritten in the same commit, and the old slug is added to aliases
 when it changes. When both arguments end with a slash, every page under
 <dir>/ is moved to <newdir>/ instead; slugs do not change, so no alias is added.
 
+Only links of the form [text](path) are rewritten. A bare path in a Links line,
+such as "- part_of: index.md" or "- index.md", is left unchanged and becomes
+a broken link; write page targets as [text](path).
+
 Output: {path, commit, rewritten} or {path, commit, moved, rewritten}.`,
 		flags: func(fs *flag.FlagSet) { msgFlag(fs) }, run: (*app).cmdMv},
 	{name: "rm", args: "<path>", minArgs: 1, maxArgs: 1,
@@ -104,6 +108,10 @@ Output: {path, commit}.`,
 		detail: `Check pages for missing_summary, bad_slug, frontmatter_invalid, links_syntax
 and broken_link. Without arguments every page under the search directories is
 checked. Exits with code 4 when violations are found.
+
+A Links line is "- <type>: <target> | <note>", or "- <target>" for an untyped
+see_also relation (an untyped URL must be "<scheme>://..."); the bullet may
+be "-", "*" or "+" and may be indented.
 
 Output: items[] {path, line, code, message}.`,
 		run: (*app).cmdLint},

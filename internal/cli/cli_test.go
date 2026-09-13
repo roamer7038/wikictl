@@ -228,7 +228,15 @@ func TestMvAndLint(t *testing.T) {
 	if code, _, _ := runCLI(t, cfg, "", "mv", "global/push.md", "global/index.md"); code != 1 {
 		t.Error("mv onto existing must fail")
 	}
-	runCLI(t, cfg, "---\nsummary: b\n---\n# b\n[gone](gone.md)\n\n## Links\n- x\n", "put", "global/broken.md")
+	runCLI(t, cfg, "---\nsummary: b\n---\n# b\n[gone](gone.md)\n\n## Links\n- x\n* see_also: [i](index.md)\n  + index.md | untyped\n", "put", "global/broken.md")
+	_, out, _ = runCLI(t, cfg, "", "get", "--json", "global/broken.md")
+	var b struct {
+		Links []struct{ Type, Target, Note string }
+	}
+	json.Unmarshal([]byte(out), &b)
+	if len(b.Links) != 2 || b.Links[0].Type != "see_also" || b.Links[1].Type != "see_also" || b.Links[1].Target != "global/index.md" || b.Links[1].Note != "untyped" {
+		t.Errorf("tolerant links: %s", out)
+	}
 	code, out, _ = runCLI(t, cfg, "", "lint", "--json", "--dirs", "global")
 	var li struct {
 		Items []struct {

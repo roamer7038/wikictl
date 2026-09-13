@@ -49,3 +49,77 @@ func TestBodyLinks(t *testing.T) {
 		t.Errorf("%+v", got)
 	}
 }
+
+func TestParseLinksBulletMarkers(t *testing.T) {
+	body := "# t\n## Links\n* cites: https://x.example/\n+ see_also: q.md\n  - part_of: [p](p.md) | upper\n\t-\tuses: r.md\n-  spaced: s.md\n"
+	ls := ScanLines([]byte(body), 1)
+	links, issues := ParseLinks(ls[LinksStart(ls):], "global/x.md")
+	if len(issues) != 0 {
+		t.Fatalf("issues=%+v", issues)
+	}
+	want := []Link{
+		{Type: "cites", Target: "https://x.example/", Line: 3, IsURL: true},
+		{Type: "see_also", Target: "global/q.md", Line: 4},
+		{Type: "part_of", Target: "global/p.md", Note: "upper", Line: 5},
+		{Type: "uses", Target: "global/r.md", Line: 6},
+		{Type: "spaced", Target: "global/s.md", Line: 7},
+	}
+	if len(links) != len(want) {
+		t.Fatalf("links=%+v", links)
+	}
+	for i := range want {
+		if links[i] != want[i] {
+			t.Errorf("links[%d]=%+v want %+v", i, links[i], want[i])
+		}
+	}
+}
+
+func TestParseLinksUntyped(t *testing.T) {
+	body := "# t\n## Links\n- [q](q.md)\n- r.md | why\n* https://x.example/\n- img.png\n- Bad: r.md\n"
+	ls := ScanLines([]byte(body), 1)
+	links, issues := ParseLinks(ls[LinksStart(ls):], "global/x.md")
+	want := []Link{
+		{Type: "see_also", Target: "global/q.md", Line: 3},
+		{Type: "see_also", Target: "global/r.md", Note: "why", Line: 4},
+		{Type: "see_also", Target: "https://x.example/", Line: 5, IsURL: true},
+	}
+	if len(links) != len(want) {
+		t.Fatalf("links=%+v issues=%+v", links, issues)
+	}
+	for i := range want {
+		if links[i] != want[i] {
+			t.Errorf("links[%d]=%+v want %+v", i, links[i], want[i])
+		}
+	}
+	if len(issues) != 2 || issues[0].Code != "links_syntax" || issues[0].Line != 6 || issues[1].Code != "links_syntax" || issues[1].Line != 7 {
+		t.Errorf("issues=%+v", issues)
+	}
+}
+
+func TestParseLinksUntypedEdgeCases(t *testing.T) {
+	body := "# t\n## Links\n- uses:foo.md\n- cites:\n- see_also:foo.md\n- mailto:a@b.example\n- https://\n- p.md \"title\"\n- [t](p.md \"title\")\n- see_also: [t](q.md \"title\")\n- [u](https://x.example/a)\n"
+	ls := ScanLines([]byte(body), 1)
+	links, issues := ParseLinks(ls[LinksStart(ls):], "global/x.md")
+	want := []Link{
+		{Type: "see_also", Target: "global/p.md", Line: 9},
+		{Type: "see_also", Target: "global/q.md", Line: 10},
+		{Type: "see_also", Target: "https://x.example/a", Line: 11, IsURL: true},
+	}
+	if len(links) != len(want) {
+		t.Fatalf("links=%+v issues=%+v", links, issues)
+	}
+	for i := range want {
+		if links[i] != want[i] {
+			t.Errorf("links[%d]=%+v want %+v", i, links[i], want[i])
+		}
+	}
+	wantLines := []int{3, 4, 5, 6, 7, 8}
+	if len(issues) != len(wantLines) {
+		t.Fatalf("issues=%+v", issues)
+	}
+	for i, n := range wantLines {
+		if issues[i].Code != "links_syntax" || issues[i].Line != n {
+			t.Errorf("issues[%d]=%+v want links_syntax at line %d", i, issues[i], n)
+		}
+	}
+}

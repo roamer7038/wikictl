@@ -118,7 +118,8 @@ type: concept
 
 - ファイル名とディレクトリ名は `^[a-z0-9][a-z0-9-]*$`。ページは `.md` で終わる。
 - 任意のフロントマターキー: `type`、`status`（`deprecated` にすると `search` と `ls` から隠れる）、`tags`、`aliases`、`review_after`。
-- `## Links` 節がある場合は最後の見出しであること。各行は `- <type>: <target> | <note>`。`<target>` は相対パスまたは URL。
+- `## Links` 節がある場合は最後の見出しであること。各行は `- <type>: <target> | <note>`。`<target>` は相対パスまたは URL。`- <target>` のように type を省いた行は `see_also` として扱う。type を省いた行で URL を書く場合は `<scheme>://...` の形にする。箇条書き記号は `-`、`*`、`+` のいずれでもよく、字下げも許す。
+- ページへのリンクは `[text](path)` の形で書く。`mv` が書き換えるのはこの形のリンクだけで、`- part_of: index.md` や `- index.md` のような素のパスは書き換わらず、リンク先を移動すると壊れたリンクになる。
 - コードフェンスの中は解釈しない。フェンス内の `## Links` 見出しは節を始めない。
 
 ## 開発
