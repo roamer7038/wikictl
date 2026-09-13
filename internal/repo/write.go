@@ -156,17 +156,28 @@ func (r *Repo) buildAndPush(head string, changes []Change, msg string, au Author
 	if _, err := git(info.Bytes(), "update-index", "-z", "--index-info"); err != nil {
 		return nil, false, err
 	}
-	tree, err := git(nil, "write-tree")
+	out, err := git(nil, "write-tree")
 	if err != nil {
 		return nil, false, err
 	}
+	tree := strings.TrimSpace(out)
+	// A change set that leaves the tree as it is creates no commit.
+	if head != "" {
+		cur, err := git(nil, "rev-parse", head+"^{tree}")
+		if err != nil {
+			return nil, false, err
+		}
+		if strings.TrimSpace(cur) == tree {
+			return &Result{Commit: head, SHAs: shas}, false, nil
+		}
+	}
 	// --no-gpg-sign: a commit.gpgsign setting would otherwise start a signing
 	// prompt that GIT_TERMINAL_PROMPT=0 does not suppress.
-	args := []string{"commit-tree", "--no-gpg-sign", strings.TrimSpace(tree), "-m", msg}
+	args := []string{"commit-tree", "--no-gpg-sign", tree, "-m", msg}
 	if head != "" {
 		args = append(args, "-p", head)
 	}
-	out, err := git(nil, args...)
+	out, err = git(nil, args...)
 	if err != nil {
 		return nil, false, err
 	}
