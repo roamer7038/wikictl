@@ -1,4 +1,4 @@
-// Command wikictl reads and writes a Markdown wiki on a Git host using only git.
+// Command wikictl reads and writes a Markdown wiki in a Git repository using only git.
 package main
 
 import (
