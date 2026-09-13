@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"os"
 	"strings"
+	"time"
 )
 
 // Change is one file in a commit. Base is the optimistic-lock check used by
@@ -42,8 +44,9 @@ const zeroSHA = "0000000000000000000000000000000000000000"
 
 // Commit fetches, checks every Base, builds a commit on top of the remote
 // branch and pushes it with --force-with-lease. When another push wins the
-// race the whole sequence is retried, up to three attempts. It never creates
-// a working tree or a merge state.
+// race the whole sequence is retried, up to three attempts, after a random
+// wait so that writers rejected together do not retry together. It never
+// creates a working tree or a merge state.
 func (r *Repo) Commit(changes []Change, msg string, au Author) (*Result, error) {
 	unlock, err := r.lock()
 	if err != nil {
@@ -51,7 +54,12 @@ func (r *Repo) Commit(changes []Change, msg string, au Author) (*Result, error) 
 	}
 	defer unlock()
 	var last error
+	var wait time.Duration
 	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			time.Sleep(retryWait(wait, attempt))
+		}
+		start := time.Now()
 		if err := r.Fetch(); err != nil {
 			return nil, err
 		}
@@ -76,8 +84,20 @@ func (r *Repo) Commit(changes []Change, msg string, au Author) (*Result, error) 
 		if !retry {
 			return nil, err
 		}
+		wait = time.Since(start)
 	}
 	return nil, last
+}
+
+// retryWait returns a random duration in [0, 2^(attempt+3)*d), where d is
+// how long the rejected attempt took. Scaling by d keeps the writers spread
+// out whether a push takes milliseconds or seconds.
+func retryWait(d time.Duration, attempt int) time.Duration {
+	n := int64(d) << (attempt + 3)
+	if n <= 0 {
+		return 0
+	}
+	return time.Duration(rand.Int64N(n))
 }
 
 func (r *Repo) conflict(path, reason, sha string) *Conflict {

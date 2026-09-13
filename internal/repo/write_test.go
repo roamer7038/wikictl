@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // TestCommitConcurrentMirrors pushes different pages at the same time from
@@ -41,6 +42,20 @@ func TestCommitConcurrentMirrors(t *testing.T) {
 	for i := 0; i < n; i++ {
 		if p := fmt.Sprintf("global/p%d.md", i); !strings.Contains(files, p+"\n") {
 			t.Errorf("%s missing from remote:\n%s", p, files)
+		}
+	}
+}
+
+func TestRetryWait(t *testing.T) {
+	if w := retryWait(0, 1); w != 0 {
+		t.Errorf("retryWait(0, 1) = %v, want 0", w)
+	}
+	for attempt := 1; attempt < 3; attempt++ {
+		limit := 10 * time.Millisecond << (attempt + 3)
+		for i := 0; i < 100; i++ {
+			if w := retryWait(10*time.Millisecond, attempt); w < 0 || w >= limit {
+				t.Fatalf("retryWait(10ms, %d) = %v, want [0, %v)", attempt, w, limit)
+			}
 		}
 	}
 }
