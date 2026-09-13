@@ -12,21 +12,25 @@ import (
 var reRecommended = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
 // breaking lists the characters that a name must not contain: '"' and '\'
-// make git quote the path in its listings, '#' starts a fragment and ')'
-// ends the destination in a Markdown link.
-const breaking = "\"\\#)"
+// make git quote the path in its listings, '#' starts a fragment, '?' starts
+// a query, ':' makes a relative link look like a URL scheme, and '(' and ')'
+// end or unbalance the destination of a Markdown link.
+const breaking = "\"\\#?:()"
 
 // CheckName returns nil when s can be a file or directory name of a page
 // path, or an error naming the rule it breaks. Only names that break links
 // or the git-based scanning are rejected: empty names, names starting with
-// a dot, and names containing whitespace, control characters or one of the
-// characters " \ # ).
+// a dot or '<', and names containing whitespace, control characters or one
+// of the characters " \ # ? : ( ).
 func CheckName(s string) error {
 	if s == "" {
 		return errors.New("empty name")
 	}
 	if strings.HasPrefix(s, ".") {
 		return fmt.Errorf("name %q starts with a dot", s)
+	}
+	if strings.HasPrefix(s, "<") {
+		return fmt.Errorf("name %q starts with '<', which breaks links", s)
 	}
 	for _, r := range s {
 		switch {

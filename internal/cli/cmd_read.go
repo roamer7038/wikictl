@@ -150,12 +150,12 @@ func (a *app) cmdGet(c *command, args []string) int {
 	return ExitOK
 }
 
-// backlinks greps the whole wiki for the slug of target to collect candidate
+// backlinks greps the whole wiki for the file name of target to collect candidate
 // pages, then parses each candidate and keeps those whose links resolve to
 // target. Typed links win over body mentions.
 func (a *app) backlinks(target string) []backlinkOut {
-	slug := strings.TrimSuffix(path.Base(target), ".md")
-	cands, _ := a.repo.Grep([]string{slug + ".md"}, true, nil)
+	name := strings.TrimSuffix(path.Base(target), ".md")
+	cands, _ := a.repo.Grep([]string{name + ".md"}, true, nil)
 	contents, _ := a.repo.Cat(cands)
 	out := []backlinkOut{}
 	for _, cp := range cands {

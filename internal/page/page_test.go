@@ -6,12 +6,12 @@ import (
 )
 
 func TestCheckPath(t *testing.T) {
-	for _, p := range []string{"global/x.md", "projects/my-app/x.md", "global/Foo_bar.md", "global/日本語.md", "global/-x.md", "global/a(b.md"} {
+	for _, p := range []string{"global/x.md", "projects/my-app/x.md", "global/Foo_bar.md", "global/日本語.md", "global/-x.md", "global/a[b].md", "global/a<b.md", "global/a|b.md"} {
 		if err := CheckPath(p); err != nil {
 			t.Errorf("%q should be accepted: %v", p, err)
 		}
 	}
-	for _, p := range []string{"", "x.md", "global/x", "global/x.md/", "/global/x.md", "global//x.md", "global/.md", ".hidden/x.md", "global/../x.md", "./global/x.md", "global/my page.md", "global/a\tb.md", "global/a\x00b.md", "global/a#b.md", "global/a)b.md", "global/a\"b.md", "global/a\\b.md"} {
+	for _, p := range []string{"", "x.md", "global/x", "global/x.md/", "/global/x.md", "global//x.md", "global/.md", ".hidden/x.md", "global/../x.md", "./global/x.md", "global/my page.md", "global/a\tb.md", "global/a\x00b.md", "global/a#b.md", "global/a)b.md", "global/a\"b.md", "global/a\\b.md", "global/a:b.md", "global/a?b.md", "global/a(b.md", "global/<x.md", "a:b/x.md"} {
 		if err := CheckPath(p); err == nil {
 			t.Errorf("%q should be rejected", p)
 		}

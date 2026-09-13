@@ -181,11 +181,11 @@ func (a *app) cmdMv(c *command, args []string) int {
 		return a.fail(ExitGit, "git", err.Error())
 	}
 	// Record the old file name in aliases when it changes.
-	oldSlug := strings.TrimSuffix(path.Base(from), ".md")
-	if oldSlug != strings.TrimSuffix(path.Base(to), ".md") {
+	oldName := strings.TrimSuffix(path.Base(from), ".md")
+	if oldName != strings.TrimSuffix(path.Base(to), ".md") {
 		for i := range changes {
 			if changes[i].Path == to {
-				changes[i].Content = page.AddAlias(changes[i].Content, oldSlug)
+				changes[i].Content = page.AddAlias(changes[i].Content, oldName)
 			}
 		}
 	}
@@ -203,6 +203,11 @@ func (a *app) cmdMv(c *command, args []string) int {
 
 // mvDir moves every page under from to the same relative position under to.
 func (a *app) mvDir(from, to, msg string) int {
+	for _, seg := range strings.Split(from, "/") {
+		if seg == "" || seg == "." || seg == ".." {
+			return a.fail(ExitInvalid, "invalid", fmt.Sprintf("bad_path: %q is not a directory of the wiki", from+"/"))
+		}
+	}
 	for _, seg := range strings.Split(to, "/") {
 		if err := page.CheckName(seg); err != nil {
 			return a.fail(ExitInvalid, "invalid", "bad_path: "+err.Error())

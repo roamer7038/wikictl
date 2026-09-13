@@ -109,9 +109,9 @@ and the file name rules. Without arguments every page under the search
 directories is checked. Exits with code 4 when violations are found.
 
 File name rules: a page is <dir>/<name>.md, never at the wiki root. A file or
-directory name must not be empty, start with a dot, or contain whitespace,
-control characters or any of the characters " \ # ) (bad_path; put and mv
-reject such paths). Lowercase ASCII letters, digits and hyphens are
+directory name must not be empty, start with a dot or <, or contain
+whitespace, control characters or any of the characters " \ # ? : ( )
+(bad_path; put and mv reject such paths). Lowercase ASCII letters, digits and hyphens are
 recommended; other names are reported as name_style. Names in one directory
 that differ only by case collide on case-insensitive file systems and are
 reported as case_collision, against the whole wiki.

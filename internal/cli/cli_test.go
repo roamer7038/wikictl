@@ -241,6 +241,9 @@ func TestMvAndLint(t *testing.T) {
 	if code, _, errs := runCLI(t, cfg, "", "mv", "global/push.md", "global/a b.md"); code != 4 || !strings.Contains(errs, "bad_path") {
 		t.Errorf("mv to bad path: code=%d errs=%q", code, errs)
 	}
+	if code, _, errs := runCLI(t, cfg, "", "mv", "global/push.md", "global/a:b.md"); code != 4 || !strings.Contains(errs, "bad_path") {
+		t.Errorf("mv to name with ':': code=%d errs=%q", code, errs)
+	}
 	if code, _, errs := runCLI(t, cfg, "", "mv", "global/push.md", "global/Push.md"); code != 0 || !strings.Contains(errs, "name_style") {
 		t.Errorf("mv to style name: code=%d errs=%q", code, errs)
 	}
@@ -345,6 +348,14 @@ func TestMvDir(t *testing.T) {
 	}
 	if code, _, errs := runCLI(t, cfg, "", "mv", "projects/App3/", "projects/app2/"); code != 0 {
 		t.Errorf("mv dir back: code=%d errs=%q", code, errs)
+	}
+	for _, from := range []string{"./", "../", "/", "projects/../"} {
+		if code, _, errs := runCLI(t, cfg, "", "mv", from, "x/"); code != 4 || !strings.Contains(errs, "bad_path") {
+			t.Errorf("mv %s x/ must be rejected: code=%d errs=%q", from, code, errs)
+		}
+	}
+	if code, _, _ := runCLI(t, cfg, "", "get", "global/index.md"); code != 0 {
+		t.Error("rejected dir mv must not move pages")
 	}
 	if code, _, errs := runCLI(t, cfg, "", "mv", "projects/app2/", "global/x.md"); code != 2 || !strings.Contains(errs, "both arguments") {
 		t.Errorf("mixed dir/page mv must be a usage error: code=%d errs=%q", code, errs)
