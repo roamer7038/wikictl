@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -42,7 +41,7 @@ func TestTextOutputEscapesControl(t *testing.T) {
 		var res struct {
 			Items []struct{ Path, Summary string }
 		}
-		json.Unmarshal([]byte(out), &res)
+		mustUnmarshal(t, out, &res)
 		found := false
 		for _, it := range res.Items {
 			found = found || (it.Path == "global/ctl.md" && it.Summary == summary)
