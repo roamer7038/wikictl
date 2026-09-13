@@ -154,6 +154,23 @@ func TestOpenLeftoverDir(t *testing.T) {
 	}
 }
 
+// A mirror whose remote.origin.url is another repository must not be used.
+func TestOpenRemoteMismatch(t *testing.T) {
+	remote := newRemote(t, true)
+	other := newRemote(t, true)
+	mirror := filepath.Join(t.TempDir(), "m")
+	if _, err := Open(mirror, remote, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(mirror, remote, ""); err != nil {
+		t.Errorf("same remote: %v", err)
+	}
+	_, err := Open(mirror, other, "")
+	if err == nil || !strings.Contains(err.Error(), "mirror "+mirror+" is for another repository") {
+		t.Errorf("other remote: %v", err)
+	}
+}
+
 func TestOpenEmptyRemote(t *testing.T) {
 	remote := newRemote(t, false)
 	r, err := Open(filepath.Join(t.TempDir(), "m"), remote, "main")
@@ -320,5 +337,34 @@ func TestReadLiteralDirs(t *testing.T) {
 	}
 	if dep, _ := r.GrepDeprecated([]string{"projects/a*"}); len(dep) != 1 || !dep["projects/a*/p.md"] {
 		t.Errorf("dep=%v", dep)
+	}
+}
+
+func TestGrepFoldsNonASCII(t *testing.T) {
+	remote := newRemote(t, true)
+	seedRemote(t, remote, map[string]string{
+		"global/apfel.md":  "---\nsummary: Äpfel\n---\n# Äpfel\n",
+		"global/kelvin.md": "---\nsummary: 273 K\n---\n",
+		"global/sigma.md":  "---\nsummary: ΟΔΟΣ\n---\n",
+		"global/a.b.md":    "---\nsummary: a.b [x]\n---\n",
+		"global/axb.md":    "---\nsummary: axb x\n---\n",
+	})
+	r := openFetched(t, remote)
+	for _, tc := range []struct {
+		words []string
+		all   bool
+		want  string
+	}{
+		{[]string{"äpfel"}, true, "global/apfel.md"},
+		{[]string{"ÄPFEL"}, true, "global/apfel.md"},
+		{[]string{"273 k"}, true, "global/kelvin.md"},
+		{[]string{"οδος"}, true, "global/sigma.md"},
+		{[]string{"A.B", "[X]"}, true, "global/a.b.md"},
+		{[]string{"äpfel", "zzz-none"}, false, "global/apfel.md"},
+	} {
+		got, err := r.Grep(tc.words, tc.all, []string{"global"})
+		if err != nil || len(got) != 1 || got[0] != tc.want {
+			t.Errorf("Grep(%q, %v)=%v, %v; want [%s]", tc.words, tc.all, got, err, tc.want)
+		}
 	}
 }

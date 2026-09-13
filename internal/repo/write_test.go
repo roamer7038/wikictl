@@ -75,3 +75,27 @@ func TestPushStatus(t *testing.T) {
 		}
 	}
 }
+
+// TestCommitRejectsPathSeparators checks that a path containing a newline or
+// NUL cannot add entries of its own to the tree, such as a symlink or a file
+// under .github/workflows/.
+func TestCommitRejectsPathSeparators(t *testing.T) {
+	remote := newRemote(t, true)
+	r := openFetched(t, remote)
+	sha := strings.Fields(run(t, "", "git", "--git-dir", remote, "rev-parse", "main:global/index.md"))[0]
+	before := run(t, "", "git", "--git-dir", remote, "ls-tree", "-r", "main")
+	paths := []string{
+		"global/index.md\n120000 " + sha + "\tglobal/link.md\n100644 " + sha + "\t.github/workflows/x.yml",
+		"global/index.md\x00100644 " + sha + "\t.github/workflows/x.yml",
+	}
+	for _, p := range paths {
+		for _, c := range []Change{{Path: p, Delete: true}, {Path: p, Content: []byte("x")}} {
+			if _, err := r.Commit([]Change{c}, "inject", Author{"a", "a@a"}); err == nil {
+				t.Errorf("Commit(%q, delete=%v) succeeded", p, c.Delete)
+			}
+			if after := run(t, "", "git", "--git-dir", remote, "ls-tree", "-r", "main"); after != before {
+				t.Fatalf("Commit(%q, delete=%v) changed the tree:\n%s", p, c.Delete, after)
+			}
+		}
+	}
+}

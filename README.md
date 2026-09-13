@@ -151,7 +151,7 @@ Links:
 
 File and directory names:
 
-- A name must not be empty, start with `.` or `<`, or contain whitespace, control characters or any of ``" \ # ? : ( ) ` ``. A page's file name must end in `.md`. `put` and `mv` reject other paths (`bad_path`, exit code 4).
+- A name must not be empty, start with `.` or `<`, or contain whitespace, control characters or any of ``" \ # ? : ( ) ` ``. A page's file name must end in `.md`. `put`, `mv` and `rm` reject other paths (`bad_path`, exit code 4).
 - Lowercase ASCII letters, digits and hyphens, not starting with a hyphen, are recommended. `lint` reports other names as `name_style`, and names in one directory that differ only by case (which collide on case-insensitive file systems) as `case_collision`.
 
 `index.md`:
@@ -181,7 +181,7 @@ Command flags must come before the arguments, as in `wikictl search -n 5 lease`.
 | Flag | Commands | Meaning |
 |---|---|---|
 | `--any` | `search` | Find pages containing any of the words instead of all of them |
-| `-n <N>` | `search` | Show at most N results (default 20) |
+| `-n <N>` | `search` | Show at most N results (default 20). N must be at least 1 |
 | `--all` | `search`, `ls` | Include pages with `status: deprecated` |
 | `--type <type>` | `ls` | Show only pages with this `type` |
 | `--tag <tag>` | `ls` | Show only pages with this tag |
@@ -204,11 +204,11 @@ Global flags, accepted before or after the command:
 Details of each command:
 
 - `init` writes both files to the branch in one commit. It fails with exit code 1 if the branch already exists.
-- `search` matches the words as fixed strings, ignoring case, anywhere in the file, frontmatter included. Results are ordered by last update, newest first; with `--any`, pages matching more words come first.
+- `search` matches the words as fixed strings, ignoring case (non-ASCII letters included), anywhere in the file, frontmatter included. Results are ordered by last update, newest first; with `--any`, pages matching more words come first.
 - `get` prints the parsed page, not the file as stored. As text, it shows the body without the frontmatter and the Links section, the links and the backlinks from other pages; the frontmatter is included only with `--json`.
 - `put` takes the whole page, frontmatter included, on standard input. Invalid frontmatter, a page over the size limits (`frontmatter_invalid`, `page_too_large`) or a bad path is rejected with exit code 4; other problems (`missing_summary`, `broken_link`, `links_syntax`, `name_style`) are printed as warnings and the page is written.
 - `mv` rewrites the links inside the moved page and the links to it from other pages in the same commit. It also normalises relative page links written in another form, such as `./b.md` to `b.md`, in any page of the wiki, so pages unrelated to the move can be part of the commit; the body of a rewritten page gets LF line endings, and a BOM is removed. When the file name changes, the old file name (without `.md`) is added to `aliases` unless it is already listed. The alias is added only when the page has frontmatter that is empty or a block-style YAML mapping, and `aliases` is absent, a sequence (block or flow style) or null (`aliases:`, `aliases: ~` or `aliases: null`). Otherwise, for example when `aliases` is a string or the page has no frontmatter, the page is moved without adding the alias and no warning is printed. `mv` fails with exit code 1 if the destination exists; the directory form fails if any page exists under `<newdir>/`.
-- `rm` leaves the pages that link to the deleted page unchanged; `lint` reports those links as `broken_link`.
+- `rm` leaves the pages that link to the deleted page unchanged; `lint` reports those links as `broken_link`. `rm` deletes only pages: a path that breaks the file name rules, such as `README.md` at the wiki root, is rejected with exit code 4. To delete such a file, clone the wiki repository and use git directly.
 - `lint` checks the given pages, or every page under the search directories; `wikictl --dirs . lint` checks the whole wiki. `case_collision` is always checked against the whole wiki.
 - `dirs` lists every directory that directly contains a page, with the number of pages directly in it (deprecated pages included) and the `summary` of its `index.md`, or `(no index)`. It ignores the search directories; `wikictl dirs projects` restricts the list to the directories under `projects/`.
 - `context` shows the configuration file, the selected profile and how it was selected, the repository, the mirror, the branch, the author, the machine and project names, the `origin` remote of the current directory, and the search directories with their page counts.
@@ -305,6 +305,8 @@ An unknown profile name is an error (exit code 2). In a profile, `author.name` a
 
 Without `--json`, commands print text on standard output. With `--json`, every command except `help` prints one JSON object; `wikictl help <command>` lists its fields.
 
+In text output, control characters other than tab (U+0000–U+001F, U+007F and U+0080–U+009F) in the summaries and titles printed by `ls`, `search` and `dirs` and in the messages printed by `lint` are shown as `\xNN` (for example, ESC as `\x1b`), so that page content cannot control the terminal. JSON output and the body printed by `get` are not changed.
+
 Warnings go to standard error in both modes, one per line:
 
     wikictl: warning: <path>:<line>: <code>: <message>
@@ -319,7 +321,7 @@ With `--json`:
 
     {"error": "conflict", "reason": "<reason>", "path": "...", "sha": "...", "content": "...", "message": "..."}
 
-`<reason>` is `exists` when a page written without `--base` already exists, or `changed` when the page no longer has the sha given with `--base`. `sha` and `content` are empty when the page has been deleted.
+`<reason>` is `exists` when a page written without `--base` already exists, or `changed` when the page no longer has the sha given with `--base`. `sha` and `content` are empty when the page has been deleted. `message` explains the conflict: that the page already exists, that it changed, or that it was deleted.
 
 ### Exit codes
 
@@ -328,8 +330,8 @@ With `--json`:
 | 0 | success |
 | 1 | error, for example a missing page |
 | 2 | usage or configuration error |
-| 3 | conflict: the page changed since it was read |
-| 4 | the page violates the wiki format: `put` rejects invalid frontmatter, a page over the size limits or a bad path, and `mv` a bad destination path; `lint` exits with 4 on any finding |
+| 3 | conflict: the page already exists, or changed or was deleted since it was read |
+| 4 | the page violates the wiki format: `put` rejects invalid frontmatter, a page over the size limits or a bad path, `mv` a bad destination path, and `rm` a bad path; `lint` exits with 4 on any finding |
 | 5 | a git command failed |
 
 ### Lint codes
@@ -351,6 +353,10 @@ With `--json`:
 
 wikictl keeps one bare mirror per `repo` value under `$XDG_CACHE_HOME/wikictl/` (`~/.cache/wikictl/` when `$XDG_CACHE_HOME` is not set). `wikictl context` shows its path.
 
+The mirror is named after the last path segment of `repo` without `.git`, followed by `-` and the first 12 hex digits of the SHA-256 of the whole `repo` value, for example `wiki-0123456789ab`. wikictl uses a mirror only when its `remote.origin.url` equals `repo`; otherwise it exits with code 5 (`mirror <path> is for another repository (its remote.origin.url is not the configured repo); delete it and run the command again`).
+
+Mirrors created by wikictl 0.2.x and earlier are named after the whole `repo` value with `/`, `:`, `@` and `\` replaced by `_` (for example `_srv_wiki.git`). wikictl no longer uses them and creates a new mirror on the first run, which costs one extra fetch; the wiki content is on the remote, so nothing is lost. Delete the old mirror directories under `$XDG_CACHE_HOME/wikictl/` by hand, together with any `<name>.lock` file next to them.
+
 - The branch in use is saved in the mirror. When `branch` is not configured, the saved branch is used, and the remote HEAD is read only when nothing is saved yet. A later change of the remote's default branch, or the removal of `branch` from the configuration, is therefore not followed until you set `branch` or delete the mirror. A profile without `branch` uses whichever branch another profile with the same `repo` saved last.
 - git in the mirror runs without the repository-local variables listed by `git rev-parse --local-env-vars` (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE` and others) and without `GIT_NAMESPACE`, so wikictl works on the wiki repository even when called from a git hook or alias of another repository. Settings passed with `git -c` or `GIT_CONFIG_COUNT` are among these variables and do not apply to the mirror; put such settings in a git configuration file instead. Other variables, such as `GIT_SSH_COMMAND` and `GIT_CONFIG_GLOBAL`, are passed on.
 - If the mirror ever breaks, delete it; the next command recreates it.
@@ -361,7 +367,7 @@ wikictl keeps one bare mirror per `repo` value under `$XDG_CACHE_HOME/wikictl/` 
     go test ./...
     go build -o wikictl ./cmd/wikictl
 
-On pushes to `main` and on pull requests, GitHub Actions runs `gofmt -l`, `go vet` and `go test -race` on Linux, `go test -race` on macOS, `staticcheck` together with a check that `go mod tidy` leaves `go.mod` and `go.sum` unchanged, and `govulncheck`. Pushing a tag that starts with `v` builds the binaries and `checksums.txt` with GoReleaser and publishes them as a release.
+On pushes to `main` and on pull requests, GitHub Actions runs `gofmt -l`, `go vet` and `go test -race` on Linux, `go test -race` on macOS, `staticcheck` together with a check that `go mod tidy` leaves `go.mod` and `go.sum` unchanged, `govulncheck`, and `shellcheck` on `install.sh`. Pushing a tag that starts with `v` builds the binaries and `checksums.txt` with GoReleaser and publishes them as a release.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the branch, pull request and release rules.
 

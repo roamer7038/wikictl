@@ -3,6 +3,8 @@
 package cli
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -23,7 +25,7 @@ const (
 	ExitOK       = 0 // success
 	ExitError    = 1 // general error, such as a missing page
 	ExitUsage    = 2 // usage or configuration error
-	ExitConflict = 3 // the page changed since it was read
+	ExitConflict = 3 // the page already exists, or changed or was deleted since it was read
 	ExitInvalid  = 4 // the page violates the wiki format
 	ExitGit      = 5 // a git command failed
 )
@@ -52,11 +54,13 @@ exists.`,
 		run: (*app).cmdInit},
 	{name: "search", args: "<word>...", minArgs: 1, maxArgs: -1,
 		summary: "Find pages containing the given words",
-		detail: `Find pages that contain all of the words (case-insensitive, fixed strings).
+		detail: `Find pages that contain all of the words (fixed strings, ignoring case,
+non-ASCII letters included).
 Pages with "status: deprecated" are skipped unless --all is given. Results
 are ordered by last update, newest first; with --any, pages matching more
 words come first. Text output shows the summary of each page, or its title
 (first heading, else the file name) when the page has no summary.
+Control characters other than tab are shown as \xNN in text output.
 
 Output: items[] {path, summary, title, matched, updated}.`,
 		flags: func(fs *flag.FlagSet) { searchFlags(fs) }, run: (*app).cmdSearch},
@@ -74,7 +78,8 @@ Output: {path, sha, frontmatter, title, body, links[], backlinks[], updated}.`,
 		detail: `List the pages under the search directories with their summary and type.
 Pages with "status: deprecated" are skipped unless --all is given. Text
 output shows the summary of each page, or its title (first heading, else the
-file name) when the page has no summary.
+file name) when the page has no summary. Control characters other than tab
+are shown as \xNN in text output.
 
 Output: items[] {path, summary, title, type, updated}.`,
 		flags: func(fs *flag.FlagSet) { lsFlags(fs) }, run: (*app).cmdLs},
@@ -114,7 +119,8 @@ Output: {path, commit, rewritten} or {path, commit, moved, rewritten}.`,
 	{name: "rm", args: "<path>", minArgs: 1, maxArgs: 1,
 		summary: "Delete a page",
 		detail: `Delete a page. Pages that link to it are left unchanged; lint reports them
-as broken_link.
+as broken_link. A path that is not a page path (see "help lint"), such as a
+file at the wiki root, is rejected with exit code 4.
 
 Output: {path, commit}.`,
 		flags: func(fs *flag.FlagSet) { msgFlag(fs) }, run: (*app).cmdRm},
@@ -132,7 +138,7 @@ treat such a page as having no frontmatter.
 File name rules: a page is <dir>/<name>.md, never at the wiki root. A file or
 directory name must not be empty, start with a dot or <, or contain
 whitespace, control characters or any of the characters " \ # ? : ( ) ` + "`" + `
-(bad_path; put and mv reject such paths). Lowercase ASCII letters, digits and hyphens are
+(bad_path; put, mv and rm reject such paths). Lowercase ASCII letters, digits and hyphens are
 recommended; other names are reported as name_style. Names in one directory
 that differ only by case collide on case-insensitive file systems and are
 reported as case_collision, against the whole wiki.
@@ -140,6 +146,9 @@ reported as case_collision, against the whole wiki.
 A Links line is "- <type>: <target> | <note>", or "- <target>" for an untyped
 see_also relation (an untyped URL must be "<scheme>://..."); the bullet may
 be "-", "*" or "+" and may be indented.
+
+Control characters other than tab in a message are shown as \xNN in text
+output.
 
 Output: items[] {path, line, code, message}.`,
 		run: (*app).cmdLint},
@@ -151,7 +160,8 @@ and the summary of its index.md, or "(no index)" when it has none. Deprecated
 pages are counted. The whole wiki is listed regardless of the search
 directories, so --dirs has no effect; arguments restrict the output to the
 directories at or below each <dir>, which must be a directory path inside the
-wiki, not a page path.
+wiki, not a page path. Control characters other than tab in the summary are
+shown as \xNN in text output.
 
 Output: items[] {dir, pages, summary}; summary is "" without an index.md.`,
 		run: (*app).cmdDirs},
@@ -318,16 +328,15 @@ func splitCommon(args []string) (rest, common []string) {
 }
 
 // openRepo opens the mirror under $XDG_CACHE_HOME/wikictl (or
-// ~/.cache/wikictl), named after the repository URL, and fetches unless
-// --no-fetch was given.
+// ~/.cache/wikictl), named by mirrorName, and fetches unless --no-fetch was
+// given.
 func (a *app) openRepo() error {
 	cache := os.Getenv("XDG_CACHE_HOME")
 	if cache == "" {
 		h, _ := os.UserHomeDir()
 		cache = filepath.Join(h, ".cache")
 	}
-	name := strings.NewReplacer("/", "_", ":", "_", "@", "_", "\\", "_").Replace(a.cfg.Repo)
-	r, err := repo.Open(filepath.Join(cache, "wikictl", name), a.cfg.Repo, a.cfg.Branch)
+	r, err := repo.Open(filepath.Join(cache, "wikictl", mirrorName(a.cfg.Repo)), a.cfg.Repo, a.cfg.Branch)
 	if err != nil {
 		return err
 	}
@@ -336,6 +345,33 @@ func (a *app) openRepo() error {
 		return r.Fetch()
 	}
 	return nil
+}
+
+// mirrorName returns the mirror directory name for the repository URL: the
+// last path segment without ".git", followed by "-" and the first 12 hex
+// digits of the SHA-256 of the whole URL. The hash keeps URLs that share the
+// readable part apart; the readable part holds no host or user information.
+func mirrorName(repoURL string) string {
+	base := strings.TrimRight(repoURL, `/\`)
+	if i := strings.LastIndexAny(base, `/\:`); i >= 0 {
+		base = base[i+1:]
+	}
+	base = strings.TrimSuffix(base, ".git")
+	base = strings.Map(func(r rune) rune {
+		if r == '.' || r == '-' || r == '_' || r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' {
+			return r
+		}
+		return '_'
+	}, base)
+	base = strings.TrimLeft(base, ".")
+	if len(base) > 64 {
+		base = base[:64]
+	}
+	if base == "" {
+		base = "wiki"
+	}
+	sum := sha256.Sum256([]byte(repoURL))
+	return base + "-" + hex.EncodeToString(sum[:])[:12]
 }
 
 // cwdRemote returns the origin URL of the repository containing the current
