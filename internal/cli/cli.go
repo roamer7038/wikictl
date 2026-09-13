@@ -45,8 +45,10 @@ var commands = []*command{
 	{name: "init", maxArgs: 0,
 		summary: "Create the initial pages in an empty repository",
 		detail: `Create README.md and global/index.md, as a single commit, in the repository
-given by repo in the config file or its selected profile. The remote
-repository itself must already exist on the Git host. Fails with exit code 1 if the branch already exists.`,
+given by repo in the config file or its selected profile. The repository
+itself must already exist; it may be on a Git host, on a server reached over
+SSH, or a local bare repository. Fails with exit code 1 if the branch already
+exists.`,
 		run: (*app).cmdInit},
 	{name: "search", args: "<word>...", minArgs: 1, maxArgs: -1,
 		summary: "Find pages containing the given words",
@@ -62,7 +64,8 @@ Output: items[] {path, summary, title, matched, updated}.`,
 		summary: "Show a page with its links and backlinks",
 		detail: `Show one page: its blob sha, frontmatter, title, body (without frontmatter
 and the Links section), typed links from the Links section, and backlinks
-from other pages. Pass the sha to "put --base" when updating the page.
+from other pages: their typed links, or "mentions" for links in their body.
+Pass the sha to "put --base" when updating the page.
 
 Output: {path, sha, frontmatter, title, body, links[], backlinks[], updated}.`,
 		run: (*app).cmdGet},
@@ -82,9 +85,10 @@ as <path>. Omit --base for a new page. For an existing page pass --base with
 the blob sha from get; without it, or if the page changed in the meantime, the
 command exits with code 3 and prints the current content and sha. A page
 whose frontmatter is invalid or whose path breaks the file name rules (see
-"help lint") is rejected with exit code 4. A missing summary, links to missing
-pages and names outside the recommended form only produce warnings on standard
-error; "description" in the frontmatter is read as a synonym of "summary".
+"help lint") is rejected with exit code 4. A missing summary, Links lines that
+do not parse, links to missing pages and names outside the recommended form
+only produce warnings on standard error; "description" in the frontmatter is
+read as a synonym of "summary".
 
 Output: {path, sha, commit}.`,
 		flags: func(fs *flag.FlagSet) { putFlags(fs) }, run: (*app).cmdPut},
@@ -187,7 +191,7 @@ func (a *app) globalFlags(fs *flag.FlagSet) {
 	fs.StringVar(&a.profile, "profile", "", "use the profile `name` from the config file instead of $WIKICTL_PROFILE, match or default_profile")
 	fs.StringVar(&a.dirsArg, "dirs", "", "search only the comma-separated `dirs` instead of the defaults; . is the whole wiki")
 	fs.BoolVar(&a.json, "json", false, "print JSON")
-	fs.BoolVar(&a.noFetch, "no-fetch", false, "do not fetch from the remote before running")
+	fs.BoolVar(&a.noFetch, "no-fetch", false, "do not fetch from the remote before reading; writes still fetch before committing")
 	fs.BoolVar(&a.version, "version", false, "print the version and exit")
 }
 
