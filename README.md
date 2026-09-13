@@ -17,7 +17,7 @@ flowchart LR
 
 ## Requirements
 
-- Linux or macOS.
+- Linux or macOS. wikictl also builds on other operating systems such as Windows, but there every command that reads or writes the wiki fails with exit code 5, because wikictl cannot lock the mirror.
 - `git` on `PATH`.
 - Fetch and push access to the wiki repository without any prompt (a credential helper, an SSH agent or file access for a local path). wikictl runs git with prompts disabled, so a command that needs a password fails instead of waiting. Every command fetches first, so this applies to reading as well.
 - Direct pushes to the wiki branch. Branch protection that requires pull requests blocks every write.
@@ -346,6 +346,7 @@ wikictl keeps one bare mirror per `repo` value under `$XDG_CACHE_HOME/wikictl/` 
 
 - The branch in use is saved in the mirror. When `branch` is not configured, the saved branch is used, and the remote HEAD is read only when nothing is saved yet. A later change of the remote's default branch, or the removal of `branch` from the configuration, is therefore not followed until you set `branch` or delete the mirror. A profile without `branch` uses whichever branch another profile with the same `repo` saved last.
 - If the mirror ever breaks, delete it; the next command recreates it.
+- When the mirror does not exist yet but its path holds a file or a non-empty directory that is not a git repository, wikictl leaves it untouched and exits with code 5 (`mirror <path> is not a git repository; delete it and run the command again`). An empty directory there is replaced by the mirror.
 
 ## Development
 
