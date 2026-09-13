@@ -181,7 +181,7 @@ var osHostname = os.Hostname
 // globalFlags registers the flags accepted before or after the command name.
 func (a *app) globalFlags(fs *flag.FlagSet) {
 	fs.StringVar(&a.cfgPath, "config", "", "read the configuration from `path` instead of $WIKICTL_CONFIG or $XDG_CONFIG_HOME/wikictl/config.yaml (~/.config/wikictl/config.yaml)")
-	fs.StringVar(&a.dirsArg, "dirs", "", "search only the comma-separated `dirs` instead of the defaults")
+	fs.StringVar(&a.dirsArg, "dirs", "", "search only the comma-separated `dirs` instead of the defaults; . is the whole wiki")
 	fs.BoolVar(&a.json, "json", false, "print JSON")
 	fs.BoolVar(&a.noFetch, "no-fetch", false, "do not fetch from the remote before running")
 	fs.BoolVar(&a.version, "version", false, "print the version and exit")

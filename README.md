@@ -69,7 +69,7 @@ Global flags, accepted before or after the command: `--json`, `--dirs a,b`, `--c
 
 ### Where commands look
 
-By default a command searches up to four directories: `global/`, `personal/`, `projects/<name>/` where `<name>` comes from the `origin` remote of the current directory (skipped outside a git repository), and `machines/<name>/` where `<name>` is the hostname. `--dirs a,b` overrides the list and `wikictl context` shows it, with the number of pages at any depth under each directory (0 when the directory has no page yet; unlike `wikictl dirs`, pages in subdirectories are included).
+By default a command searches up to four directories: `global/`, `personal/`, `projects/<name>/` where `<name>` comes from the `origin` remote of the current directory (skipped outside a git repository), and `machines/<name>/` where `<name>` is the hostname. `--dirs a,b` overrides the list and `wikictl context` shows it, with the number of pages at any depth under each directory (0 when the directory has no page yet; unlike `wikictl dirs`, pages in subdirectories are included). `--dirs .` covers the whole wiki.
 
 Each directory is a scope that answers "where is this knowledge valid?":
 
@@ -139,6 +139,8 @@ Body. Link to other pages with relative paths: [index](index.md).
 - The `## Links` section, when present, is the last heading. Each line is `- <type>: <target> | <note>`; `<target>` is a relative path or a URL. A line with only a target, `- <target>`, is a `see_also` relation; an untyped URL target must be of the form `<scheme>://...`. The bullet may be `-`, `*` or `+` and may be indented.
 - Write page targets as `[text](path)`. `mv` rewrites only links of that form; a bare path such as `- part_of: index.md` or `- index.md` is left unchanged and becomes a broken link when its target moves.
 - Code fences are never interpreted; a `## Links` heading inside one does not start the section.
+
+Give each directory an `index.md` whose `summary` states what the directory holds, and link the other pages in it to the index with `- part_of: [index](index.md)`. `wikictl get <dir>/index.md` then lists those pages as `backlinks`, and `wikictl dirs` shows the summary next to the directory, so the structure of the wiki describes itself without any generated content.
 
 ## Development
 
