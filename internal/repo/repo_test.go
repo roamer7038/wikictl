@@ -111,13 +111,14 @@ func TestRead(t *testing.T) {
 		"README.md":          "not a page",
 		".hidden/z.md":       "---\nsummary: z\n---\n",
 		"global/notes.txt":   "lease",
+		"global/日本語.md":      "---\nsummary: non-ascii\n---\n# 日本語\nlease\n",
 	})
 	r := openFetched(t, remote)
 	list, err := r.List([]string{"global", "projects/a", "machines/h", "nope"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(list) != 4 {
+	if len(list) != 5 || list[2] != "global/日本語.md" {
 		t.Errorf("list=%v", list)
 	}
 	got, _ := r.Grep([]string{"LEASE", "force"}, true, []string{"global", "projects/a"})
@@ -125,7 +126,7 @@ func TestRead(t *testing.T) {
 		t.Errorf("all-match grep=%v", got)
 	}
 	got, _ = r.Grep([]string{"lease"}, true, []string{"global", "projects/a"})
-	if len(got) != 2 {
+	if len(got) != 3 {
 		t.Errorf("grep=%v", got)
 	}
 	if got, _ := r.Grep([]string{"zzz-none"}, true, nil); len(got) != 0 {
@@ -140,7 +141,7 @@ func TestRead(t *testing.T) {
 		t.Errorf("cat=%v", c)
 	}
 	up, _ := r.Updated([]string{"global"})
-	if up["global/git-push.md"].IsZero() {
+	if up["global/git-push.md"].IsZero() || up["global/日本語.md"].IsZero() {
 		t.Errorf("updated=%v", up)
 	}
 	h, _ := r.Head()
@@ -208,5 +209,37 @@ func TestCommitEmptyRemote(t *testing.T) {
 	}
 	if h, _ := r.Head(); len(h) != 40 {
 		t.Error("head not set")
+	}
+}
+
+// Directory names may contain '*' and '[', so dirs must match literally
+// rather than as git wildcards.
+func TestReadLiteralDirs(t *testing.T) {
+	remote := newRemote(t, true)
+	seedRemote(t, remote, map[string]string{
+		"projects/a*/p.md":   "---\nsummary: p\nstatus: deprecated\n---\n# p\nlease\n",
+		"projects/app/x.md":  "---\nsummary: x\nstatus: deprecated\n---\n# x\nlease\n",
+		"projects/[ab]/q.md": "---\nsummary: q\n---\n# q\nlease\n",
+		"projects/a/y.md":    "---\nsummary: y\n---\n# y\nlease\n",
+	})
+	r := openFetched(t, remote)
+	for _, tc := range []struct{ dir, want string }{
+		{"projects/a*", "projects/a*/p.md"},
+		{"projects/[ab]", "projects/[ab]/q.md"},
+	} {
+		dirs := []string{tc.dir}
+		if got, _ := r.List(dirs); len(got) != 1 || got[0] != tc.want {
+			t.Errorf("list %s=%v", tc.dir, got)
+		}
+		if got, _ := r.Grep([]string{"lease"}, false, dirs); len(got) != 1 || got[0] != tc.want {
+			t.Errorf("grep %s=%v", tc.dir, got)
+		}
+		up, _ := r.Updated(dirs)
+		if len(up) != 1 || up[tc.want].IsZero() {
+			t.Errorf("updated %s=%v", tc.dir, up)
+		}
+	}
+	if dep, _ := r.GrepDeprecated([]string{"projects/a*"}); len(dep) != 1 || !dep["projects/a*/p.md"] {
+		t.Errorf("dep=%v", dep)
 	}
 }

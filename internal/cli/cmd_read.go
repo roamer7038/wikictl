@@ -6,6 +6,7 @@ import (
 	"io"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 type hit struct {
 	Path    string   `json:"path"`
 	Summary string   `json:"summary"`
+	Title   string   `json:"title"`
 	Matched []string `json:"matched"`
 	Updated string   `json:"updated"`
 }
@@ -64,7 +66,7 @@ func (a *app) cmdSearch(c *command, args []string) int {
 				matched = append(matched, w)
 			}
 		}
-		hits = append(hits, hit{Path: p, Summary: pg.Summary, Matched: matched, Updated: fmtTime(updated[p])})
+		hits = append(hits, hit{Path: p, Summary: pg.Summary, Title: pg.Title, Matched: matched, Updated: fmtTime(updated[p])})
 	}
 	sort.SliceStable(hits, func(i, j int) bool {
 		if o.any && len(hits[i].Matched) != len(hits[j].Matched) {
@@ -80,7 +82,7 @@ func (a *app) cmdSearch(c *command, args []string) int {
 	}
 	a.emit(map[string]any{"items": hits}, func(w io.Writer) {
 		for _, h := range hits {
-			fmt.Fprintf(w, "%s\t%s\n", h.Path, h.Summary)
+			fmt.Fprintf(w, "%s\t%s\n", h.Path, summaryOrTitle(h.Summary, h.Title))
 		}
 	})
 	return ExitOK
@@ -150,12 +152,12 @@ func (a *app) cmdGet(c *command, args []string) int {
 	return ExitOK
 }
 
-// backlinks greps the whole wiki for the slug of target to collect candidate
+// backlinks greps the whole wiki for the file name of target to collect candidate
 // pages, then parses each candidate and keeps those whose links resolve to
 // target. Typed links win over body mentions.
 func (a *app) backlinks(target string) []backlinkOut {
-	slug := strings.TrimSuffix(path.Base(target), ".md")
-	cands, _ := a.repo.Grep([]string{slug + ".md"}, true, nil)
+	name := strings.TrimSuffix(path.Base(target), ".md")
+	cands, _ := a.repo.Grep([]string{name + ".md"}, true, nil)
 	contents, _ := a.repo.Cat(cands)
 	out := []backlinkOut{}
 	for _, cp := range cands {
@@ -185,6 +187,7 @@ func (a *app) backlinks(target string) []backlinkOut {
 type lsItem struct {
 	Path    string `json:"path"`
 	Summary string `json:"summary"`
+	Title   string `json:"title"`
 	Type    string `json:"type"`
 	Updated string `json:"updated"`
 }
@@ -228,11 +231,11 @@ func (a *app) cmdLs(c *command, args []string) int {
 		if o.tag != "" && !hasTag(pg.Frontmatter, o.tag) {
 			continue
 		}
-		items = append(items, lsItem{p, pg.Summary, t, fmtTime(updated[p])})
+		items = append(items, lsItem{p, pg.Summary, pg.Title, t, fmtTime(updated[p])})
 	}
 	a.emit(map[string]any{"items": items}, func(w io.Writer) {
 		for _, it := range items {
-			fmt.Fprintf(w, "%s\t%s\n", it.Path, it.Summary)
+			fmt.Fprintf(w, "%s\t%s\n", it.Path, summaryOrTitle(it.Summary, it.Title))
 		}
 	})
 	return ExitOK
@@ -247,7 +250,7 @@ func (a *app) cmdContext(c *command, args []string) int {
 	if machine == "" {
 		machine = ctx.MachineName(host)
 	}
-	remote := cwdRemote()
+	remote := a.remote
 	project := ""
 	if remote != "" {
 		project = ctx.ProjectName(remote)
@@ -256,15 +259,129 @@ func (a *app) cmdContext(c *command, args []string) int {
 		}
 	}
 	au, _ := a.author()
-	out := map[string]any{"config": a.cfg.Path, "mirror": a.repo.Dir, "branch": a.repo.Branch, "author": au.Name,
-		"machine": machine, "project": project, "remote": remote, "dirs": a.dirs}
+	paths, err := a.repo.List(a.dirs)
+	if err != nil {
+		return a.fail(ExitGit, "git", err.Error())
+	}
+	pages := map[string]int{}
+	for _, d := range a.dirs {
+		pages[d] = countPagesUnder(paths, d)
+	}
+	out := map[string]any{"config": a.cfg.Path, "profile": a.cfg.Profile, "profile_source": a.cfg.ProfileSource,
+		"repo": a.cfg.Repo, "mirror": a.repo.Dir, "branch": a.repo.Branch, "author": au.Name,
+		"machine": machine, "project": project, "remote": remote, "dirs": a.dirs, "pages": pages}
 	a.emit(out, func(w io.Writer) {
-		for _, k := range []string{"config", "mirror", "branch", "author", "machine", "project", "remote"} {
+		for _, k := range []string{"config", "profile", "profile_source", "repo", "mirror", "branch", "author", "machine", "project", "remote"} {
 			fmt.Fprintf(w, "%s: %v\n", k, out[k])
 		}
-		fmt.Fprintf(w, "dirs: %s\n", strings.Join(a.dirs, ", "))
+		ds := make([]string, len(a.dirs))
+		for i, d := range a.dirs {
+			ds[i] = fmt.Sprintf("%s (%s)", d, plural(pages[d], "page"))
+		}
+		fmt.Fprintf(w, "dirs: %s\n", strings.Join(ds, ", "))
 	})
 	return ExitOK
+}
+
+// summaryOrTitle returns the summary, or the title when the page has none,
+// so that text output always shows something for a page.
+func summaryOrTitle(summary, title string) string {
+	if summary != "" {
+		return summary
+	}
+	return title
+}
+
+type dirItem struct {
+	Dir     string `json:"dir"`
+	Pages   int    `json:"pages"`
+	Summary string `json:"summary"`
+}
+
+// cmdDirs groups one listing of the tree by directory and reads only the
+// index.md files, so the cost does not grow with the number of pages read.
+func (a *app) cmdDirs(c *command, args []string) int {
+	for _, d := range args {
+		p := path.Clean(d)
+		if path.IsAbs(p) || p == ".." || strings.HasPrefix(p, "../") {
+			return a.usageError(c, "directory outside the wiki: "+d)
+		}
+		if strings.HasSuffix(p, ".md") {
+			return a.usageError(c, "not a directory: "+d)
+		}
+	}
+	paths, err := a.repo.List(args)
+	if err != nil {
+		return a.fail(ExitGit, "git", err.Error())
+	}
+	counts := countPages(paths)
+	dirs := make([]string, 0, len(counts))
+	indexes := make([]string, 0, len(counts))
+	for d := range counts {
+		dirs = append(dirs, d)
+		indexes = append(indexes, d+"index.md")
+	}
+	sort.Strings(dirs)
+	contents, err := a.repo.Cat(indexes)
+	if err != nil {
+		return a.fail(ExitGit, "git", err.Error())
+	}
+	items := []dirItem{}
+	for _, d := range dirs {
+		it := dirItem{Dir: d, Pages: counts[d]}
+		if content, ok := contents[d+"index.md"]; ok {
+			it.Summary = page.Parse(d+"index.md", content).Summary
+		}
+		items = append(items, it)
+	}
+	a.emit(map[string]any{"items": items}, func(w io.Writer) {
+		dw, nw := 0, 0
+		for _, it := range items {
+			dw = max(dw, len(it.Dir))
+			nw = max(nw, len(strconv.Itoa(it.Pages)))
+		}
+		for _, it := range items {
+			s := it.Summary
+			if _, ok := contents[it.Dir+"index.md"]; !ok {
+				s = "(no index)"
+			}
+			fmt.Fprintf(w, "%-*s  %*d  %s\n", dw, it.Dir, nw, it.Pages, s)
+		}
+	})
+	return ExitOK
+}
+
+// countPages returns the number of pages directly in each directory,
+// keyed by the directory path with a trailing slash.
+func countPages(paths []string) map[string]int {
+	counts := map[string]int{}
+	for _, p := range paths {
+		counts[path.Dir(p)+"/"]++
+	}
+	return counts
+}
+
+// countPagesUnder returns the number of paths at any depth below dir;
+// "." counts every path.
+func countPagesUnder(paths []string, dir string) int {
+	d := path.Clean(dir)
+	if d == "." {
+		return len(paths)
+	}
+	n := 0
+	for _, p := range paths {
+		if strings.HasPrefix(p, d+"/") {
+			n++
+		}
+	}
+	return n
+}
+
+func plural(n int, unit string) string {
+	if n == 1 {
+		return "1 " + unit
+	}
+	return fmt.Sprintf("%d %ss", n, unit)
 }
 
 func hasTag(fm map[string]any, tag string) bool {

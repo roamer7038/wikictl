@@ -56,11 +56,12 @@ Add `--json` to any command for machine-readable output.
 | `mv <dir>/ <newdir>/` | Move every page under a directory |
 | `rm <path>` | Delete a page |
 | `lint [<path>...]` | Report format violations |
-| `context` | Show the resolved configuration and search directories |
+| `dirs [<dir>...]` | List the directories of the whole wiki with their page counts and `index.md` summaries |
+| `context` | Show the resolved configuration and search directories with their page counts |
 
 `wikictl help <command>` describes each command and its flags. `wikictl version` prints the version.
 
-Global flags, accepted before or after the command: `--json`, `--dirs a,b`, `--config <path>`, `--no-fetch` (skip the fetch that normally precedes every command).
+Global flags, accepted before or after the command: `--json`, `--dirs a,b`, `--config <path>`, `--profile <name>`, `--no-fetch` (skip the fetch that normally precedes every command).
 
 ### Updating a page without overwriting someone else's change
 
@@ -68,7 +69,22 @@ Global flags, accepted before or after the command: `--json`, `--dirs a,b`, `--c
 
 ### Where commands look
 
-By default a command searches up to three directories: `global/`, `projects/<name>/` where `<name>` comes from the `origin` remote of the current directory (skipped outside a git repository), and `machines/<name>/` where `<name>` is the hostname. `--dirs a,b` overrides the list and `wikictl context` shows it.
+By default a command searches up to four directories: `global/`, `personal/`, `projects/<name>/` where `<name>` comes from the `origin` remote of the current directory (skipped outside a git repository), and `machines/<name>/` where `<name>` is the hostname. `--dirs a,b` overrides the list and `wikictl context` shows it, with the number of pages at any depth under each directory (0 when the directory has no page yet; unlike `wikictl dirs`, pages in subdirectories are included). `--dirs .` covers the whole wiki.
+
+Each directory is a scope that answers "where is this knowledge valid?":
+
+| Directory | Valid |
+|---|---|
+| `global/` | for everyone |
+| `personal/` | only for this user, on every machine and in every project (commit conventions, which account to use for what, tool choices) |
+| `projects/<name>/` | in one project |
+| `machines/<name>/` | in one execution environment |
+
+Place a page in the narrowest scope that fits: only this project → `projects/<name>/`; only this execution environment → `machines/<name>/`; only this user → `personal/`; otherwise → `global/`. `personal/` holds facts an agent looks up when they become relevant; rules that must apply to every conversation belong in the agent's standing instructions (for Claude Code, `CLAUDE.md`), not in the wiki. `init` does not create `personal/`; like `projects/` and `machines/`, it appears with the first `put` into it.
+
+`personal/` assumes one person uses the wiki. Everyone who shares a wiki searches the same `personal/`, so in a wiki shared by several people either do not use `personal/`, or set `dirs` in the configuration to choose the search directories.
+
+To see the structure of the whole wiki before deciding where a page goes, `wikictl dirs` lists every directory that directly contains a page, with its page count and the `summary` of its `index.md` (`(no index)` when there is none). It ignores the search directories; `wikictl dirs projects` restricts the list to the directories under `projects/`.
 
 ## Configuration
 
@@ -76,12 +92,48 @@ By default a command searches up to three directories: `global/`, `projects/<nam
 
 | Key | Required | Meaning |
 |---|---|---|
-| `repo` | yes | URL of the wiki repository |
+| `repo` | yes | URL of the wiki repository; may be set in a profile instead |
 | `branch` | no | Branch to use; taken from the remote HEAD when omitted |
 | `author.name`, `author.email` | no | Commit author; falls back to `git config user.name` and `user.email` |
 | `machine` | no | Name for `machines/<name>/`; defaults to the hostname up to the first `.` |
-| `dirs` | no | Fixed list of search directories instead of the default three |
+| `dirs` | no | Fixed list of search directories instead of the default four |
 | `projects` | no | Map from remote name to directory name under `projects/` |
+| `profiles` | no | Named profiles that override the keys above; see below |
+| `default_profile` | no | Profile to use when no other rule selects one |
+
+An unknown key, such as a misspelt `default_profle` or `match.remote`, is a configuration error (exit code 2) that names the key, so a typo never silently selects another wiki.
+
+### Profiles
+
+Profiles keep several wikis, such as a personal one and a work one, in one file. The top-level keys are defaults; a profile overrides them:
+
+```yaml
+author:
+  name: claude-code@laptop
+default_profile: personal
+profiles:
+  personal:
+    repo: git@github.com:you/wiki.git
+    author:
+      email: you@example.invalid
+  work:
+    repo: git@github.example.com:team/wiki.git
+    author:
+      email: you@company.example
+    match:
+      remotes: ["github.example.com/team/*"]
+      paths: ["~/work"]
+```
+
+The profile is chosen by the first of these that applies:
+
+1. `--profile <name>`
+2. `$WIKICTL_PROFILE`
+3. `match`: `remotes` are globs over the `origin` remote of the current directory, written as `host/path` in lowercase without scheme, user, port and `.git`, so SSH and HTTPS URLs of the same repository match the same pattern. A `*` in the middle matches one path element; a trailing `/*` matches every path below it. For example, `gitlab.example.com/team/*` matches `team/app` and the subgroup repository `team/sub/app`, but not `team` itself, while `gitlab.example.com/*/app` matches `team/app` but not `team/sub/app`. `paths` are directories given as absolute paths or paths starting with `~`; the current directory or any directory below one matches. If more than one profile matches, the command fails with exit code 2.
+4. `default_profile`
+5. No profile: only the top-level keys are used.
+
+An unknown profile name is an error (exit code 2). In a profile, `author.name` and `author.email` override separately, `dirs` and `projects` replace the top-level values (a profile's `dirs` also replaces the default four directories), and `branch` is not inherited when the profile sets `repo`. `wikictl context` shows the selected profile, how it was selected and the repository.
 
 The mirror lives under `~/.cache/wikictl/` (or `$XDG_CACHE_HOME/wikictl/`). Delete it if it ever breaks; the next command recreates it.
 
@@ -93,14 +145,14 @@ The mirror lives under `~/.cache/wikictl/` (or `$XDG_CACHE_HOME/wikictl/`). Dele
 | 1 | error, for example a missing page |
 | 2 | usage or configuration error |
 | 3 | conflict: the page changed since it was read |
-| 4 | the page violates the wiki format (missing or invalid frontmatter, no summary, bad path) |
+| 4 | the page violates the wiki format: `put` and `mv` reject invalid frontmatter or a bad path; `lint` exits with 4 on any finding, warnings such as `missing_summary`, `broken_link` and `name_style` included |
 | 5 | a git command failed |
 
 With `--json`, errors are printed as `{"error": "<kind>", "message": "..."}` where `<kind>` is `error`, `usage`, `conflict`, `invalid` or `git`.
 
 ## Page format
 
-A page is a Markdown file in a subdirectory (never at the root) whose frontmatter has a one-line `summary`:
+A page is a Markdown file in a subdirectory (never at the root). Its frontmatter should have a one-line `summary`:
 
 ```markdown
 ---
@@ -116,10 +168,15 @@ Body. Link to other pages with relative paths: [index](index.md).
 - cites: https://example.com/spec | what this source supports
 ```
 
-- File and directory names match `^[a-z0-9][a-z0-9-]*$`; pages end in `.md`.
+- File and directory names must not be empty, start with `.` or `<`, or contain whitespace, control characters or any of ``" \ # ? : ( ) ` ``; pages end in `.md`. `put` and `mv` reject other paths (`bad_path`, exit code 4).
+- Lowercase ASCII letters, digits and hyphens are recommended for names. `lint` reports other names as `name_style`, and names in one directory that differ only by case (which collide on case-insensitive file systems) as `case_collision`.
+- `summary` is recommended, not required. Without it, `put` still writes the page and prints a `missing_summary` warning, `lint` reports `missing_summary`, and `search` and `ls` show the title (first heading, else the file name) instead. `description` is read as a synonym of `summary`; `summary` wins when both are present.
 - Optional frontmatter keys: `type`, `status` (`deprecated` hides the page from `search` and `ls`), `tags`, `aliases`, `review_after`.
-- The `## Links` section, when present, is the last heading. Each line is `- <type>: <target> | <note>`; `<target>` is a relative path or a URL.
+- The `## Links` section, when present, is the last heading. Each line is `- <type>: <target> | <note>`; `<target>` is a relative path or a URL. A line with only a target, `- <target>`, is a `see_also` relation; an untyped URL target must be of the form `<scheme>://...`. The bullet may be `-`, `*` or `+` and may be indented.
+- Write page targets as `[text](path)`. `mv` rewrites only links of that form; a bare path such as `- part_of: index.md` or `- index.md` is left unchanged and becomes a broken link when its target moves.
 - Code fences are never interpreted; a `## Links` heading inside one does not start the section.
+
+Give each directory an `index.md` whose `summary` states what the directory holds, and link the other pages in it to the index with `- part_of: [index](index.md)`. `wikictl get <dir>/index.md` then lists those pages as `backlinks`, and `wikictl dirs` shows the summary next to the directory, so the structure of the wiki describes itself without any generated content.
 
 ## Development
 

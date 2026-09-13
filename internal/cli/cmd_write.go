@@ -77,10 +77,10 @@ func (a *app) cmdPut(c *command, args []string) int {
 	pg := page.Parse(p, content)
 	for _, is := range pg.Issues {
 		switch is.Code {
-		case "missing_summary", "bad_slug", "frontmatter_invalid":
+		case "bad_path", "frontmatter_invalid":
 			return a.fail(ExitInvalid, "invalid", is.Code+": "+is.Message)
 		default:
-			fmt.Fprintf(a.stderr, "wikictl: warning: %s:%d: %s: %s\n", is.Path, is.Line, is.Code, is.Message)
+			a.warn(is)
 		}
 	}
 	a.warnBroken(pg)
@@ -96,6 +96,11 @@ func (a *app) cmdPut(c *command, args []string) int {
 	out := map[string]string{"path": p, "sha": res.SHAs[p], "commit": res.Commit}
 	a.emit(out, func(w io.Writer) { fmt.Fprintf(w, "%s\t%s\t%s\n", p, res.SHAs[p], res.Commit) })
 	return ExitOK
+}
+
+// warn prints a non-blocking issue on stderr.
+func (a *app) warn(is page.Issue) {
+	fmt.Fprintf(a.stderr, "wikictl: warning: %s:%d: %s: %s\n", is.Path, is.Line, is.Code, is.Message)
 }
 
 // warnBroken reports links to missing pages on stderr. It never blocks the
@@ -155,8 +160,11 @@ func (a *app) cmdMv(c *command, args []string) int {
 	if fromDir || toDir {
 		return a.usageError(c, "to move a directory, end both arguments with /")
 	}
-	if !page.ValidPagePath(to) {
-		return a.fail(ExitInvalid, "invalid", "bad_slug: "+to)
+	for _, is := range page.PathIssues(to) {
+		if is.Code == "bad_path" {
+			return a.fail(ExitInvalid, "invalid", is.Code+": "+is.Message)
+		}
+		a.warn(is)
 	}
 	contents, err := a.repo.Cat([]string{from, to})
 	if err != nil {
@@ -172,12 +180,12 @@ func (a *app) cmdMv(c *command, args []string) int {
 	if err != nil {
 		return a.fail(ExitGit, "git", err.Error())
 	}
-	// Record the old slug in aliases when it changes.
-	oldSlug := strings.TrimSuffix(path.Base(from), ".md")
-	if oldSlug != strings.TrimSuffix(path.Base(to), ".md") {
+	// Record the old file name in aliases when it changes.
+	oldName := strings.TrimSuffix(path.Base(from), ".md")
+	if oldName != strings.TrimSuffix(path.Base(to), ".md") {
 		for i := range changes {
 			if changes[i].Path == to {
-				changes[i].Content = page.AddAlias(changes[i].Content, oldSlug)
+				changes[i].Content = page.AddAlias(changes[i].Content, oldName)
 			}
 		}
 	}
@@ -195,11 +203,17 @@ func (a *app) cmdMv(c *command, args []string) int {
 
 // mvDir moves every page under from to the same relative position under to.
 func (a *app) mvDir(from, to, msg string) int {
-	for _, d := range []string{from, to} {
-		for _, seg := range strings.Split(d, "/") {
-			if !page.ValidSlug(seg) {
-				return a.fail(ExitInvalid, "invalid", "bad_slug: "+d)
-			}
+	for _, seg := range strings.Split(from, "/") {
+		if seg == "" || seg == "." || seg == ".." {
+			return a.fail(ExitInvalid, "invalid", fmt.Sprintf("bad_path: %q is not a directory of the wiki", from+"/"))
+		}
+	}
+	for _, seg := range strings.Split(to, "/") {
+		if err := page.CheckName(seg); err != nil {
+			return a.fail(ExitInvalid, "invalid", "bad_path: "+err.Error())
+		}
+		if !page.Recommended(seg) {
+			a.warn(page.Issue{Path: to + "/", Code: "name_style", Message: fmt.Sprintf("name %q: lowercase ASCII letters, digits and hyphens are recommended", seg)})
 		}
 	}
 	src, err := a.repo.List([]string{from})
@@ -264,9 +278,10 @@ func (a *app) relocate(mapping map[string]string) ([]repo.Change, error) {
 const initReadme = `# wiki
 
 A knowledge base shared by AI agents and people. A page is a Markdown file
-whose frontmatter has a one-line summary. Relations go in a "## Links"
+whose frontmatter should have a one-line summary. Relations go in a "## Links"
 section at the end; links are relative paths. Directories are scopes:
-global/ for everything, projects/<name>/ and machines/<name>/ for the rest.
+global/ for everything, personal/ for one user, projects/<name>/ and
+machines/<name>/ for the rest.
 `
 
 func (a *app) cmdInit(c *command, args []string) int {
@@ -276,7 +291,7 @@ func (a *app) cmdInit(c *command, args []string) int {
 	empty := ""
 	changes := []repo.Change{
 		{Path: "README.md", Content: []byte(initReadme), Base: &empty},
-		{Path: "global/index.md", Content: []byte("---\nsummary: Entry point for knowledge that does not depend on any project or machine\n---\n# global\n"), Base: &empty},
+		{Path: "global/index.md", Content: []byte("---\nsummary: Entry point for knowledge that does not depend on any project, machine or user\n---\n# global\n"), Base: &empty},
 	}
 	res, code := a.commit(changes, "wikictl: init")
 	if code != ExitOK {

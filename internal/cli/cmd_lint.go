@@ -24,6 +24,10 @@ func (a *app) cmdLint(c *command, args []string) int {
 	for _, p := range all {
 		exists[p] = true
 	}
+	checked := map[string]bool{}
+	for _, p := range paths {
+		checked[p] = true
+	}
 	contents, _ := a.repo.Cat(paths)
 	for _, p := range args {
 		if contents[p] == nil {
@@ -31,6 +35,13 @@ func (a *app) cmdLint(c *command, args []string) int {
 		}
 	}
 	items := []page.Issue{}
+	// Collisions are found against the whole tree, since the colliding name
+	// may lie outside the checked directories.
+	for _, is := range page.CaseCollisions(all) {
+		if checked[is.Path] {
+			items = append(items, is)
+		}
+	}
 	for _, p := range paths {
 		pg := page.Parse(p, contents[p])
 		items = append(items, pg.Issues...)
