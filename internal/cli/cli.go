@@ -90,6 +90,10 @@ pages are rewritten in the same commit, and the old slug is added to aliases
 when it changes. When both arguments end with a slash, every page under
 <dir>/ is moved to <newdir>/ instead; slugs do not change, so no alias is added.
 
+Only links of the form [text](path) are rewritten. A bare path in a Links line,
+such as "- part_of: index.md" or "- index.md", is left unchanged and becomes
+a broken link; write page targets as [text](path).
+
 Output: {path, commit, rewritten} or {path, commit, moved, rewritten}.`,
 		flags: func(fs *flag.FlagSet) { msgFlag(fs) }, run: (*app).cmdMv},
 	{name: "rm", args: "<path>", minArgs: 1, maxArgs: 1,
