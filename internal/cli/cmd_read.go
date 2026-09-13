@@ -250,7 +250,7 @@ func (a *app) cmdContext(c *command, args []string) int {
 	if machine == "" {
 		machine = ctx.MachineName(host)
 	}
-	remote := cwdRemote()
+	remote := a.remote
 	project := ""
 	if remote != "" {
 		project = ctx.ProjectName(remote)
@@ -267,10 +267,11 @@ func (a *app) cmdContext(c *command, args []string) int {
 	for _, d := range a.dirs {
 		pages[d] = countPagesUnder(paths, d)
 	}
-	out := map[string]any{"config": a.cfg.Path, "mirror": a.repo.Dir, "branch": a.repo.Branch, "author": au.Name,
+	out := map[string]any{"config": a.cfg.Path, "profile": a.cfg.Profile, "profile_source": a.cfg.ProfileSource,
+		"repo": a.cfg.Repo, "mirror": a.repo.Dir, "branch": a.repo.Branch, "author": au.Name,
 		"machine": machine, "project": project, "remote": remote, "dirs": a.dirs, "pages": pages}
 	a.emit(out, func(w io.Writer) {
-		for _, k := range []string{"config", "mirror", "branch", "author", "machine", "project", "remote"} {
+		for _, k := range []string{"config", "profile", "profile_source", "repo", "mirror", "branch", "author", "machine", "project", "remote"} {
 			fmt.Fprintf(w, "%s: %v\n", k, out[k])
 		}
 		ds := make([]string, len(a.dirs))

@@ -13,6 +13,7 @@ import (
 func setup(t *testing.T) (cfgPath string) {
 	t.Helper()
 	isolateGit(t)
+	t.Setenv("WIKICTL_PROFILE", "")
 	d := t.TempDir()
 	remote := filepath.Join(d, "remote.git")
 	mustRun(t, "", "git", "init", "-q", "--bare", "-b", "main", remote)
@@ -632,5 +633,105 @@ func TestDirsDotCoversWholeWiki(t *testing.T) {
 	runCLI(t, cfg, "---\nsummary: bad\n---\n# bad\n[x](none.md)\n", "put", "projects/app/bad.md")
 	if code, out, _ := runCLI(t, cfg, "", "lint", "--json", "--dirs", "."); code != ExitInvalid || !strings.Contains(out, "projects/app/bad.md") {
 		t.Errorf("lint --dirs .: code=%d out=%s", code, out)
+	}
+}
+
+func TestProfile(t *testing.T) {
+	cfg := setup(t)
+	b, _ := os.ReadFile(cfg)
+	remote := strings.TrimPrefix(strings.SplitN(string(b), "\n", 2)[0], "repo: ")
+	os.WriteFile(cfg, []byte("author: {name: agent, email: a@a}\nmachine: h1\nprofiles:\n  home: {repo: "+remote+"}\n  work: {repo: /nonexistent/work.git}\n"), 0o600)
+
+	code, out, errs := runCLI(t, cfg, "", "context", "--json", "--profile", "home")
+	if code != 0 || !strings.Contains(out, `"profile":"home"`) || !strings.Contains(out, `"profile_source":"flag"`) || !strings.Contains(out, `"repo":"`+remote+`"`) {
+		t.Errorf("--profile: code=%d %s %s", code, out, errs)
+	}
+	t.Setenv("WIKICTL_PROFILE", "home")
+	if code, out, errs := runCLI(t, cfg, "", "context", "--json"); code != 0 || !strings.Contains(out, `"profile_source":"env"`) {
+		t.Errorf("WIKICTL_PROFILE: code=%d %s %s", code, out, errs)
+	}
+	t.Setenv("WIKICTL_PROFILE", "")
+	if code, out, _ := runCLI(t, cfg, "", "--json", "context", "--profile", "nope"); code != ExitUsage || !strings.Contains(out, `"error":"usage"`) {
+		t.Errorf("unknown profile: code=%d %s", code, out)
+	}
+	if code, _, errs := runCLI(t, cfg, "", "context"); code != ExitUsage || !strings.Contains(errs, "no profile is selected") {
+		t.Errorf("no profile: code=%d %s", code, errs)
+	}
+}
+
+func TestProfileMatch(t *testing.T) {
+	cfg := setup(t)
+	d := filepath.Dir(cfg)
+	home := filepath.Join(d, "remote.git")
+	work := filepath.Join(d, "work-wiki.git")
+	lab := filepath.Join(d, "lab-wiki.git")
+	mustRun(t, "", "git", "clone", "-q", "--bare", home, work)
+	mustRun(t, "", "git", "clone", "-q", "--bare", home, lab)
+	app := filepath.Join(d, "app")
+	mustRun(t, "", "git", "init", "-q", app)
+	mustRun(t, app, "git", "remote", "add", "origin", "git@gitlab.example.com:team/app.git")
+	labDir := filepath.Join(d, "lab", "sub")
+	os.MkdirAll(labDir, 0o755)
+	other := filepath.Join(d, "other")
+	os.MkdirAll(other, 0o755)
+	os.WriteFile(cfg, []byte(`author: {name: agent, email: a@a}
+machine: h1
+default_profile: home
+profiles:
+  home: {repo: `+home+`}
+  work:
+    repo: `+work+`
+    match: {remotes: ["gitlab.example.com/team/*"]}
+  lab:
+    repo: `+lab+`
+    match: {paths: ["`+filepath.Dir(labDir)+`"]}
+`), 0o600)
+
+	type ctxOut struct{ Profile, ProfileSource, Repo, Mirror string }
+	contextIn := func(dir string) ctxOut {
+		t.Helper()
+		t.Chdir(dir)
+		code, out, errs := runCLI(t, cfg, "", "context", "--json")
+		if code != 0 {
+			t.Fatalf("context in %s: code=%d %s %s", dir, code, out, errs)
+		}
+		var raw struct {
+			Profile       string `json:"profile"`
+			ProfileSource string `json:"profile_source"`
+			Repo          string `json:"repo"`
+			Mirror        string `json:"mirror"`
+		}
+		json.Unmarshal([]byte(out), &raw)
+		return ctxOut{raw.Profile, raw.ProfileSource, raw.Repo, raw.Mirror}
+	}
+	byRemote, byPath, byDefault := contextIn(app), contextIn(labDir), contextIn(other)
+	if byRemote.Profile != "work" || byRemote.ProfileSource != "match" || byRemote.Repo != work {
+		t.Errorf("match.remotes: %+v", byRemote)
+	}
+	if byPath.Profile != "lab" || byPath.ProfileSource != "match" || byPath.Repo != lab {
+		t.Errorf("match.paths: %+v", byPath)
+	}
+	if byDefault.Profile != "home" || byDefault.ProfileSource != "default" || byDefault.Repo != home {
+		t.Errorf("default: %+v", byDefault)
+	}
+	if byRemote.Mirror == "" || byRemote.Mirror == byPath.Mirror || byRemote.Mirror == byDefault.Mirror || byPath.Mirror == byDefault.Mirror {
+		t.Errorf("each profile needs its own mirror: %q %q %q", byRemote.Mirror, byPath.Mirror, byDefault.Mirror)
+	}
+
+	// A write from the matched directory reaches only the matched wiki.
+	t.Chdir(app)
+	if code, _, errs := runCLI(t, cfg, "---\nsummary: w\n---\n# w\n", "put", "global/only-work.md"); code != 0 {
+		t.Fatalf("put: code=%d %s", code, errs)
+	}
+	for bare, want := range map[string]bool{work: true, home: false, lab: false} {
+		err := exec.Command("git", "--git-dir", bare, "cat-file", "-e", "main:global/only-work.md").Run()
+		if (err == nil) != want {
+			t.Errorf("%s has page: %v, want %v", bare, err == nil, want)
+		}
+	}
+
+	os.WriteFile(cfg, []byte("repo: "+home+"\nprofiles:\n  work:\n    match: {remote: [\"gitlab.example.com/team/*\"]}\n"), 0o600)
+	if code, _, errs := runCLI(t, cfg, "", "context"); code != ExitUsage || !strings.Contains(errs, `unknown field "remote"`) {
+		t.Errorf("unknown key: code=%d %s", code, errs)
 	}
 }

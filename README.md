@@ -61,7 +61,7 @@ Add `--json` to any command for machine-readable output.
 
 `wikictl help <command>` describes each command and its flags. `wikictl version` prints the version.
 
-Global flags, accepted before or after the command: `--json`, `--dirs a,b`, `--config <path>`, `--no-fetch` (skip the fetch that normally precedes every command).
+Global flags, accepted before or after the command: `--json`, `--dirs a,b`, `--config <path>`, `--profile <name>`, `--no-fetch` (skip the fetch that normally precedes every command).
 
 ### Updating a page without overwriting someone else's change
 
@@ -92,12 +92,48 @@ To see the structure of the whole wiki before deciding where a page goes, `wikic
 
 | Key | Required | Meaning |
 |---|---|---|
-| `repo` | yes | URL of the wiki repository |
+| `repo` | yes | URL of the wiki repository; may be set in a profile instead |
 | `branch` | no | Branch to use; taken from the remote HEAD when omitted |
 | `author.name`, `author.email` | no | Commit author; falls back to `git config user.name` and `user.email` |
 | `machine` | no | Name for `machines/<name>/`; defaults to the hostname up to the first `.` |
 | `dirs` | no | Fixed list of search directories instead of the default four |
 | `projects` | no | Map from remote name to directory name under `projects/` |
+| `profiles` | no | Named profiles that override the keys above; see below |
+| `default_profile` | no | Profile to use when no other rule selects one |
+
+An unknown key, such as a misspelt `default_profle` or `match.remote`, is a configuration error (exit code 2) that names the key, so a typo never silently selects another wiki.
+
+### Profiles
+
+Profiles keep several wikis, such as a personal one and a work one, in one file. The top-level keys are defaults; a profile overrides them:
+
+```yaml
+author:
+  name: claude-code@laptop
+default_profile: personal
+profiles:
+  personal:
+    repo: git@github.com:you/wiki.git
+    author:
+      email: you@example.invalid
+  work:
+    repo: git@github.example.com:team/wiki.git
+    author:
+      email: you@company.example
+    match:
+      remotes: ["github.example.com/team/*"]
+      paths: ["~/work"]
+```
+
+The profile is chosen by the first of these that applies:
+
+1. `--profile <name>`
+2. `$WIKICTL_PROFILE`
+3. `match`: `remotes` are globs over the `origin` remote of the current directory, written as `host/path` in lowercase without scheme, user, port and `.git`, so SSH and HTTPS URLs of the same repository match the same pattern. A `*` in the middle matches one path element; a trailing `/*` matches every path below it. For example, `gitlab.example.com/team/*` matches `team/app` and the subgroup repository `team/sub/app`, but not `team` itself, while `gitlab.example.com/*/app` matches `team/app` but not `team/sub/app`. `paths` are directories given as absolute paths or paths starting with `~`; the current directory or any directory below one matches. If more than one profile matches, the command fails with exit code 2.
+4. `default_profile`
+5. No profile: only the top-level keys are used.
+
+An unknown profile name is an error (exit code 2). In a profile, `author.name` and `author.email` override separately, `dirs` and `projects` replace the top-level values, and `branch` is not inherited when the profile sets `repo`. `wikictl context` shows the selected profile, how it was selected and the repository.
 
 The mirror lives under `~/.cache/wikictl/` (or `$XDG_CACHE_HOME/wikictl/`). Delete it if it ever breaks; the next command recreates it.
 

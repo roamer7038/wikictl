@@ -61,7 +61,7 @@ Linux と macOS（x86_64 と arm64）のバイナリとチェックサムは [re
 
 `wikictl help <command>` で各コマンドの説明とフラグを表示します。`wikictl version` は版を表示します。
 
-共通フラグはコマンド名の前後どちらにも置けます: `--json`、`--dirs a,b`、`--config <path>`、`--no-fetch`（実行前の fetch を省く）。
+共通フラグはコマンド名の前後どちらにも置けます: `--json`、`--dirs a,b`、`--config <path>`、`--profile <name>`、`--no-fetch`（実行前の fetch を省く）。
 
 ### 他人の変更を上書きせずにページを更新する
 
@@ -92,12 +92,48 @@ Linux と macOS（x86_64 と arm64）のバイナリとチェックサムは [re
 
 | キー | 必須 | 意味 |
 |---|---|---|
-| `repo` | 必須 | wiki リポジトリの URL |
+| `repo` | 必須 | wiki リポジトリの URL。プロファイル側で設定してもよい |
 | `branch` | 任意 | 使うブランチ。省略時はリモートの HEAD から決める |
 | `author.name`, `author.email` | 任意 | コミットの author。無ければ `git config user.name` と `user.email` |
 | `machine` | 任意 | `machines/<name>/` の name。省略時はホスト名の最初の `.` まで |
 | `dirs` | 任意 | 既定の 4 つの代わりに使う検索対象ディレクトリの固定リスト |
 | `projects` | 任意 | リモート名から `projects/` 配下のディレクトリ名への写像 |
+| `profiles` | 任意 | 上記のキーを上書きする名前付きプロファイル。後述 |
+| `default_profile` | 任意 | 他の規則でプロファイルが決まらないときに使うプロファイル |
+
+`default_profle` や `match.remote` のような打ち間違いを含む未知のキーは、そのキー名を示す設定エラー（終了コード 2）です。打ち間違いで別の wiki が黙って選ばれることはありません。
+
+### プロファイル
+
+プロファイルを使うと、個人用と業務用のような複数の wiki を 1 つのファイルで扱えます。最上位のキーが既定値で、プロファイルがそれを上書きします:
+
+```yaml
+author:
+  name: claude-code@laptop
+default_profile: personal
+profiles:
+  personal:
+    repo: git@github.com:you/wiki.git
+    author:
+      email: you@example.invalid
+  work:
+    repo: git@github.example.com:team/wiki.git
+    author:
+      email: you@company.example
+    match:
+      remotes: ["github.example.com/team/*"]
+      paths: ["~/work"]
+```
+
+プロファイルは次のうち最初に当てはまるもので決まります:
+
+1. `--profile <name>`
+2. `$WIKICTL_PROFILE`
+3. `match`。`remotes` はカレントディレクトリの `origin` リモートに対する glob です。リモートはスキーム、ユーザ、ポート、`.git` を除いた小文字の `host/path` の形で比べるので、同じリポジトリの SSH と HTTPS の URL は同じパターンに一致します。途中の `*` はパスの 1 要素に、末尾の `/*` はそれより下のすべてのパスに一致します。たとえば `gitlab.example.com/team/*` は `team/app` とサブグループのリポジトリ `team/sub/app` に一致し、`team` 自体には一致しません。`gitlab.example.com/*/app` は `team/app` に一致し、`team/sub/app` には一致しません。`paths` は絶対パスか `~` で始まるパスで書くディレクトリで、カレントディレクトリがそのディレクトリか配下なら一致します。複数のプロファイルに一致した場合、コマンドは終了コード 2 で失敗します。
+4. `default_profile`
+5. プロファイル無し。最上位のキーだけを使います。
+
+存在しないプロファイル名はエラー（終了コード 2）です。プロファイル内の `author.name` と `author.email` は個別に上書きし、`dirs` と `projects` は最上位の値を置き換えます。プロファイルが `repo` を設定した場合、`branch` は継承しません。`wikictl context` で選ばれたプロファイル、その選ばれ方、リポジトリを確認できます。
 
 ミラーは `~/.cache/wikictl/`（または `$XDG_CACHE_HOME/wikictl/`）にあります。壊れたら削除してください。次のコマンド実行時に作り直されます。
 
