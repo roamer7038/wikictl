@@ -180,7 +180,7 @@ func (a *app) cmdMv(c *command, args []string) int {
 	if err != nil {
 		return a.fail(ExitGit, "git", err.Error())
 	}
-	// Record the old slug in aliases when it changes.
+	// Record the old file name in aliases when it changes.
 	oldSlug := strings.TrimSuffix(path.Base(from), ".md")
 	if oldSlug != strings.TrimSuffix(path.Base(to), ".md") {
 		for i := range changes {

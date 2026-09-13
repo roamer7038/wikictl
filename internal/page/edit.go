@@ -3,7 +3,10 @@ package page
 import (
 	"bytes"
 	"path"
+	"strconv"
 	"strings"
+
+	"github.com/goccy/go-yaml"
 )
 
 // AddAlias appends alias to the aliases list of the frontmatter, creating the
@@ -21,11 +24,11 @@ func AddAlias(content []byte, alias string) []byte {
 		if l == "aliases:" {
 			idx = i
 		}
-		if strings.TrimSpace(l) == "- "+alias {
+		if t := strings.TrimSpace(l); t == "- "+alias || t == "- "+yamlString(alias) {
 			return content
 		}
 	}
-	entry := "  - " + alias
+	entry := "  - " + yamlString(alias)
 	if idx < 0 {
 		lines = append(lines, "aliases:", entry)
 	} else {
@@ -41,6 +44,16 @@ func AddAlias(content []byte, alias string) []byte {
 	b.WriteString("\n---\n")
 	b.Write(rest)
 	return b.Bytes()
+}
+
+// yamlString returns s as a YAML scalar that decodes to the string s: s itself
+// when it already does, otherwise s in double quotes.
+func yamlString(s string) string {
+	var v []any
+	if err := yaml.Unmarshal([]byte("- "+s), &v); err == nil && len(v) == 1 && v[0] == s {
+		return s
+	}
+	return strconv.Quote(s)
 }
 
 // RelDest returns the relative link destination from fromPage to toPath.
