@@ -3,6 +3,8 @@
 package cli
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -312,16 +314,15 @@ func splitCommon(args []string) (rest, common []string) {
 }
 
 // openRepo opens the mirror under $XDG_CACHE_HOME/wikictl (or
-// ~/.cache/wikictl), named after the repository URL, and fetches unless
-// --no-fetch was given.
+// ~/.cache/wikictl), named by mirrorName, and fetches unless --no-fetch was
+// given.
 func (a *app) openRepo() error {
 	cache := os.Getenv("XDG_CACHE_HOME")
 	if cache == "" {
 		h, _ := os.UserHomeDir()
 		cache = filepath.Join(h, ".cache")
 	}
-	name := strings.NewReplacer("/", "_", ":", "_", "@", "_", "\\", "_").Replace(a.cfg.Repo)
-	r, err := repo.Open(filepath.Join(cache, "wikictl", name), a.cfg.Repo, a.cfg.Branch)
+	r, err := repo.Open(filepath.Join(cache, "wikictl", mirrorName(a.cfg.Repo)), a.cfg.Repo, a.cfg.Branch)
 	if err != nil {
 		return err
 	}
@@ -330,6 +331,33 @@ func (a *app) openRepo() error {
 		return r.Fetch()
 	}
 	return nil
+}
+
+// mirrorName returns the mirror directory name for the repository URL: the
+// last path segment without ".git", followed by "-" and the first 12 hex
+// digits of the SHA-256 of the whole URL. The hash keeps URLs that share the
+// readable part apart; the readable part holds no host or user information.
+func mirrorName(repoURL string) string {
+	base := strings.TrimRight(repoURL, `/\`)
+	if i := strings.LastIndexAny(base, `/\:`); i >= 0 {
+		base = base[i+1:]
+	}
+	base = strings.TrimSuffix(base, ".git")
+	base = strings.Map(func(r rune) rune {
+		if r == '.' || r == '-' || r == '_' || r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' {
+			return r
+		}
+		return '_'
+	}, base)
+	base = strings.TrimLeft(base, ".")
+	if len(base) > 64 {
+		base = base[:64]
+	}
+	if base == "" {
+		base = "wiki"
+	}
+	sum := sha256.Sum256([]byte(repoURL))
+	return base + "-" + hex.EncodeToString(sum[:])[:12]
 }
 
 // cwdRemote returns the origin URL of the repository containing the current

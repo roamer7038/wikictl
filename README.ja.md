@@ -344,6 +344,10 @@ profiles:
 
 wikictl は、`repo` の値ごとに 1 つの bare ミラーを `$XDG_CACHE_HOME/wikictl/`（`$XDG_CACHE_HOME` が未設定なら `~/.cache/wikictl/`）に置きます。パスは `wikictl context` で確認できます。
 
+ミラーの名前は、`repo` の最後のパス要素から `.git` を除いたものに、`-` と `repo` の値全体の SHA-256 の先頭 12 桁（16 進数）を続けたものです（例: `wiki-0123456789ab`）。wikictl は、ミラーの `remote.origin.url` が `repo` と一致する場合だけそのミラーを使い、一致しなければ終了コード 5 で終了します（`mirror <path> is for another repository (its remote.origin.url is not the configured repo); delete it and run the command again`）。
+
+wikictl 0.2.x 以前が作ったミラーは、`repo` の値全体の `/`、`:`、`@`、`\` を `_` に置き換えた名前です（例: `_srv_wiki.git`）。これらは使われなくなり、初回の実行時に新しいミラーが作られます（fetch が 1 回余分にかかります。wiki の内容はリモートにあるので失われません）。`$XDG_CACHE_HOME/wikictl/` にある旧ミラーのディレクトリと `<名前>.lock` ファイルは手動で削除してください。
+
 - 使っているブランチはミラーに保存される。`branch` を設定していない場合は保存されたブランチを使い、何も保存されていないときだけ remote HEAD から決める。そのため、リモートの既定ブランチを変えた場合や、設定から `branch` を削除した場合は、`branch` を設定するかミラーを削除するまで追従しない。同じ `repo` を使うプロファイルのうち `branch` を設定していないものは、他のプロファイルが最後に保存したブランチを使う
 - ミラーで動かす git には、`git rev-parse --local-env-vars` が挙げるリポジトリローカルな環境変数（`GIT_DIR`、`GIT_WORK_TREE`、`GIT_INDEX_FILE` など）と `GIT_NAMESPACE` を渡さない。そのため、別のリポジトリの git フックやエイリアスから呼び出しても、wiki のリポジトリを操作する。`git -c` や `GIT_CONFIG_COUNT` で渡した設定もこれらの環境変数に含まれ、ミラーには適用されない。こうした設定は git の設定ファイルに書く。`GIT_SSH_COMMAND` や `GIT_CONFIG_GLOBAL` など、それ以外の環境変数は渡す
 - ミラーが壊れた場合は削除する。次のコマンド実行時に作り直される

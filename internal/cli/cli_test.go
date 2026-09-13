@@ -768,6 +768,73 @@ profiles:
 	}
 }
 
+// Two repo URLs that differ only where "/" and "_" swap places must use
+// separate mirrors, so that each write reaches its own wiki.
+func TestMirrorPerRepo(t *testing.T) {
+	cfg := setup(t)
+	d := filepath.Dir(cfg)
+	seed := filepath.Join(d, "remote.git")
+	work := filepath.Join(d, "srv", "foo_bar", "wiki.git")
+	private := filepath.Join(d, "srv", "foo", "bar_wiki.git")
+	mustRun(t, "", "git", "clone", "-q", "--bare", seed, work)
+	mustRun(t, "", "git", "clone", "-q", "--bare", seed, private)
+	os.WriteFile(cfg, []byte(`author: {name: agent, email: a@a}
+machine: h1
+profiles:
+  work: {repo: `+work+`}
+  private: {repo: `+private+`}
+`), 0o600)
+
+	if code, _, errs := runCLI(t, cfg, "", "--profile", "work", "ls"); code != 0 {
+		t.Fatalf("ls work: code=%d %s", code, errs)
+	}
+	if code, _, errs := runCLI(t, cfg, "---\nsummary: s\n---\n# s\n", "--profile", "private", "put", "personal/secret.md"); code != 0 {
+		t.Fatalf("put private: code=%d %s", code, errs)
+	}
+	for bare, want := range map[string]bool{private: true, work: false} {
+		err := exec.Command("git", "--git-dir", bare, "cat-file", "-e", "main:personal/secret.md").Run()
+		if (err == nil) != want {
+			t.Errorf("%s has page: %v, want %v", bare, err == nil, want)
+		}
+	}
+
+	mirror := func(profile string) string {
+		t.Helper()
+		code, out, errs := runCLI(t, cfg, "", "--profile", profile, "--no-fetch", "context", "--json")
+		if code != 0 {
+			t.Fatalf("context %s: code=%d %s", profile, code, errs)
+		}
+		var c struct {
+			Mirror string `json:"mirror"`
+		}
+		json.Unmarshal([]byte(out), &c)
+		return c.Mirror
+	}
+	if w, p := mirror("work"), mirror("private"); w == p || filepath.Dir(w) != filepath.Join(d, "cache", "wikictl") {
+		t.Errorf("mirrors: work %q, private %q", w, p)
+	}
+}
+
+func TestMirrorName(t *testing.T) {
+	a := mirrorName("/srv/foo_bar/wiki.git")
+	b := mirrorName("/srv/foo/bar_wiki.git")
+	if a == b {
+		t.Errorf("colliding names: %q", a)
+	}
+	for repo, prefix := range map[string]string{
+		"/srv/foo_bar/wiki.git":                      "wiki-",
+		"git@github.com:team/app.wiki.git":           "app.wiki-",
+		"https://alice:token@example.com/team/wiki/": "wiki-",
+		`C:\wikis\notes`:                             "notes-",
+		"":                                           "wiki-",
+	} {
+		got := mirrorName(repo)
+		if !strings.HasPrefix(got, prefix) || len(got) != len(prefix)+12 || strings.Contains(got, "token") {
+			t.Errorf("mirrorName(%q) = %q, want %s<12 hex digits>", repo, got, prefix)
+		}
+	}
+}
+
 // A GIT_DIR inherited from a git hook or alias must not redirect the
 // mirror's git commands to the caller's repository.
 func TestPutIgnoresCallerGitDir(t *testing.T) {

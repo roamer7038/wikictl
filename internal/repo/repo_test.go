@@ -154,6 +154,23 @@ func TestOpenLeftoverDir(t *testing.T) {
 	}
 }
 
+// A mirror whose remote.origin.url is another repository must not be used.
+func TestOpenRemoteMismatch(t *testing.T) {
+	remote := newRemote(t, true)
+	other := newRemote(t, true)
+	mirror := filepath.Join(t.TempDir(), "m")
+	if _, err := Open(mirror, remote, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(mirror, remote, ""); err != nil {
+		t.Errorf("same remote: %v", err)
+	}
+	_, err := Open(mirror, other, "")
+	if err == nil || !strings.Contains(err.Error(), "mirror "+mirror+" is for another repository") {
+		t.Errorf("other remote: %v", err)
+	}
+}
+
 func TestOpenEmptyRemote(t *testing.T) {
 	remote := newRemote(t, false)
 	r, err := Open(filepath.Join(t.TempDir(), "m"), remote, "main")
