@@ -81,19 +81,21 @@ Output: items[] {path, summary, title, type, updated}.`,
 as <path>. Omit --base for a new page. For an existing page pass --base with
 the blob sha from get; without it, or if the page changed in the meantime, the
 command exits with code 3 and prints the current content and sha. A page
-whose frontmatter is invalid or whose path breaks the slug rules is rejected
-with exit code 4. A missing summary and links to missing pages only produce
-warnings on standard error; "description" in the frontmatter is read as a
-synonym of "summary".
+whose frontmatter is invalid or whose path breaks the file name rules (see
+"help lint") is rejected with exit code 4. A missing summary, links to missing
+pages and names outside the recommended form only produce warnings on standard
+error; "description" in the frontmatter is read as a synonym of "summary".
 
 Output: {path, sha, commit}.`,
 		flags: func(fs *flag.FlagSet) { putFlags(fs) }, run: (*app).cmdPut},
 	{name: "mv", args: "<path> <newpath> | <dir>/ <newdir>/", minArgs: 2, maxArgs: 2,
 		summary: "Move or rename a page or a directory, rewriting links",
 		detail: `Move or rename a page. Links inside the moved page and links to it from other
-pages are rewritten in the same commit, and the old slug is added to aliases
-when it changes. When both arguments end with a slash, every page under
-<dir>/ is moved to <newdir>/ instead; slugs do not change, so no alias is added.
+pages are rewritten in the same commit, and the old file name (without .md) is
+added to aliases when it changes. When both arguments end with a slash, every
+page under <dir>/ is moved to <newdir>/ instead; file names do not change, so
+no alias is added. A new path that breaks the file name rules (see "help lint")
+is rejected with exit code 4.
 
 Only links of the form [text](path) are rewritten. A bare path in a Links line,
 such as "- part_of: index.md" or "- index.md", is left unchanged and becomes
@@ -110,9 +112,17 @@ Output: {path, commit}.`,
 		flags: func(fs *flag.FlagSet) { msgFlag(fs) }, run: (*app).cmdRm},
 	{name: "lint", args: "[<path>...]", maxArgs: -1,
 		summary: "Report pages that violate the wiki format",
-		detail: `Check pages for missing_summary, bad_slug, frontmatter_invalid, links_syntax
-and broken_link. Without arguments every page under the search directories is
-checked. Exits with code 4 when violations are found.
+		detail: `Check pages for missing_summary, frontmatter_invalid, links_syntax, broken_link
+and the file name rules. Without arguments every page under the search
+directories is checked. Exits with code 4 when violations are found.
+
+File name rules: a page is <dir>/<name>.md, never at the wiki root. A file or
+directory name must not be empty, start with a dot or <, or contain
+whitespace, control characters or any of the characters " \ # ? : ( ) ` + "`" + `
+(bad_path; put and mv reject such paths). Lowercase ASCII letters, digits and hyphens are
+recommended; other names are reported as name_style. Names in one directory
+that differ only by case collide on case-insensitive file systems and are
+reported as case_collision, against the whole wiki.
 
 A Links line is "- <type>: <target> | <note>", or "- <target>" for an untyped
 see_also relation (an untyped URL must be "<scheme>://..."); the bullet may

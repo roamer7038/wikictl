@@ -77,10 +77,10 @@ func (a *app) cmdPut(c *command, args []string) int {
 	pg := page.Parse(p, content)
 	for _, is := range pg.Issues {
 		switch is.Code {
-		case "bad_slug", "frontmatter_invalid":
+		case "bad_path", "frontmatter_invalid":
 			return a.fail(ExitInvalid, "invalid", is.Code+": "+is.Message)
 		default:
-			fmt.Fprintf(a.stderr, "wikictl: warning: %s:%d: %s: %s\n", is.Path, is.Line, is.Code, is.Message)
+			a.warn(is)
 		}
 	}
 	a.warnBroken(pg)
@@ -96,6 +96,11 @@ func (a *app) cmdPut(c *command, args []string) int {
 	out := map[string]string{"path": p, "sha": res.SHAs[p], "commit": res.Commit}
 	a.emit(out, func(w io.Writer) { fmt.Fprintf(w, "%s\t%s\t%s\n", p, res.SHAs[p], res.Commit) })
 	return ExitOK
+}
+
+// warn prints a non-blocking issue on stderr.
+func (a *app) warn(is page.Issue) {
+	fmt.Fprintf(a.stderr, "wikictl: warning: %s:%d: %s: %s\n", is.Path, is.Line, is.Code, is.Message)
 }
 
 // warnBroken reports links to missing pages on stderr. It never blocks the
@@ -155,8 +160,11 @@ func (a *app) cmdMv(c *command, args []string) int {
 	if fromDir || toDir {
 		return a.usageError(c, "to move a directory, end both arguments with /")
 	}
-	if !page.ValidPagePath(to) {
-		return a.fail(ExitInvalid, "invalid", "bad_slug: "+to)
+	for _, is := range page.PathIssues(to) {
+		if is.Code == "bad_path" {
+			return a.fail(ExitInvalid, "invalid", is.Code+": "+is.Message)
+		}
+		a.warn(is)
 	}
 	contents, err := a.repo.Cat([]string{from, to})
 	if err != nil {
@@ -172,12 +180,12 @@ func (a *app) cmdMv(c *command, args []string) int {
 	if err != nil {
 		return a.fail(ExitGit, "git", err.Error())
 	}
-	// Record the old slug in aliases when it changes.
-	oldSlug := strings.TrimSuffix(path.Base(from), ".md")
-	if oldSlug != strings.TrimSuffix(path.Base(to), ".md") {
+	// Record the old file name in aliases when it changes.
+	oldName := strings.TrimSuffix(path.Base(from), ".md")
+	if oldName != strings.TrimSuffix(path.Base(to), ".md") {
 		for i := range changes {
 			if changes[i].Path == to {
-				changes[i].Content = page.AddAlias(changes[i].Content, oldSlug)
+				changes[i].Content = page.AddAlias(changes[i].Content, oldName)
 			}
 		}
 	}
@@ -195,11 +203,17 @@ func (a *app) cmdMv(c *command, args []string) int {
 
 // mvDir moves every page under from to the same relative position under to.
 func (a *app) mvDir(from, to, msg string) int {
-	for _, d := range []string{from, to} {
-		for _, seg := range strings.Split(d, "/") {
-			if !page.ValidSlug(seg) {
-				return a.fail(ExitInvalid, "invalid", "bad_slug: "+d)
-			}
+	for _, seg := range strings.Split(from, "/") {
+		if seg == "" || seg == "." || seg == ".." {
+			return a.fail(ExitInvalid, "invalid", fmt.Sprintf("bad_path: %q is not a directory of the wiki", from+"/"))
+		}
+	}
+	for _, seg := range strings.Split(to, "/") {
+		if err := page.CheckName(seg); err != nil {
+			return a.fail(ExitInvalid, "invalid", "bad_path: "+err.Error())
+		}
+		if !page.Recommended(seg) {
+			a.warn(page.Issue{Path: to + "/", Code: "name_style", Message: fmt.Sprintf("name %q: lowercase ASCII letters, digits and hyphens are recommended", seg)})
 		}
 	}
 	src, err := a.repo.List([]string{from})

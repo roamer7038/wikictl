@@ -129,7 +129,8 @@ type: concept
 - cites: https://example.com/spec | この原典が裏付けること
 ```
 
-- ファイル名とディレクトリ名は `^[a-z0-9][a-z0-9-]*$`。ページは `.md` で終わる。
+- ファイル名とディレクトリ名は、空のもの、`.` か `<` で始まるもの、空白、制御文字、``" \ # ? : ( ) ` `` のいずれかを含むものは不可。ページは `.md` で終わる。これに反するパスは `put` と `mv` が拒否する（`bad_path`、終了コード 4）。
+- 名前には小文字の ASCII 英字、数字、ハイフンを推奨する。それ以外の名前は `lint` が `name_style` として報告し、同じディレクトリ内で大文字小文字だけが異なる名前（大文字小文字を区別しないファイルシステムで衝突する）は `case_collision` として報告する。
 - `summary` は推奨であり必須ではない。無い場合、`put` はページを書き込んだうえで `missing_summary` の警告を出し、`lint` は `missing_summary` を報告し、`search` と `ls` は代わりに題（最初の見出し、無ければファイル名）を表示する。`description` は `summary` の同義として読む。両方ある場合は `summary` が優先。
 - 任意のフロントマターキー: `type`、`status`（`deprecated` にすると `search` と `ls` から隠れる）、`tags`、`aliases`、`review_after`。
 - `## Links` 節がある場合は最後の見出しであること。各行は `- <type>: <target> | <note>`。`<target>` は相対パスまたは URL。`- <target>` のように type を省いた行は `see_also` として扱う。type を省いた行で URL を書く場合は `<scheme>://...` の形にする。箇条書き記号は `-`、`*`、`+` のいずれでもよく、字下げも許す。

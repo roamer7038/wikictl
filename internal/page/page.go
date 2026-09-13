@@ -24,9 +24,7 @@ type Page struct {
 // parts that can still be interpreted are filled in.
 func Parse(p string, content []byte) *Page {
 	pg := &Page{Path: p}
-	if !ValidPagePath(p) {
-		pg.Issues = append(pg.Issues, Issue{Path: p, Code: "bad_slug", Message: "path must be <dir>/<slug>.md using lowercase letters, digits and hyphens"})
-	}
+	pg.Issues = append(pg.Issues, PathIssues(p)...)
 	fm, rest, n, ok := SplitFrontmatter(content)
 	if !ok {
 		pg.Issues = append(pg.Issues, Issue{Path: p, Line: 1, Code: "missing_summary", Message: "frontmatter is missing"})

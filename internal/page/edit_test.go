@@ -15,6 +15,22 @@ func TestAddAlias(t *testing.T) {
 	if got := string(AddAlias([]byte(in), "old")); got != in {
 		t.Error("duplicate alias must not change")
 	}
+	// Any name that put and mv accept must stay a string alias in valid YAML.
+	for _, a := range []string{"[x]", "'q", "a:b", "*star", "&x", "!x", "%x", "@x", "{x}", "日本語", "Foo_bar", "true", "12", "-x", "?x", "a'b"} {
+		out := AddAlias([]byte(in2), a)
+		fm, _, _, _ := SplitFrontmatter(out)
+		m, err := ParseFrontmatter(fm)
+		if err != nil {
+			t.Errorf("alias %q: %v in %q", a, err, out)
+			continue
+		}
+		if l, ok := m["aliases"].([]any); !ok || len(l) != 1 || l[0] != a {
+			t.Errorf("alias %q decoded as %#v", a, m["aliases"])
+		}
+		if again := AddAlias(out, a); string(again) != string(out) {
+			t.Errorf("duplicate alias %q must not change: %q", a, again)
+		}
+	}
 }
 
 func TestRelDest(t *testing.T) {
