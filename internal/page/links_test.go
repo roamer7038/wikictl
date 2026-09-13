@@ -95,3 +95,31 @@ func TestParseLinksUntyped(t *testing.T) {
 		t.Errorf("issues=%+v", issues)
 	}
 }
+
+func TestParseLinksUntypedEdgeCases(t *testing.T) {
+	body := "# t\n## Links\n- uses:foo.md\n- cites:\n- see_also:foo.md\n- mailto:a@b.example\n- https://\n- p.md \"title\"\n- [t](p.md \"title\")\n- see_also: [t](q.md \"title\")\n- [u](https://x.example/a)\n"
+	ls := ScanLines([]byte(body), 1)
+	links, issues := ParseLinks(ls[LinksStart(ls):], "global/x.md")
+	want := []Link{
+		{Type: "see_also", Target: "global/p.md", Line: 9},
+		{Type: "see_also", Target: "global/q.md", Line: 10},
+		{Type: "see_also", Target: "https://x.example/a", Line: 11, IsURL: true},
+	}
+	if len(links) != len(want) {
+		t.Fatalf("links=%+v issues=%+v", links, issues)
+	}
+	for i := range want {
+		if links[i] != want[i] {
+			t.Errorf("links[%d]=%+v want %+v", i, links[i], want[i])
+		}
+	}
+	wantLines := []int{3, 4, 5, 6, 7, 8}
+	if len(issues) != len(wantLines) {
+		t.Fatalf("issues=%+v", issues)
+	}
+	for i, n := range wantLines {
+		if issues[i].Code != "links_syntax" || issues[i].Line != n {
+			t.Errorf("issues[%d]=%+v want links_syntax at line %d", i, issues[i], n)
+		}
+	}
+}

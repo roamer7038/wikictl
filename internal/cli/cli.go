@@ -106,7 +106,8 @@ and broken_link. Without arguments every page under the search directories is
 checked. Exits with code 4 when violations are found.
 
 A Links line is "- <type>: <target> | <note>", or "- <target>" for an untyped
-see_also relation; the bullet may be "-", "*" or "+" and may be indented.
+see_also relation (an untyped URL must be "<scheme>://..."); the bullet may
+be "-", "*" or "+" and may be indented.
 
 Output: items[] {path, line, code, message}.`,
 		run: (*app).cmdLint},

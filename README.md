@@ -118,7 +118,7 @@ Body. Link to other pages with relative paths: [index](index.md).
 
 - File and directory names match `^[a-z0-9][a-z0-9-]*$`; pages end in `.md`.
 - Optional frontmatter keys: `type`, `status` (`deprecated` hides the page from `search` and `ls`), `tags`, `aliases`, `review_after`.
-- The `## Links` section, when present, is the last heading. Each line is `- <type>: <target> | <note>`; `<target>` is a relative path or a URL. A line with only a target, `- <target>`, is a `see_also` relation. The bullet may be `-`, `*` or `+` and may be indented.
+- The `## Links` section, when present, is the last heading. Each line is `- <type>: <target> | <note>`; `<target>` is a relative path or a URL. A line with only a target, `- <target>`, is a `see_also` relation; an untyped URL target must be of the form `<scheme>://...`. The bullet may be `-`, `*` or `+` and may be indented.
 - Code fences are never interpreted; a `## Links` heading inside one does not start the section.
 
 ## Development

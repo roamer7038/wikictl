@@ -32,6 +32,8 @@ var (
 	reMDLink  = regexp.MustCompile(`\]\(([^)]*)\)`)
 	reInline  = regexp.MustCompile("`[^`]*`")
 	reBracket = regexp.MustCompile(`^\[[^\]]*\]\(([^)]*)\)$`)
+	rePrefix  = regexp.MustCompile(`^[a-z][a-z0-9_+.-]*:`)
+	reURL     = regexp.MustCompile(`^[a-z][a-z0-9+.-]*://\S`)
 )
 
 // ErrBadDest is returned for link destinations that cannot refer to a page:
@@ -65,7 +67,9 @@ func ResolveDest(pagePath, dest string) (target string, isURL bool, err error) {
 // ParseLinks interprets the Links section. lines starts with the heading line.
 // A line is a bullet ("-", "*" or "+", possibly indented) followed by
 // "<type>: <target> | <note>"; a bullet holding only "<target> | <note>" is
-// an untyped relation of type "see_also".
+// an untyped relation of type "see_also". In an untyped line, a target that
+// starts with "<word>:" must be a URL of the form "<scheme>://...", so that a
+// mistyped "<type>:<target>" is reported instead of being taken as a URL.
 func ParseLinks(lines []Line, pagePath string) ([]Link, []Issue) {
 	var links []Link
 	var issues []Issue
@@ -90,10 +94,12 @@ func ParseLinks(lines []Line, pagePath string) ([]Link, []Issue) {
 			target, note = target[:i], strings.TrimSpace(target[i+3:])
 		}
 		target = strings.TrimSpace(target)
+		bracket := false
 		if b := reBracket.FindStringSubmatch(target); b != nil {
-			target = b[1]
+			target, bracket = b[1], true
 		}
-		if typ == "" && strings.ContainsAny(target, " \t") {
+		if typ == "" && ((!bracket && strings.ContainsAny(target, " \t")) ||
+			(rePrefix.MatchString(target) && !reURL.MatchString(target))) {
 			issues = append(issues, Issue{Path: pagePath, Line: l.N, Code: "links_syntax", Message: syntaxMsg})
 			continue
 		}
