@@ -27,14 +27,11 @@ changelog:
   use: github
   # Grouped by the Conventional Commits prefix of each squash commit title.
   groups:
-    - title: 互換性に影響する変更
-      regexp: '^\w+(\(.+\))?!:'
-      order: 0
     - title: 新機能
       regexp: '^feat(\(.+\))?:'
-      order: 1
+      order: 0
     - title: 不具合の修正
       regexp: '^fix(\(.+\))?:'
-      order: 2
+      order: 1
     - title: その他
-      order: 999
+      order: 2
