@@ -96,10 +96,13 @@ Output: {path, sha, commit}.`,
 		summary: "Move or rename a page or a directory, rewriting links",
 		detail: `Move or rename a page. Links inside the moved page and links to it from other
 pages are rewritten in the same commit, and the old file name (without .md) is
-added to aliases when it changes. When both arguments end with a slash, every
-page under <dir>/ is moved to <newdir>/ instead; file names do not change, so
-no alias is added. A new path that breaks the file name rules (see "help lint")
-is rejected with exit code 4.
+added to aliases when it changes. The alias is added only when the frontmatter
+is empty or a block-style mapping and aliases is absent, a sequence (block or
+flow style), or null; otherwise, such as when aliases is a string or there is
+no frontmatter, no alias is added and no warning is printed. When both
+arguments end with a slash, every page under <dir>/ is moved to <newdir>/
+instead; file names do not change, so no alias is added. A new path that
+breaks the file name rules (see "help lint") is rejected with exit code 4.
 
 Only links of the form [text](path) are rewritten. A bare path in a Links line,
 such as "- part_of: index.md" or "- index.md", is left unchanged and becomes

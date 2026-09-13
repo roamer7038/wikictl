@@ -33,6 +33,80 @@ func TestAddAlias(t *testing.T) {
 	}
 }
 
+func TestAddAliasFrontmatterForms(t *testing.T) {
+	for _, tc := range []struct {
+		name, in, alias, want string
+	}{
+		{"flow sequence", "---\naliases: [x]\n---\n# t\n", "old",
+			"---\naliases: [x, old]\n---\n# t\n"},
+		{"empty flow sequence", "---\naliases: []\n---\n", "old",
+			"---\naliases: [old]\n---\n"},
+		{"multi-line flow sequence", "---\naliases: [x,\n  y,\n]\ntags: [a]\n---\n", "old",
+			"---\naliases: [x,\n  y,\n old]\ntags: [a]\n---\n"},
+		{"flow sequence with duplicate", "---\naliases: [\"old\"]\n---\n", "old",
+			"---\naliases: [\"old\"]\n---\n"},
+		{"non-indented block sequence", "---\naliases:\n- y\ntags:\n  - a\n---\n", "old",
+			"---\naliases:\n- y\n- old\ntags:\n  - a\n---\n"},
+		{"same item in another key", "---\ntags:\n  - d\n---\n", "d",
+			"---\ntags:\n  - d\naliases:\n  - d\n---\n"},
+		{"same item in another key with aliases", "---\ntags:\n  - d\naliases:\n  - x\n---\n", "d",
+			"---\ntags:\n  - d\naliases:\n  - x\n  - d\n---\n"},
+		{"comments and other keys", "---\n# head\nsummary: a # s\naliases:\n  - x # note\n\n# about tags\ntags: [a, b]\n---\n# t\n", "old",
+			"---\n# head\nsummary: a # s\naliases:\n  - x # note\n  - old\n\n# about tags\ntags: [a, b]\n---\n# t\n"},
+		{"multi-line entry", "---\naliases:\n  - |\n    a\n\n    b\nsummary: s\n---\n", "old",
+			"---\naliases:\n  - |\n    a\n\n    b\n  - old\nsummary: s\n---\n"},
+		{"empty value", "---\naliases: # none\nsummary: s\n---\n", "old",
+			"---\naliases: # none\n  - old\nsummary: s\n---\n"},
+		{"empty value before another key", "---\naliases:\nsummary: s\n---\n", "old",
+			"---\naliases:\n  - old\nsummary: s\n---\n"},
+		{"empty value at the end", "---\nsummary: s\naliases:\n---\n", "old",
+			"---\nsummary: s\naliases:\n  - old\n---\n"},
+		{"null value", "---\naliases: ~\n---\n", "old",
+			"---\naliases: [old]\n---\n"},
+		{"flow sequence with comma", "---\naliases: [x]\n---\n", "a,b",
+			"---\naliases: [x, \"a,b\"]\n---\n"},
+		{"flow sequence with bracket", "---\naliases: [x]\n---\n", "a]b",
+			"---\naliases: [x, \"a]b\"]\n---\n"},
+		{"flow sequence with brace", "---\naliases: []\n---\n", "a{b",
+			"---\naliases: [\"a{b\"]\n---\n"},
+		{"null value with trailing space", "---\naliases: ~ \n---\n", "old",
+			"---\naliases: [old] \n---\n"},
+		{"null value after tab", "---\naliases:\t~\n---\n", "old",
+			"---\naliases:\t[old]\n---\n"},
+		{"null value with trailing tab", "---\naliases: ~\t\n---\n", "old",
+			"---\naliases: [old]\t\n---\n"},
+		{"null word with trailing space", "---\naliases: null \n---\n", "old",
+			"---\naliases: [old] \n---\n"},
+		{"null word after tab with trailing tab", "---\naliases:\tnull\t\n---\n", "old",
+			"---\naliases:\t[old]\t\n---\n"},
+		{"null word with comment", "---\naliases: NULL # none\nsummary: s\n---\n", "old",
+			"---\naliases: [old] # none\nsummary: s\n---\n"},
+		{"null value on the next line", "---\naliases:\n  ~ \nsummary: s\n---\n", "old",
+			"---\naliases:\n  [old] \nsummary: s\n---\n"},
+		{"null value with comma", "---\naliases: ~\n---\n", "a,b",
+			"---\naliases: [\"a,b\"]\n---\n"},
+		{"null value with brace", "---\naliases: ~\n---\n", "a}b",
+			"---\naliases: [\"a}b\"]\n---\n"},
+		{"block sequence with comma", "---\naliases:\n  - x\n---\n", "a,b",
+			"---\naliases:\n  - x\n  - a,b\n---\n"},
+		{"multibyte flow sequence", "---\nsummary: 日本語\naliases: [日本]\n---\n", "old",
+			"---\nsummary: 日本語\naliases: [日本, old]\n---\n"},
+		{"empty frontmatter", "---\n---\n# t\n", "old",
+			"---\naliases:\n  - old\n---\n# t\n"},
+		{"scalar value", "---\naliases: x\n---\n", "old",
+			"---\naliases: x\n---\n"},
+		{"invalid yaml", "---\naliases: [x\n---\n", "old",
+			"---\naliases: [x\n---\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := string(AddAlias([]byte(tc.in), tc.alias))
+			if got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestRelDest(t *testing.T) {
 	if RelDest("projects/a/x.md", "global/y.md") != "../../global/y.md" {
 		t.Error(RelDest("projects/a/x.md", "global/y.md"))
