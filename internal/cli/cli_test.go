@@ -875,7 +875,7 @@ profiles:
 		var c struct {
 			Mirror string `json:"mirror"`
 		}
-		json.Unmarshal([]byte(out), &c)
+		mustUnmarshal(t, out, &c)
 		return c.Mirror
 	}
 	if w, p := mirror("work"), mirror("private"); w == p || filepath.Dir(w) != filepath.Join(d, "cache", "wikictl") {
@@ -1049,13 +1049,13 @@ func TestSearchNonASCIICase(t *testing.T) {
 		}
 	}
 	_, out, _ := runCLI(t, cfg, "", "search", "--json", "--dirs", "global", "äpfel", "οδος")
-	json.Unmarshal([]byte(out), &res)
+	mustUnmarshal(t, out, &res)
 	if len(res.Items) != 1 || res.Items[0].Path != "global/both.md" || len(res.Items[0].Matched) != 2 {
 		t.Errorf("search: %s", out)
 	}
 	res.Items = nil
 	_, out, _ = runCLI(t, cfg, "", "search", "--json", "--any", "--dirs", "global", "äpfel", "οδος")
-	json.Unmarshal([]byte(out), &res)
+	mustUnmarshal(t, out, &res)
 	if len(res.Items) != 2 || res.Items[0].Path != "global/both.md" || len(res.Items[0].Matched) != 2 ||
 		res.Items[1].Path != "global/one.md" || len(res.Items[1].Matched) != 1 || res.Items[1].Matched[0] != "äpfel" {
 		t.Errorf("search --any: %s", out)
