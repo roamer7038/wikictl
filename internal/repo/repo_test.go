@@ -220,6 +220,19 @@ func TestRead(t *testing.T) {
 	}
 }
 
+func TestCatSkipsTrees(t *testing.T) {
+	remote := newRemote(t, true)
+	seedRemote(t, remote, map[string]string{"global/sub.md/a.md": "---\nsummary: a\n---\n"})
+	r := openFetched(t, remote)
+	c, err := r.Cat([]string{"global/sub.md", "global/index.md"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := c["global/sub.md"]; ok || !strings.HasPrefix(string(c["global/index.md"]), "---") {
+		t.Errorf("cat=%q", c)
+	}
+}
+
 func TestCommitAndConflict(t *testing.T) {
 	remote := newRemote(t, true)
 	r := openFetched(t, remote)

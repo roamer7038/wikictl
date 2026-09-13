@@ -86,9 +86,9 @@ the blob sha from get; without it, or if the page changed in the meantime, the
 command exits with code 3 and prints the current content and sha. A page
 whose frontmatter is invalid or whose path breaks the file name rules (see
 "help lint") is rejected with exit code 4. A missing summary, Links lines that
-do not parse, links to missing pages and names outside the recommended form
-only produce warnings on standard error; "description" in the frontmatter is
-read as a synonym of "summary".
+do not parse, links to files missing from the wiki and names outside the
+recommended form only produce warnings on standard error; "description" in the
+frontmatter is read as a synonym of "summary".
 
 Output: {path, sha, commit}.`,
 		flags: func(fs *flag.FlagSet) { putFlags(fs) }, run: (*app).cmdPut},
