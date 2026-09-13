@@ -987,6 +987,51 @@ func TestWriteWithoutChange(t *testing.T) {
 	}
 }
 
+// TestPageLimits pushes pages beyond the size and nesting limits without put
+// and checks that the read commands finish and lint reports them.
+func TestPageLimits(t *testing.T) {
+	cfg := setup(t)
+	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
+	work := filepath.Join(t.TempDir(), "w")
+	mustRun(t, "", "git", "clone", "-q", remote, work)
+	nest := func(n int) string { return strings.Repeat("[", n) + strings.Repeat("]", n) }
+	pages := map[string]string{
+		"global/deep.md":  "---\nsummary: deep\nx: " + nest(30000) + "\n---\n# deep\n",
+		"global/large.md": "---\nsummary: large\nx: " + nest(200000) + "\n---\n# large\n",
+		"global/huge.md":  "---\nsummary: huge\n---\n# huge\n" + strings.Repeat("lorem ipsum\n", 100000),
+	}
+	for p, c := range pages {
+		os.WriteFile(filepath.Join(work, p), []byte(c), 0o644)
+	}
+	mustRun(t, work, "git", "add", "-A")
+	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "limits")
+	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
+
+	if code, out, errs := runCLI(t, cfg, "", "ls", "--json", "--dirs", "global"); code != 0 || !strings.Contains(out, "global/deep.md") || !strings.Contains(out, "global/huge.md") {
+		t.Errorf("ls: code=%d out=%q errs=%q", code, out, errs)
+	}
+	if code, out, errs := runCLI(t, cfg, "", "search", "--json", "--dirs", "global", "summary"); code != 0 || !strings.Contains(out, "global/large.md") {
+		t.Errorf("search: code=%d out=%q errs=%q", code, out, errs)
+	}
+	if code, out, errs := runCLI(t, cfg, "", "get", "--json", "global/deep.md"); code != 0 || !strings.Contains(out, `"frontmatter":{}`) {
+		t.Errorf("get: code=%d out=%.200q errs=%q", code, out, errs)
+	}
+	code, out, _ := runCLI(t, cfg, "", "lint", "--dirs", "global")
+	for _, w := range []string{"global/deep.md:1: frontmatter_invalid", "global/large.md:1: frontmatter_invalid", "global/huge.md:0: page_too_large"} {
+		if !strings.Contains(out, w) {
+			t.Errorf("lint: missing %q in %q", w, out)
+		}
+	}
+	if code != 4 {
+		t.Errorf("lint: code=%d", code)
+	}
+	for p, c := range pages {
+		if code, _, errs := runCLI(t, cfg, c, "put", p+".new.md"); code != 4 {
+			t.Errorf("put %s: code=%d errs=%q", p, code, errs)
+		}
+	}
+}
+
 func TestSearchNonASCIICase(t *testing.T) {
 	cfg := setup(t)
 	for p, c := range map[string]string{

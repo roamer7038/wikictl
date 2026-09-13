@@ -89,7 +89,7 @@ func (a *app) cmdPut(c *command, args []string) int {
 	pg := page.Parse(p, content)
 	for _, is := range pg.Issues {
 		switch is.Code {
-		case "bad_path", "frontmatter_invalid":
+		case "bad_path", "frontmatter_invalid", "page_too_large":
 			return a.fail(ExitInvalid, "invalid", is.Code+": "+is.Message)
 		default:
 			a.warn(is)

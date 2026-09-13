@@ -1,6 +1,9 @@
 package page
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestAddAlias(t *testing.T) {
 	in := "---\nsummary: a\naliases:\n  - old\n---\n# t\n"
@@ -158,5 +161,12 @@ func TestRelocateWithMapper(t *testing.T) {
 	want := "---\nsummary: a\n---\n# t\n[q](q.md) [i](../../global/index.md)\n"
 	if n != 1 || string(out) != want {
 		t.Errorf("n=%d\n%s", n, out)
+	}
+}
+
+func TestAddAliasDeepFrontmatter(t *testing.T) {
+	in := "---\nx: " + strings.Repeat("[", 30000) + strings.Repeat("]", 30000) + "\n---\n# t\n"
+	if got := string(AddAlias([]byte(in), "old")); got != in {
+		t.Errorf("deep frontmatter must be left unchanged")
 	}
 }

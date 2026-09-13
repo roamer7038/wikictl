@@ -89,12 +89,13 @@ Output: items[] {path, summary, title, type, updated}.`,
 as <path>. Omit --base for a new page. For an existing page pass --base with
 the blob sha from get; without it, or if the page changed in the meantime, the
 command exits with code 3 and prints the current content and sha. A page
-whose frontmatter is invalid or whose path breaks the file name rules (see
-"help lint") is rejected with exit code 4. A missing summary, Links lines that
-do not parse, links to files missing from the wiki and names outside the
-recommended form only produce warnings on standard error; "description" in the
-frontmatter is read as a synonym of "summary". When the content equals the
-current page, no commit is created and commit is the current commit.
+whose frontmatter is invalid, that is over the size limits, or whose path
+breaks the file name rules (see "help lint") is rejected with exit code 4. A
+missing summary, Links lines that do not parse, links to files missing from
+the wiki and names outside the recommended form only produce warnings on
+standard error; "description" in the frontmatter is read as a synonym of
+"summary". When the content equals the current page, no commit is created and
+commit is the current commit.
 
 Output: {path, sha, commit}.`,
 		flags: func(fs *flag.FlagSet) { putFlags(fs) }, run: (*app).cmdPut},
@@ -126,9 +127,14 @@ Output: {path, commit}.`,
 		flags: func(fs *flag.FlagSet) { msgFlag(fs) }, run: (*app).cmdRm},
 	{name: "lint", args: "[<path>...]", maxArgs: -1,
 		summary: "Report pages that violate the wiki format",
-		detail: `Check pages for missing_summary, frontmatter_invalid, links_syntax, broken_link
-and the file name rules. Without arguments every page under the search
-directories is checked. Exits with code 4 when violations are found.
+		detail: `Check pages for missing_summary, frontmatter_invalid, links_syntax, broken_link,
+page_too_large and the file name rules. Without arguments every page under the
+search directories is checked. Exits with code 4 when violations are found.
+
+Size limits: a page over 1 MiB is not parsed and is reported as
+page_too_large. Frontmatter over 64 KiB, or with collections nested more than
+100 levels deep, is reported as frontmatter_invalid. Commands that read pages
+treat such a page as having no frontmatter.
 
 File name rules: a page is <dir>/<name>.md, never at the wiki root. A file or
 directory name must not be empty, start with a dot or <, or contain
