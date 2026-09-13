@@ -324,6 +324,38 @@ func TestMvAndLint(t *testing.T) {
 	}
 }
 
+// TestLinkExistence checks that put and lint agree on which link targets exist:
+// any file in the tree counts, and a directory does not.
+func TestLinkExistence(t *testing.T) {
+	cfg := setup(t)
+	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
+	work := filepath.Join(t.TempDir(), "w")
+	mustRun(t, "", "git", "clone", "-q", remote, work)
+	os.MkdirAll(filepath.Join(work, "global/sub.md"), 0o755)
+	os.WriteFile(filepath.Join(work, "README.md"), []byte("# wiki\n"), 0o644)
+	os.WriteFile(filepath.Join(work, "global/sub.md/a.md"), []byte("---\nsummary: a\n---\n"), 0o644)
+	mustRun(t, work, "git", "add", "-A")
+	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "extra")
+	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
+
+	code, _, errs := runCLI(t, cfg, "---\nsummary: r\n---\n# r\n[r](../README.md)\n", "put", "global/r.md")
+	if code != 0 || strings.Contains(errs, "broken_link") {
+		t.Errorf("put link to README.md: code=%d errs=%q", code, errs)
+	}
+	if code, out, _ := runCLI(t, cfg, "", "lint", "global/r.md"); code != 0 {
+		t.Errorf("lint link to README.md: code=%d out=%q", code, out)
+	}
+
+	code, _, errs = runCLI(t, cfg, "---\nsummary: d\n---\n# d\n[d](sub.md) [i](index.md)\n", "put", "global/d.md")
+	if code != 0 || !strings.Contains(errs, "broken_link") || !strings.Contains(errs, "global/sub.md") || strings.Contains(errs, "global/index.md") {
+		t.Errorf("put link to a directory: code=%d errs=%q", code, errs)
+	}
+	code, out, _ := runCLI(t, cfg, "", "lint", "global/d.md")
+	if code != 4 || strings.Count(out, "broken_link") != 1 || !strings.Contains(out, "global/sub.md") {
+		t.Errorf("lint link to a directory: code=%d out=%q", code, out)
+	}
+}
+
 func TestLintNames(t *testing.T) {
 	cfg := setup(t)
 	runCLI(t, cfg, "---\nsummary: i\n---\n", "put", "global/Index.md")

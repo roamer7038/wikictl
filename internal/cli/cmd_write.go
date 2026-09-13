@@ -83,7 +83,11 @@ func (a *app) cmdPut(c *command, args []string) int {
 			a.warn(is)
 		}
 	}
-	a.warnBroken(pg)
+	// Broken links never block the write, so that link targets can be created afterwards.
+	broken, _ := a.brokenLinks([]*page.Page{pg})
+	for _, is := range broken {
+		a.warn(is)
+	}
 	msg := o.msg
 	if msg == "" {
 		msg = "wikictl: put " + p
@@ -101,26 +105,6 @@ func (a *app) cmdPut(c *command, args []string) int {
 // warn prints a non-blocking issue on stderr.
 func (a *app) warn(is page.Issue) {
 	fmt.Fprintf(a.stderr, "wikictl: warning: %s:%d: %s: %s\n", is.Path, is.Line, is.Code, is.Message)
-}
-
-// warnBroken reports links to missing pages on stderr. It never blocks the
-// write, so that link targets can be created afterwards.
-func (a *app) warnBroken(pg *page.Page) {
-	var targets []string
-	for _, l := range append(pg.Links, pg.Mentions...) {
-		if !l.IsURL {
-			targets = append(targets, l.Target)
-		}
-	}
-	if len(targets) == 0 {
-		return
-	}
-	found, _ := a.repo.Cat(targets)
-	for _, l := range append(pg.Links, pg.Mentions...) {
-		if !l.IsURL && found[l.Target] == nil {
-			fmt.Fprintf(a.stderr, "wikictl: warning: %s:%d: broken_link: %s\n", pg.Path, l.Line, l.Target)
-		}
-	}
 }
 
 func (a *app) cmdRm(c *command, args []string) int {
