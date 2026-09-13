@@ -5,9 +5,12 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // isPagePath reports whether p can be a page: a .md file below the root,
@@ -64,19 +67,55 @@ func (r *Repo) List(dirs []string) ([]string, error) {
 	return stripRef(r, out), nil
 }
 
-// Grep returns the pages under dirs that contain the words, case-insensitively
-// as fixed strings. With all set, a page must contain every word (--all-match).
+// Fold maps every rune of s to the smallest rune of its simple Unicode case
+// folding orbit, so that strings.Contains(Fold(s), Fold(word)) matches word
+// in s ignoring case, non-ASCII letters included.
+func Fold(s string) string { return strings.Map(foldRune, s) }
+
+func foldRune(r rune) rune {
+	m := r
+	for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
+		m = min(m, f)
+	}
+	return m
+}
+
+// foldPattern turns word into an extended regular expression matching the
+// same text as Fold. A rune with other case forms becomes an alternation of
+// all of them, so the match does not depend on the locale git runs in.
+func foldPattern(word string) string {
+	var b strings.Builder
+	for i := 0; i < len(word); {
+		r, size := utf8.DecodeRuneInString(word[i:])
+		lit := word[i : i+size]
+		i += size
+		if r == utf8.RuneError || unicode.SimpleFold(r) == r {
+			b.WriteString(regexp.QuoteMeta(lit))
+			continue
+		}
+		b.WriteString("(" + lit)
+		for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
+			b.WriteString("|" + string(f))
+		}
+		b.WriteString(")")
+	}
+	return b.String()
+}
+
+// Grep returns the pages under dirs that contain the words as fixed strings,
+// ignoring case as Fold does. With all set, a page must contain every word
+// (--all-match).
 func (r *Repo) Grep(words []string, all bool, dirs []string) ([]string, error) {
 	head, _ := r.Head()
 	if head == "" || len(words) == 0 {
 		return nil, nil
 	}
-	args := []string{"grep", "-i", "-F", "-l"}
+	args := []string{"grep", "-E", "-l"}
 	if all {
 		args = append(args, "--all-match")
 	}
 	for _, w := range words {
-		args = append(args, "-e", w)
+		args = append(args, "-e", foldPattern(w))
 	}
 	args = append(args, r.trackingRef())
 	args = append(args, pathspec(dirs)...)

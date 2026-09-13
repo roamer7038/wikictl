@@ -52,7 +52,8 @@ exists.`,
 		run: (*app).cmdInit},
 	{name: "search", args: "<word>...", minArgs: 1, maxArgs: -1,
 		summary: "Find pages containing the given words",
-		detail: `Find pages that contain all of the words (case-insensitive, fixed strings).
+		detail: `Find pages that contain all of the words (fixed strings, ignoring case,
+non-ASCII letters included).
 Pages with "status: deprecated" are skipped unless --all is given. Results
 are ordered by last update, newest first; with --any, pages matching more
 words come first. Text output shows the summary of each page, or its title

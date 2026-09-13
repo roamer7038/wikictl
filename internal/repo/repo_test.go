@@ -322,3 +322,32 @@ func TestReadLiteralDirs(t *testing.T) {
 		t.Errorf("dep=%v", dep)
 	}
 }
+
+func TestGrepFoldsNonASCII(t *testing.T) {
+	remote := newRemote(t, true)
+	seedRemote(t, remote, map[string]string{
+		"global/apfel.md":  "---\nsummary: Äpfel\n---\n# Äpfel\n",
+		"global/kelvin.md": "---\nsummary: 273 K\n---\n",
+		"global/sigma.md":  "---\nsummary: ΟΔΟΣ\n---\n",
+		"global/a.b.md":    "---\nsummary: a.b [x]\n---\n",
+		"global/axb.md":    "---\nsummary: axb x\n---\n",
+	})
+	r := openFetched(t, remote)
+	for _, tc := range []struct {
+		words []string
+		all   bool
+		want  string
+	}{
+		{[]string{"äpfel"}, true, "global/apfel.md"},
+		{[]string{"ÄPFEL"}, true, "global/apfel.md"},
+		{[]string{"273 k"}, true, "global/kelvin.md"},
+		{[]string{"οδος"}, true, "global/sigma.md"},
+		{[]string{"A.B", "[X]"}, true, "global/a.b.md"},
+		{[]string{"äpfel", "zzz-none"}, false, "global/apfel.md"},
+	} {
+		got, err := r.Grep(tc.words, tc.all, []string{"global"})
+		if err != nil || len(got) != 1 || got[0] != tc.want {
+			t.Errorf("Grep(%q, %v)=%v, %v; want [%s]", tc.words, tc.all, got, err, tc.want)
+		}
+	}
+}

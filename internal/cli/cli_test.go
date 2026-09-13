@@ -812,3 +812,33 @@ func gitOut(t *testing.T, args ...string) string {
 	}
 	return strings.TrimSpace(string(out))
 }
+
+func TestSearchNonASCIICase(t *testing.T) {
+	cfg := setup(t)
+	for p, c := range map[string]string{
+		"global/both.md": "---\nsummary: both\n---\n# both\nÄpfel ΟΔΟΣ\n",
+		"global/one.md":  "---\nsummary: one\n---\n# one\nÄPFEL\n",
+	} {
+		if code, _, errs := runCLI(t, cfg, c, "put", p); code != 0 {
+			t.Fatalf("put %s: %s", p, errs)
+		}
+	}
+	var res struct {
+		Items []struct {
+			Path    string
+			Matched []string
+		}
+	}
+	_, out, _ := runCLI(t, cfg, "", "search", "--json", "--dirs", "global", "äpfel", "οδος")
+	json.Unmarshal([]byte(out), &res)
+	if len(res.Items) != 1 || res.Items[0].Path != "global/both.md" || len(res.Items[0].Matched) != 2 {
+		t.Errorf("search: %s", out)
+	}
+	res.Items = nil
+	_, out, _ = runCLI(t, cfg, "", "search", "--json", "--any", "--dirs", "global", "äpfel", "οδος")
+	json.Unmarshal([]byte(out), &res)
+	if len(res.Items) != 2 || res.Items[0].Path != "global/both.md" || len(res.Items[0].Matched) != 2 ||
+		res.Items[1].Path != "global/one.md" || len(res.Items[1].Matched) != 1 || res.Items[1].Matched[0] != "äpfel" {
+		t.Errorf("search --any: %s", out)
+	}
+}
