@@ -115,6 +115,9 @@ func (a *app) cmdRm(c *command, args []string) int {
 		return code
 	}
 	p := rest[0]
+	if err := page.CheckPath(p); err != nil {
+		return a.fail(ExitInvalid, "invalid", "bad_path: "+err.Error())
+	}
 	if contents, _ := a.repo.Cat([]string{p}); contents[p] == nil {
 		return a.fail(ExitError, "error", "page not found: "+p)
 	}

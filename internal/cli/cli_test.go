@@ -225,6 +225,45 @@ func TestPutRmInit(t *testing.T) {
 	}
 }
 
+// TestRmRejectsBadPath checks that rm refuses paths that are not page paths,
+// including a path whose newline would add entries to the tree.
+func TestRmRejectsBadPath(t *testing.T) {
+	cfg := setup(t)
+	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
+	work := filepath.Join(t.TempDir(), "w")
+	mustRun(t, "", "git", "clone", "-q", remote, work)
+	os.WriteFile(filepath.Join(work, "README.md"), []byte("# wiki\n"), 0o644)
+	mustRun(t, work, "git", "add", "-A")
+	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "readme")
+	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
+	lsTree := func() string {
+		out, err := exec.Command("git", "--git-dir", remote, "ls-tree", "-r", "main").Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(out)
+	}
+	before := lsTree()
+	out, err := exec.Command("git", "--git-dir", remote, "rev-parse", "main:global/index.md").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sha := strings.TrimSpace(string(out))
+	for _, p := range []string{
+		"README.md",
+		"global/index.md\n120000 " + sha + "\tglobal/link.md\n100644 " + sha + "\t.github/workflows/x.yml",
+		"global/index.md\x00",
+		"global/.hidden.md",
+	} {
+		if code, _, errs := runCLI(t, cfg, "", "rm", p); code != 4 || !strings.Contains(errs, "bad_path") {
+			t.Errorf("rm %q: code=%d errs=%q", p, code, errs)
+		}
+	}
+	if after := lsTree(); after != before {
+		t.Errorf("rm changed the tree:\n%s", after)
+	}
+}
+
 // isolateGit keeps the user's global git configuration (hooks, gpgsign,
 // templates) out of the repositories the tests create.
 func isolateGit(t *testing.T) {
