@@ -68,7 +68,18 @@ Linux と macOS（x86_64 と arm64）のバイナリとチェックサムは [re
 
 ### コマンドが見る場所
 
-既定では最大 3 つのディレクトリを検索します。`global/`、カレントディレクトリの `origin` リモート名から決まる `projects/<name>/`（git 管理外では省かれます）、ホスト名から決まる `machines/<name>/` です。`--dirs a,b` で上書きでき、`wikictl context` で確認できます。
+既定では最大 4 つのディレクトリを検索します。`global/`、`personal/`、カレントディレクトリの `origin` リモート名から決まる `projects/<name>/`（git 管理外では省かれます）、ホスト名から決まる `machines/<name>/` です。`--dirs a,b` で上書きでき、`wikictl context` で確認できます。
+
+各ディレクトリは「その知識がどこで有効か」を表すスコープです。
+
+| ディレクトリ | 有効な範囲 |
+|---|---|
+| `global/` | 誰にとっても |
+| `personal/` | このユーザだけ。マシンやプロジェクトを問わない（コミット規約、用途ごとに使うアカウント、ツールの選択など） |
+| `projects/<name>/` | 1 つのプロジェクト |
+| `machines/<name>/` | 1 つの実行環境 |
+
+ページは当てはまる中で最も狭いスコープに置きます。このプロジェクトだけ → `projects/<name>/`、この実行環境だけ → `machines/<name>/`、このユーザだけ → `personal/`、それ以外 → `global/`。`personal/` はエージェントが必要になった時に検索して参照する事実を置く場所で、すべての会話に適用すべきルールはエージェントの常設の指示（Claude Code なら `CLAUDE.md`）に置きます。`init` は `personal/` を作りません。`projects/` や `machines/` と同様、最初の `put` で作られます。
 
 ## 設定
 
@@ -80,7 +91,7 @@ Linux と macOS（x86_64 と arm64）のバイナリとチェックサムは [re
 | `branch` | 任意 | 使うブランチ。省略時はリモートの HEAD から決める |
 | `author.name`, `author.email` | 任意 | コミットの author。無ければ `git config user.name` と `user.email` |
 | `machine` | 任意 | `machines/<name>/` の name。省略時はホスト名の最初の `.` まで |
-| `dirs` | 任意 | 既定の 3 つの代わりに使う検索対象ディレクトリの固定リスト |
+| `dirs` | 任意 | 既定の 4 つの代わりに使う検索対象ディレクトリの固定リスト |
 | `projects` | 任意 | リモート名から `projects/` 配下のディレクトリ名への写像 |
 
 ミラーは `~/.cache/wikictl/`（または `$XDG_CACHE_HOME/wikictl/`）にあります。壊れたら削除してください。次のコマンド実行時に作り直されます。

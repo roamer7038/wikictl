@@ -68,7 +68,18 @@ Global flags, accepted before or after the command: `--json`, `--dirs a,b`, `--c
 
 ### Where commands look
 
-By default a command searches up to three directories: `global/`, `projects/<name>/` where `<name>` comes from the `origin` remote of the current directory (skipped outside a git repository), and `machines/<name>/` where `<name>` is the hostname. `--dirs a,b` overrides the list and `wikictl context` shows it.
+By default a command searches up to four directories: `global/`, `personal/`, `projects/<name>/` where `<name>` comes from the `origin` remote of the current directory (skipped outside a git repository), and `machines/<name>/` where `<name>` is the hostname. `--dirs a,b` overrides the list and `wikictl context` shows it.
+
+Each directory is a scope that answers "where is this knowledge valid?":
+
+| Directory | Valid |
+|---|---|
+| `global/` | for everyone |
+| `personal/` | only for this user, on every machine and in every project (commit conventions, which account to use for what, tool choices) |
+| `projects/<name>/` | in one project |
+| `machines/<name>/` | in one execution environment |
+
+Place a page in the narrowest scope that fits: only this project → `projects/<name>/`; only this execution environment → `machines/<name>/`; only this user → `personal/`; otherwise → `global/`. `personal/` holds facts an agent looks up when they become relevant; rules that must apply to every conversation belong in the agent's standing instructions (for Claude Code, `CLAUDE.md`), not in the wiki. `init` does not create `personal/`; like `projects/` and `machines/`, it appears with the first `put` into it.
 
 ## Configuration
 
@@ -80,7 +91,7 @@ By default a command searches up to three directories: `global/`, `projects/<nam
 | `branch` | no | Branch to use; taken from the remote HEAD when omitted |
 | `author.name`, `author.email` | no | Commit author; falls back to `git config user.name` and `user.email` |
 | `machine` | no | Name for `machines/<name>/`; defaults to the hostname up to the first `.` |
-| `dirs` | no | Fixed list of search directories instead of the default three |
+| `dirs` | no | Fixed list of search directories instead of the default four |
 | `projects` | no | Map from remote name to directory name under `projects/` |
 
 The mirror lives under `~/.cache/wikictl/` (or `$XDG_CACHE_HOME/wikictl/`). Delete it if it ever breaks; the next command recreates it.

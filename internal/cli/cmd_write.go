@@ -266,7 +266,8 @@ const initReadme = `# wiki
 A knowledge base shared by AI agents and people. A page is a Markdown file
 whose frontmatter has a one-line summary. Relations go in a "## Links"
 section at the end; links are relative paths. Directories are scopes:
-global/ for everything, projects/<name>/ and machines/<name>/ for the rest.
+global/ for everything, personal/ for one user, projects/<name>/ and
+machines/<name>/ for the rest.
 `
 
 func (a *app) cmdInit(c *command, args []string) int {
