@@ -1,0 +1,24 @@
+version: 2
+project_name: wikictl
+builds:
+  - main: ./cmd/wikictl
+    binary: wikictl
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X github.com/roamer7038/wikictl/internal/cli.version=v{{.Version}}
+archives:
+  # Bare binaries, named so that "uname -s" and "uname -m" select the right one:
+  # wikictl_linux_x86_64, wikictl_linux_aarch64, wikictl_darwin_x86_64, wikictl_darwin_arm64.
+  - formats: [binary]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if and (eq .Arch "arm64") (eq .Os "linux") }}aarch64
+      {{- else }}{{ .Arch }}{{ end }}
+checksum:
+  name_template: checksums.txt
+changelog:
+  use: github

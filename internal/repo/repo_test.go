@@ -1,0 +1,212 @@
+package repo
+
+import (
+	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// newRemote creates a local bare repository to act as the remote. With
+// withInitial it is seeded with global/index.md.
+func newRemote(t *testing.T, withInitial bool) string {
+	t.Helper()
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	d := t.TempDir()
+	remote := filepath.Join(d, "remote.git")
+	run(t, "", "git", "init", "-q", "--bare", "-b", "main", remote)
+	if withInitial {
+		seedRemote(t, remote, map[string]string{"global/index.md": "---\nsummary: entry point\n---\n# global\n"})
+	}
+	return remote
+}
+
+func seedRemote(t *testing.T, remote string, files map[string]string) {
+	t.Helper()
+	work := filepath.Join(t.TempDir(), "w")
+	run(t, "", "git", "clone", "-q", remote, work)
+	for p, c := range files {
+		os.MkdirAll(filepath.Dir(filepath.Join(work, p)), 0o755)
+		os.WriteFile(filepath.Join(work, p), []byte(c), 0o644)
+	}
+	run(t, work, "git", "add", "-A")
+	run(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "seed")
+	run(t, work, "git", "push", "-q", "origin", "HEAD:main")
+}
+
+func run(t *testing.T, dir string, name string, args ...string) string {
+	t.Helper()
+	c := exec.Command(name, args...)
+	c.Dir = dir
+	out, err := c.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%s %v: %v\n%s", name, args, err, out)
+	}
+	return string(out)
+}
+
+func openFetched(t *testing.T, remote string) *Repo {
+	t.Helper()
+	r, err := Open(filepath.Join(t.TempDir(), "m"), remote, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Fetch(); err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+func TestOpenAndFetch(t *testing.T) {
+	remote := newRemote(t, true)
+	mirror := filepath.Join(t.TempDir(), "m")
+	r, err := Open(mirror, remote, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Branch != "main" {
+		t.Errorf("branch=%q", r.Branch)
+	}
+	if err := r.Fetch(); err != nil {
+		t.Fatal(err)
+	}
+	h, err := r.Head()
+	if err != nil || len(h) != 40 {
+		t.Fatalf("head=%q err=%v", h, err)
+	}
+	r2, _ := Open(mirror, remote, "")
+	if r2.Branch != "main" {
+		t.Error("branch not persisted")
+	}
+	unlock, err := r.lock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	unlock()
+}
+
+func TestOpenEmptyRemote(t *testing.T) {
+	remote := newRemote(t, false)
+	r, err := Open(filepath.Join(t.TempDir(), "m"), remote, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Fetch(); err != nil {
+		t.Fatal(err)
+	}
+	if h, _ := r.Head(); h != "" {
+		t.Errorf("empty remote must have no head, got %q", h)
+	}
+}
+
+func TestRead(t *testing.T) {
+	remote := newRemote(t, true)
+	seedRemote(t, remote, map[string]string{
+		"global/git-push.md": "---\nsummary: about push\n---\n# push\nforce-with-lease and Lease\n",
+		"projects/a/x.md":    "---\nsummary: x\nstatus: deprecated\n---\n# x\nlease\n",
+		"machines/h/y.md":    "---\nsummary: y\n---\n# y\nnothing\n",
+		"README.md":          "not a page",
+		".hidden/z.md":       "---\nsummary: z\n---\n",
+		"global/notes.txt":   "lease",
+	})
+	r := openFetched(t, remote)
+	list, err := r.List([]string{"global", "projects/a", "machines/h", "nope"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 4 {
+		t.Errorf("list=%v", list)
+	}
+	got, _ := r.Grep([]string{"LEASE", "force"}, true, []string{"global", "projects/a"})
+	if len(got) != 1 || got[0] != "global/git-push.md" {
+		t.Errorf("all-match grep=%v", got)
+	}
+	got, _ = r.Grep([]string{"lease"}, true, []string{"global", "projects/a"})
+	if len(got) != 2 {
+		t.Errorf("grep=%v", got)
+	}
+	if got, _ := r.Grep([]string{"zzz-none"}, true, nil); len(got) != 0 {
+		t.Errorf("no match must be empty: %v", got)
+	}
+	dep, _ := r.GrepDeprecated([]string{"global", "projects/a"})
+	if !dep["projects/a/x.md"] || len(dep) != 1 {
+		t.Errorf("dep=%v", dep)
+	}
+	c, _ := r.Cat([]string{"global/git-push.md", "missing.md", "machines/h/y.md"})
+	if !strings.HasPrefix(string(c["global/git-push.md"]), "---") || c["missing.md"] != nil || c["machines/h/y.md"] == nil {
+		t.Errorf("cat=%v", c)
+	}
+	up, _ := r.Updated([]string{"global"})
+	if up["global/git-push.md"].IsZero() {
+		t.Errorf("updated=%v", up)
+	}
+	h, _ := r.Head()
+	sha, _ := r.BlobSHA(h, "global/git-push.md")
+	if len(sha) != 40 {
+		t.Errorf("sha=%q", sha)
+	}
+	if s, _ := r.BlobSHA(h, "none.md"); s != "" {
+		t.Error("missing must be empty")
+	}
+}
+
+func TestCommitAndConflict(t *testing.T) {
+	remote := newRemote(t, true)
+	r := openFetched(t, remote)
+	au := Author{Name: "agent@h", Email: "agent@h.invalid"}
+	empty := ""
+	res, err := r.Commit([]Change{{Path: "global/a.md", Content: []byte("---\nsummary: a\n---\n# a\n"), Base: &empty}}, "put a", au)
+	if err != nil || len(res.Commit) != 40 || len(res.SHAs["global/a.md"]) != 40 {
+		t.Fatalf("%+v %v", res, err)
+	}
+	c, _ := r.Cat([]string{"global/a.md"})
+	if c["global/a.md"] == nil {
+		t.Fatal("not readable after commit")
+	}
+	_, err = r.Commit([]Change{{Path: "global/a.md", Content: []byte("x"), Base: &empty}}, "again", au)
+	var cf *Conflict
+	if !errors.As(err, &cf) || cf.Reason != "exists" {
+		t.Fatalf("want exists conflict, got %v", err)
+	}
+	old := res.SHAs["global/a.md"]
+	if _, err := r.Commit([]Change{{Path: "global/a.md", Content: []byte("---\nsummary: a2\n---\n"), Base: &old}}, "update", au); err != nil {
+		t.Fatal(err)
+	}
+	_, err = r.Commit([]Change{{Path: "global/a.md", Content: []byte("y"), Base: &old}}, "stale", au)
+	if !errors.As(err, &cf) || cf.Reason != "changed" || !strings.Contains(string(cf.Content), "a2") {
+		t.Fatalf("want changed conflict, got %v", err)
+	}
+	seedRemote(t, remote, map[string]string{"global/other.md": "---\nsummary: o\n---\n"})
+	cur := cf.SHA
+	if _, err := r.Commit([]Change{{Path: "global/a.md", Content: []byte("---\nsummary: a3\n---\n"), Base: &cur}}, "retry", au); err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := r.Cat([]string{"global/other.md"}); c["global/other.md"] == nil {
+		t.Error("other.md must survive")
+	}
+	if _, err := r.Commit([]Change{{Path: "global/a.md", Delete: true}}, "rm", au); err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := r.Cat([]string{"global/a.md"}); c["global/a.md"] != nil {
+		t.Error("not deleted")
+	}
+	if out, _ := r.Git("log", "-1", "--format=%an <%ae>", r.trackingRef()); strings.TrimSpace(out) != "agent@h <agent@h.invalid>" {
+		t.Error(out)
+	}
+}
+
+func TestCommitEmptyRemote(t *testing.T) {
+	remote := newRemote(t, false)
+	r := openFetched(t, remote)
+	empty := ""
+	_, err := r.Commit([]Change{{Path: "global/index.md", Content: []byte("---\nsummary: i\n---\n"), Base: &empty}}, "init", Author{"a", "a@a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h, _ := r.Head(); len(h) != 40 {
+		t.Error("head not set")
+	}
+}

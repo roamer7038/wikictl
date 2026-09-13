@@ -1,0 +1,187 @@
+package repo
+
+import (
+	"bufio"
+	"bytes"
+	"errors"
+	"io"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// isPagePath reports whether p can be a page: a .md file below the root,
+// with no component starting with a dot.
+func isPagePath(p string) bool {
+	if !strings.HasSuffix(p, ".md") || !strings.Contains(p, "/") {
+		return false
+	}
+	for _, seg := range strings.Split(p, "/") {
+		if strings.HasPrefix(seg, ".") {
+			return false
+		}
+	}
+	return true
+}
+
+// pathspec turns dirs into a git pathspec argument list, or nil for the whole tree.
+func pathspec(dirs []string) []string {
+	if len(dirs) == 0 {
+		return nil
+	}
+	out := []string{"--"}
+	for _, d := range dirs {
+		out = append(out, strings.TrimSuffix(d, "/"))
+	}
+	return out
+}
+
+// stripRef removes the "<ref>:" prefix that ls-tree and grep print, and drops non-pages.
+func stripRef(r *Repo, lines string) []string {
+	var res []string
+	prefix := r.trackingRef() + ":"
+	for _, l := range strings.Split(strings.TrimSpace(lines), "\n") {
+		p := strings.TrimPrefix(l, prefix)
+		if p != "" && isPagePath(p) {
+			res = append(res, p)
+		}
+	}
+	return res
+}
+
+// List returns the page paths under dirs (or the whole tree when dirs is nil).
+// Directories that do not exist are ignored.
+func (r *Repo) List(dirs []string) ([]string, error) {
+	head, _ := r.Head()
+	if head == "" {
+		return nil, nil
+	}
+	args := append([]string{"ls-tree", "-r", "--name-only", r.trackingRef()}, pathspec(dirs)...)
+	out, err := r.Git(args...)
+	if err != nil {
+		return nil, err
+	}
+	return stripRef(r, out), nil
+}
+
+// Grep returns the pages under dirs that contain the words, case-insensitively
+// as fixed strings. With all set, a page must contain every word (--all-match).
+func (r *Repo) Grep(words []string, all bool, dirs []string) ([]string, error) {
+	head, _ := r.Head()
+	if head == "" || len(words) == 0 {
+		return nil, nil
+	}
+	args := []string{"grep", "-i", "-F", "-l"}
+	if all {
+		args = append(args, "--all-match")
+	}
+	for _, w := range words {
+		args = append(args, "-e", w)
+	}
+	args = append(args, r.trackingRef())
+	args = append(args, pathspec(dirs)...)
+	out, err := r.Git(args...)
+	if err != nil {
+		var ge *GitError
+		if errors.As(err, &ge) && strings.TrimSpace(ge.Stderr) == "" {
+			return nil, nil // exit status 1: no match
+		}
+		return nil, err
+	}
+	return stripRef(r, out), nil
+}
+
+// GrepDeprecated returns the set of pages under dirs whose frontmatter has "status: deprecated".
+func (r *Repo) GrepDeprecated(dirs []string) (map[string]bool, error) {
+	res := map[string]bool{}
+	head, _ := r.Head()
+	if head == "" {
+		return res, nil
+	}
+	args := append([]string{"grep", "-l", "-E", "-e", `^status:[[:space:]]*deprecated[[:space:]]*$`, r.trackingRef()}, pathspec(dirs)...)
+	out, err := r.Git(args...)
+	if err != nil {
+		return res, nil
+	}
+	for _, p := range stripRef(r, out) {
+		res[p] = true
+	}
+	return res, nil
+}
+
+// Cat returns the contents of paths using one "cat-file --batch" call.
+// Paths that do not exist are absent from the result.
+func (r *Repo) Cat(paths []string) (map[string][]byte, error) {
+	res := map[string][]byte{}
+	if len(paths) == 0 {
+		return res, nil
+	}
+	var in bytes.Buffer
+	for _, p := range paths {
+		in.WriteString(r.trackingRef() + ":" + p + "\n")
+	}
+	out, err := r.GitIn(in.Bytes(), "cat-file", "--batch")
+	if err != nil {
+		return nil, err
+	}
+	rd := bufio.NewReader(strings.NewReader(out))
+	for _, p := range paths {
+		hdr, err := rd.ReadString('\n')
+		if err != nil {
+			break
+		}
+		f := strings.Fields(hdr)
+		if len(f) < 3 || f[1] != "blob" {
+			continue // "<object> missing"
+		}
+		n, _ := strconv.Atoi(f[2])
+		buf := make([]byte, n)
+		if _, err := io.ReadFull(rd, buf); err != nil {
+			return nil, err
+		}
+		rd.ReadByte()
+		res[p] = buf
+	}
+	return res, nil
+}
+
+// Updated returns the last commit time of every file under dirs, from one
+// pass over "git log --name-only". Renames are not followed.
+func (r *Repo) Updated(dirs []string) (map[string]time.Time, error) {
+	res := map[string]time.Time{}
+	head, _ := r.Head()
+	if head == "" {
+		return res, nil
+	}
+	args := append([]string{"log", "--format=%x00%cI", "--name-only", r.trackingRef()}, pathspec(dirs)...)
+	out, err := r.Git(args...)
+	if err != nil {
+		return nil, err
+	}
+	var cur time.Time
+	for _, l := range strings.Split(out, "\n") {
+		if strings.HasPrefix(l, "\x00") {
+			cur, _ = time.Parse(time.RFC3339, strings.TrimPrefix(l, "\x00"))
+			continue
+		}
+		if l == "" {
+			continue
+		}
+		if _, seen := res[l]; !seen {
+			res[l] = cur
+		}
+	}
+	return res, nil
+}
+
+// BlobSHA returns the blob sha of path at commit head, or "" when absent.
+func (r *Repo) BlobSHA(head, path string) (string, error) {
+	if head == "" {
+		return "", nil
+	}
+	out, err := r.Git("rev-parse", "--verify", "-q", head+":"+path)
+	if err != nil {
+		return "", nil
+	}
+	return strings.TrimSpace(out), nil
+}

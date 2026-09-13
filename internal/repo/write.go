@@ -1,0 +1,191 @@
+package repo
+
+import (
+	"bytes"
+	"fmt"
+	"os"
+	"strings"
+)
+
+// Change is one file in a commit. Base is the optimistic-lock check used by
+// put: nil skips the check, "" requires that the file does not exist yet, and
+// any other value must equal the current blob sha.
+type Change struct {
+	Path    string
+	Content []byte
+	Delete  bool
+	Base    *string
+}
+
+// Author is used as both author and committer of a commit.
+type Author struct{ Name, Email string }
+
+// Conflict is an optimistic-lock failure. Reason is "exists" when a new page
+// already exists, or "changed" when the blob sha differs from Base.
+type Conflict struct {
+	Path    string
+	Reason  string
+	SHA     string // current blob sha, "" when the file is gone
+	Content []byte // current content
+}
+
+func (c *Conflict) Error() string { return fmt.Sprintf("conflict(%s): %s", c.Reason, c.Path) }
+
+// Result is a successful commit.
+type Result struct {
+	Commit string
+	SHAs   map[string]string // blob sha of every written path
+}
+
+const zeroSHA = "0000000000000000000000000000000000000000"
+
+// Commit fetches, checks every Base, builds a commit on top of the remote
+// branch and pushes it with --force-with-lease. When another push wins the
+// race the whole sequence is retried, up to three attempts. It never creates
+// a working tree or a merge state.
+func (r *Repo) Commit(changes []Change, msg string, au Author) (*Result, error) {
+	unlock, err := r.lock()
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	var last error
+	for attempt := 0; attempt < 3; attempt++ {
+		if err := r.Fetch(); err != nil {
+			return nil, err
+		}
+		head, _ := r.Head()
+		for _, c := range changes {
+			if c.Base == nil {
+				continue
+			}
+			cur, _ := r.BlobSHA(head, c.Path)
+			if *c.Base == "" && cur != "" {
+				return nil, r.conflict(c.Path, "exists", cur)
+			}
+			if *c.Base != "" && cur != *c.Base {
+				return nil, r.conflict(c.Path, "changed", cur)
+			}
+		}
+		res, retry, err := r.buildAndPush(head, changes, msg, au)
+		if err == nil {
+			return res, nil
+		}
+		last = err
+		if !retry {
+			return nil, err
+		}
+	}
+	return nil, last
+}
+
+func (r *Repo) conflict(path, reason, sha string) *Conflict {
+	cf := &Conflict{Path: path, Reason: reason, SHA: sha}
+	if sha != "" {
+		out, _ := r.Git("cat-file", "-p", sha)
+		cf.Content = []byte(out)
+	}
+	return cf
+}
+
+// buildAndPush creates the commit with plumbing commands in a temporary index
+// and pushes it. retry is true when the push was rejected because the remote
+// moved (stale lease).
+func (r *Repo) buildAndPush(head string, changes []Change, msg string, au Author) (res *Result, retry bool, err error) {
+	idx, err := os.CreateTemp("", "wikictl-index-*")
+	if err != nil {
+		return nil, false, err
+	}
+	idx.Close()
+	os.Remove(idx.Name())
+	defer os.Remove(idx.Name())
+	env := []string{"GIT_INDEX_FILE=" + idx.Name(),
+		"GIT_AUTHOR_NAME=" + au.Name, "GIT_AUTHOR_EMAIL=" + au.Email,
+		"GIT_COMMITTER_NAME=" + au.Name, "GIT_COMMITTER_EMAIL=" + au.Email}
+	git := func(stdin []byte, args ...string) (string, error) { return r.run(env, stdin, args...) }
+
+	if head != "" {
+		if _, err := git(nil, "read-tree", head); err != nil {
+			return nil, false, err
+		}
+	} else if _, err := git(nil, "read-tree", "--empty"); err != nil {
+		return nil, false, err
+	}
+	shas := map[string]string{}
+	var info bytes.Buffer
+	for _, c := range changes {
+		if c.Delete {
+			// Mode 0 removes the entry; --remove does not work without a working tree.
+			fmt.Fprintf(&info, "0 %s\t%s\n", zeroSHA, c.Path)
+			continue
+		}
+		out, err := git(c.Content, "hash-object", "-w", "--stdin")
+		if err != nil {
+			return nil, false, err
+		}
+		sha := strings.TrimSpace(out)
+		shas[c.Path] = sha
+		fmt.Fprintf(&info, "100644 %s\t%s\n", sha, c.Path)
+	}
+	if _, err := git(info.Bytes(), "update-index", "--index-info"); err != nil {
+		return nil, false, err
+	}
+	tree, err := git(nil, "write-tree")
+	if err != nil {
+		return nil, false, err
+	}
+	// --no-gpg-sign: a commit.gpgsign setting would otherwise start a signing
+	// prompt that GIT_TERMINAL_PROMPT=0 does not suppress.
+	args := []string{"commit-tree", "--no-gpg-sign", strings.TrimSpace(tree), "-m", msg}
+	if head != "" {
+		args = append(args, "-p", head)
+	}
+	out, err := git(nil, args...)
+	if err != nil {
+		return nil, false, err
+	}
+	commit := strings.TrimSpace(out)
+	lease := head
+	if lease == "" {
+		lease = zeroSHA
+	}
+	pout, perr := r.Git("push", "--porcelain", "origin", commit+":refs/heads/"+r.Branch,
+		"--force-with-lease=refs/heads/"+r.Branch+":"+lease)
+	switch pushStatus(pout) {
+	case "ok":
+		if head != "" {
+			r.Git("update-ref", r.trackingRef(), commit, head)
+		} else {
+			r.Git("update-ref", r.trackingRef(), commit)
+		}
+		return &Result{Commit: commit, SHAs: shas}, false, nil
+	case "stale":
+		return nil, true, fmt.Errorf("push rejected: the remote branch moved")
+	default:
+		if perr != nil {
+			return nil, false, perr
+		}
+		return nil, false, fmt.Errorf("push failed: %s", strings.TrimSpace(pout))
+	}
+}
+
+// pushStatus classifies the refspec line of "push --porcelain" output as
+// "ok", "stale" (lease failed), "rejected" or "none" (no refspec line, e.g.
+// a connection or authentication failure).
+func pushStatus(out string) string {
+	for _, l := range strings.Split(out, "\n") {
+		if len(l) < 2 || l[1] != '\t' {
+			continue
+		}
+		switch l[0] {
+		case ' ', '+', '-', '*', '=':
+			return "ok"
+		case '!':
+			if strings.Contains(l, "stale info") {
+				return "stale"
+			}
+			return "rejected"
+		}
+	}
+	return "none"
+}

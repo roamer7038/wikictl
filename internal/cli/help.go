@@ -1,0 +1,191 @@
+package cli
+
+import (
+	"flag"
+	"fmt"
+	"io"
+	"runtime/debug"
+	"strings"
+	"text/tabwriter"
+)
+
+// version is set at build time:
+//
+//	go build -ldflags "-X github.com/roamer7038/wikictl/internal/cli.version=v0.1.0"
+//
+// When it is empty, the module version recorded by "go install" is used.
+var version string
+
+// Version returns the version string printed by "wikictl version".
+func Version() string {
+	if version != "" {
+		return version
+	}
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return "dev"
+}
+
+const description = `wikictl reads and writes a Markdown wiki hosted on a Git host using only
+git: no daemon, no index, no working tree. Pages are found with git grep and
+written as commits pushed with --force-with-lease.`
+
+// printUsage writes the top-level help.
+func printUsage(w io.Writer) {
+	fmt.Fprintln(w, "Usage: wikictl [global flags] <command> [flags] [arguments]")
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, description)
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Commands:")
+	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
+	for _, c := range commands {
+		fmt.Fprintf(tw, "  %s\t%s\n", c.name, c.summary)
+	}
+	fmt.Fprintf(tw, "  %s\t%s\n", "version", "Print the version")
+	fmt.Fprintf(tw, "  %s\t%s\n", "help", "Show help for a command")
+	tw.Flush()
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Global flags (before or after the command):")
+	fs := newFlagSet("wikictl")
+	(&app{}).globalFlags(fs)
+	printFlags(w, fs)
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Exit codes:")
+	fmt.Fprintln(w, "  0 success   1 error   2 usage or configuration   3 conflict   4 invalid page   5 git failure")
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, `Run "wikictl help <command>" for details on a command.`)
+}
+
+// printCommandHelp writes the help of one command.
+func printCommandHelp(w io.Writer, c *command) {
+	fmt.Fprintln(w, "Usage: "+synopsis(c))
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, c.detail)
+	if c.flags != nil {
+		fs := newFlagSet(c.name)
+		c.flags(fs)
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, "Flags:")
+		printFlags(w, fs)
+	}
+}
+
+// synopsis returns the one-line usage of c, such as "wikictl put [flags] <path> < content".
+func synopsis(c *command) string {
+	s := "wikictl " + c.name
+	if c.flags != nil {
+		s += " [flags]"
+	}
+	if c.args != "" {
+		s += " " + c.args
+	}
+	return s
+}
+
+// printFlags lists the flags of fs as "--name <value>   usage (default x)".
+// A backquoted word in a usage string names the value, as flag.UnquoteUsage does.
+func printFlags(w io.Writer, fs *flag.FlagSet) {
+	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
+	fs.VisitAll(func(f *flag.Flag) {
+		value, usage := flag.UnquoteUsage(f)
+		left := "-" + f.Name
+		if len(f.Name) > 1 {
+			left = "--" + f.Name
+		}
+		if value != "" {
+			left += " <" + value + ">"
+		}
+		if f.DefValue != "" && f.DefValue != "false" && f.DefValue != "0" {
+			usage += " (default " + f.DefValue + ")"
+		}
+		fmt.Fprintf(tw, "  %s\t%s\n", left, usage)
+	})
+	tw.Flush()
+}
+
+// newFlagSet returns a FlagSet that neither prints nor exits by itself;
+// callers report problems through usageError.
+func newFlagSet(name string) *flag.FlagSet {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	fs.Usage = func() {}
+	return fs
+}
+
+// wantsHelp reports whether args ask for help. Arguments after "--" are
+// never flags.
+func wantsHelp(args []string) bool {
+	for _, a := range args {
+		switch a {
+		case "--":
+			return false
+		case "-h", "--help", "-help":
+			return true
+		}
+	}
+	return false
+}
+
+func (a *app) cmdVersion() int {
+	a.emit(map[string]string{"version": Version()}, func(w io.Writer) { fmt.Fprintln(w, "wikictl "+Version()) })
+	return ExitOK
+}
+
+func (a *app) cmdHelp(args []string) int {
+	if len(args) == 0 {
+		printUsage(a.stdout)
+		return ExitOK
+	}
+	switch args[0] {
+	case "help", "-h", "--help", "-help":
+		fmt.Fprintln(a.stdout, "Usage: wikictl help [<command>]\n\nShow help for a command, or the list of commands.")
+		return ExitOK
+	case "version":
+		fmt.Fprintln(a.stdout, "Usage: wikictl version\n\nPrint the version.")
+		return ExitOK
+	}
+	c := lookup(args[0])
+	if c == nil {
+		return a.fail(ExitUsage, "usage", "unknown command: "+args[0])
+	}
+	printCommandHelp(a.stdout, c)
+	return ExitOK
+}
+
+func lookup(name string) *command {
+	for _, c := range commands {
+		if c.name == name {
+			return c
+		}
+	}
+	return nil
+}
+
+// usageError reports a usage error of c together with its synopsis and returns ExitUsage.
+func (a *app) usageError(c *command, msg string) int {
+	if a.json {
+		return a.fail(ExitUsage, "usage", c.name+": "+msg)
+	}
+	fmt.Fprintln(a.stderr, "wikictl: "+c.name+": "+msg)
+	fmt.Fprintln(a.stderr, "Usage: "+synopsis(c))
+	fmt.Fprintf(a.stderr, "Run \"wikictl help %s\" for details.\n", c.name)
+	return ExitUsage
+}
+
+// parseFlags parses args into fs and checks the number of positional
+// arguments against c. On failure it reports through usageError and returns
+// ok=false with the exit code.
+func (a *app) parseFlags(c *command, fs *flag.FlagSet, args []string) (rest []string, code int, ok bool) {
+	if err := fs.Parse(args); err != nil {
+		return nil, a.usageError(c, err.Error()), false
+	}
+	rest = fs.Args()
+	if len(rest) < c.minArgs {
+		return nil, a.usageError(c, "missing argument"), false
+	}
+	if c.maxArgs >= 0 && len(rest) > c.maxArgs {
+		return nil, a.usageError(c, "too many arguments: "+strings.Join(rest[c.maxArgs:], " ")), false
+	}
+	return rest, ExitOK, true
+}
