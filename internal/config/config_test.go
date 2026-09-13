@@ -125,6 +125,13 @@ func TestProfileErrors(t *testing.T) {
 	if _, err := Load(p, Selector{}); err == nil {
 		t.Error("bad pattern must error")
 	}
+
+	for _, rel := range []string{".", "work"} {
+		os.WriteFile(p, []byte("repo: r\nprofiles:\n  a: {match: {paths: [\""+rel+"\"]}}\n"), 0o600)
+		if _, err := Load(p, Selector{}); err == nil || !strings.Contains(err.Error(), "match.paths") {
+			t.Errorf("relative path %q must error: %v", rel, err)
+		}
+	}
 }
 
 func TestMatchPaths(t *testing.T) {

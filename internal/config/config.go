@@ -214,6 +214,11 @@ func (m Match) accepts(remote, dir string) (bool, error) {
 		}
 		hit = hit || (ok && remote != "")
 	}
+	for _, p := range m.Paths {
+		if p != "" && !filepath.IsAbs(expandHome(p)) {
+			return false, fmt.Errorf("match.paths %q: must be absolute or start with ~", p)
+		}
+	}
 	if hit || dir == "" {
 		return hit, nil
 	}
