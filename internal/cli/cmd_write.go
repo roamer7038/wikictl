@@ -277,7 +277,7 @@ func (a *app) cmdInit(c *command, args []string) int {
 	empty := ""
 	changes := []repo.Change{
 		{Path: "README.md", Content: []byte(initReadme), Base: &empty},
-		{Path: "global/index.md", Content: []byte("---\nsummary: Entry point for knowledge that does not depend on any project or machine\n---\n# global\n"), Base: &empty},
+		{Path: "global/index.md", Content: []byte("---\nsummary: Entry point for knowledge that does not depend on any project, machine or user\n---\n# global\n"), Base: &empty},
 	}
 	res, code := a.commit(changes, "wikictl: init")
 	if code != ExitOK {

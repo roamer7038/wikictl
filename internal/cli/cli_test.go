@@ -136,15 +136,25 @@ func TestSearchGetLs(t *testing.T) {
 
 func TestPersonalScope(t *testing.T) {
 	cfg := setup(t)
+	// personal/ is a default directory even before anything is put there,
+	// so reads on a wiki without it must succeed with no matches.
+	var res struct {
+		Items []struct{ Path string }
+	}
+	code, out, errs := runCLI(t, cfg, "", "search", "--json", "conventional-commits")
+	json.Unmarshal([]byte(out), &res)
+	if code != 0 || len(res.Items) != 0 {
+		t.Fatalf("search without personal/: code=%d out=%s %s", code, out, errs)
+	}
+	if code, out, errs := runCLI(t, cfg, "", "ls", "--json", "--dirs", "personal"); code != 0 || out != `{"items":[]}`+"\n" {
+		t.Fatalf("ls without personal/: code=%d out=%q %s", code, out, errs)
+	}
 	if code, _, errs := runCLI(t, cfg, "---\nsummary: commit style\n---\n# commits\nconventional-commits\n", "put", "personal/commits.md"); code != 0 {
 		t.Fatalf("put: code=%d %s", code, errs)
 	}
-	code, out, errs := runCLI(t, cfg, "", "search", "--json", "conventional-commits")
+	code, out, errs = runCLI(t, cfg, "", "search", "--json", "conventional-commits")
 	if code != 0 {
 		t.Fatalf("search: code=%d %s", code, errs)
-	}
-	var res struct {
-		Items []struct{ Path string }
 	}
 	json.Unmarshal([]byte(out), &res)
 	if len(res.Items) != 1 || res.Items[0].Path != "personal/commits.md" {
