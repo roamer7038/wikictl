@@ -407,3 +407,23 @@ func TestContextPages(t *testing.T) {
 		t.Errorf("context text: %s", out)
 	}
 }
+
+func TestDirsDotCoversWholeWiki(t *testing.T) {
+	cfg := setup(t)
+	var ls struct {
+		Items []struct{ Path string }
+	}
+	_, out, _ := runCLI(t, cfg, "", "ls", "--json", "--all", "--dirs", ".")
+	if err := json.Unmarshal([]byte(out), &ls); err != nil || len(ls.Items) != 4 {
+		t.Errorf("ls --dirs .: %s", out)
+	}
+	_, out, _ = runCLI(t, cfg, "", "search", "--json", "--all", "--dirs", ".", "lease")
+	ls.Items = nil
+	if err := json.Unmarshal([]byte(out), &ls); err != nil || len(ls.Items) != 3 {
+		t.Errorf("search --dirs .: %s", out)
+	}
+	runCLI(t, cfg, "---\nsummary: bad\n---\n# bad\n[x](none.md)\n", "put", "projects/app/bad.md")
+	if code, out, _ := runCLI(t, cfg, "", "lint", "--json", "--dirs", "."); code != ExitInvalid || !strings.Contains(out, "projects/app/bad.md") {
+		t.Errorf("lint --dirs .: code=%d out=%s", code, out)
+	}
+}

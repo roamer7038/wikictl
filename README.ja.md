@@ -69,7 +69,7 @@ Linux と macOS（x86_64 と arm64）のバイナリとチェックサムは [re
 
 ### コマンドが見る場所
 
-既定では最大 3 つのディレクトリを検索します。`global/`、カレントディレクトリの `origin` リモート名から決まる `projects/<name>/`（git 管理外では省かれます）、ホスト名から決まる `machines/<name>/` です。`--dirs a,b` で上書きでき、`wikictl context` で各ディレクトリ直下のページ数（直下にページが無ければ 0）とともに確認できます。
+既定では最大 3 つのディレクトリを検索します。`global/`、カレントディレクトリの `origin` リモート名から決まる `projects/<name>/`（git 管理外では省かれます）、ホスト名から決まる `machines/<name>/` です。`--dirs a,b` で上書きでき、`wikictl context` で各ディレクトリ直下のページ数（直下にページが無ければ 0）とともに確認できます。`--dirs .` とすると wiki 全体が対象になります。
 
 ページをどこに置くか決める前に wiki 全体の構造を見るには `wikictl dirs` を使います。ページを直接含む全ディレクトリを、そのページ数と `index.md` の `summary`（無ければ `(no index)`）とともに一覧します。検索対象ディレクトリの設定は無視され、`wikictl dirs projects` のように引数で `projects/` 配下に絞れます。
 
@@ -123,6 +123,8 @@ type: concept
 - 任意のフロントマターキー: `type`、`status`（`deprecated` にすると `search` と `ls` から隠れる）、`tags`、`aliases`、`review_after`。
 - `## Links` 節がある場合は最後の見出しであること。各行は `- <type>: <target> | <note>`。`<target>` は相対パスまたは URL。
 - コードフェンスの中は解釈しない。フェンス内の `## Links` 見出しは節を始めない。
+
+各ディレクトリには、そのディレクトリに何を置くかを `summary` に書いた `index.md` を置き、同じディレクトリの他のページから `- part_of: [index](index.md)` でリンクすることを推奨します。こうすると `wikictl get <dir>/index.md` がそれらのページを `backlinks` として一覧し、`wikictl dirs` がディレクトリの横にその summary を表示するので、生成物を作らなくても wiki の構造がページ自身から読み取れます。
 
 ## 開発
 

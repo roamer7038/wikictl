@@ -69,7 +69,7 @@ Global flags, accepted before or after the command: `--json`, `--dirs a,b`, `--c
 
 ### Where commands look
 
-By default a command searches up to three directories: `global/`, `projects/<name>/` where `<name>` comes from the `origin` remote of the current directory (skipped outside a git repository), and `machines/<name>/` where `<name>` is the hostname. `--dirs a,b` overrides the list and `wikictl context` shows it, with the number of pages directly in each directory (0 when no page is directly in it).
+By default a command searches up to three directories: `global/`, `projects/<name>/` where `<name>` comes from the `origin` remote of the current directory (skipped outside a git repository), and `machines/<name>/` where `<name>` is the hostname. `--dirs a,b` overrides the list and `wikictl context` shows it, with the number of pages directly in each directory (0 when no page is directly in it). `--dirs .` covers the whole wiki.
 
 To see the structure of the whole wiki before deciding where a page goes, `wikictl dirs` lists every directory that directly contains a page, with its page count and the `summary` of its `index.md` (`(no index)` when there is none). It ignores the search directories; `wikictl dirs projects` restricts the list to the directories under `projects/`.
 
@@ -123,6 +123,8 @@ Body. Link to other pages with relative paths: [index](index.md).
 - Optional frontmatter keys: `type`, `status` (`deprecated` hides the page from `search` and `ls`), `tags`, `aliases`, `review_after`.
 - The `## Links` section, when present, is the last heading. Each line is `- <type>: <target> | <note>`; `<target>` is a relative path or a URL.
 - Code fences are never interpreted; a `## Links` heading inside one does not start the section.
+
+Give each directory an `index.md` whose `summary` states what the directory holds, and link the other pages in it to the index with `- part_of: [index](index.md)`. `wikictl get <dir>/index.md` then lists those pages as `backlinks`, and `wikictl dirs` shows the summary next to the directory, so the structure of the wiki describes itself without any generated content.
 
 ## Development
 
