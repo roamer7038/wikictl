@@ -77,7 +77,7 @@ func (a *app) cmdPut(c *command, args []string) int {
 	pg := page.Parse(p, content)
 	for _, is := range pg.Issues {
 		switch is.Code {
-		case "missing_summary", "bad_slug", "frontmatter_invalid":
+		case "bad_slug", "frontmatter_invalid":
 			return a.fail(ExitInvalid, "invalid", is.Code+": "+is.Message)
 		default:
 			fmt.Fprintf(a.stderr, "wikictl: warning: %s:%d: %s: %s\n", is.Path, is.Line, is.Code, is.Message)
@@ -264,7 +264,7 @@ func (a *app) relocate(mapping map[string]string) ([]repo.Change, error) {
 const initReadme = `# wiki
 
 A knowledge base shared by AI agents and people. A page is a Markdown file
-whose frontmatter has a one-line summary. Relations go in a "## Links"
+whose frontmatter should have a one-line summary. Relations go in a "## Links"
 section at the end; links are relative paths. Directories are scopes:
 global/ for everything, personal/ for one user, projects/<name>/ and
 machines/<name>/ for the rest.

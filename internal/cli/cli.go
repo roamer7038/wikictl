@@ -53,9 +53,10 @@ exist on the Git host. Fails with exit code 1 if the branch already exists.`,
 		detail: `Find pages that contain all of the words (case-insensitive, fixed strings).
 Pages with "status: deprecated" are skipped unless --all is given. Results
 are ordered by last update, newest first; with --any, pages matching more
-words come first.
+words come first. Text output shows the summary of each page, or its title
+(first heading, else the file name) when the page has no summary.
 
-Output: items[] {path, summary, matched, updated}.`,
+Output: items[] {path, summary, title, matched, updated}.`,
 		flags: func(fs *flag.FlagSet) { searchFlags(fs) }, run: (*app).cmdSearch},
 	{name: "get", args: "<path>", minArgs: 1, maxArgs: 1,
 		summary: "Show a page with its links and backlinks",
@@ -68,18 +69,22 @@ Output: {path, sha, frontmatter, title, body, links[], backlinks[], updated}.`,
 	{name: "ls", maxArgs: 0,
 		summary: "List pages",
 		detail: `List the pages under the search directories with their summary and type.
-Pages with "status: deprecated" are skipped unless --all is given.
+Pages with "status: deprecated" are skipped unless --all is given. Text
+output shows the summary of each page, or its title (first heading, else the
+file name) when the page has no summary.
 
-Output: items[] {path, summary, type, updated}.`,
+Output: items[] {path, summary, title, type, updated}.`,
 		flags: func(fs *flag.FlagSet) { lsFlags(fs) }, run: (*app).cmdLs},
 	{name: "put", args: "<path> < content", minArgs: 1, maxArgs: 1,
 		summary: "Create or replace a page from standard input",
 		detail: `Read the whole page, frontmatter included, from standard input and commit it
 as <path>. Omit --base for a new page. For an existing page pass --base with
 the blob sha from get; without it, or if the page changed in the meantime, the
-command exits with code 3 and prints the current content and sha. A page whose frontmatter
-is missing or invalid, has no summary, or whose path breaks the slug rules is
-rejected with exit code 4. Links to missing pages only produce warnings.
+command exits with code 3 and prints the current content and sha. A page
+whose frontmatter is invalid or whose path breaks the slug rules is rejected
+with exit code 4. A missing summary and links to missing pages only produce
+warnings on standard error; "description" in the frontmatter is read as a
+synonym of "summary".
 
 Output: {path, sha, commit}.`,
 		flags: func(fs *flag.FlagSet) { putFlags(fs) }, run: (*app).cmdPut},

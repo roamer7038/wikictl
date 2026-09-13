@@ -37,7 +37,7 @@ func Parse(p string, content []byte) *Page {
 			pg.Issues = append(pg.Issues, Issue{Path: p, Line: 1, Code: "frontmatter_invalid", Message: err.Error()})
 		} else {
 			pg.Frontmatter = m
-			if s, _ := m["summary"].(string); strings.TrimSpace(s) != "" {
+			if s, ok := summaryOf(m); ok {
 				pg.Summary = s
 			} else {
 				pg.Issues = append(pg.Issues, Issue{Path: p, Line: 1, Code: "missing_summary", Message: "summary is missing"})
@@ -68,4 +68,15 @@ func Parse(p string, content []byte) *Page {
 		pg.Body = body + "\n"
 	}
 	return pg
+}
+
+// summaryOf returns the summary from the frontmatter. "description" is
+// accepted as a synonym; "summary" wins when both are non-blank.
+func summaryOf(m map[string]any) (string, bool) {
+	for _, k := range []string{"summary", "description"} {
+		if s, _ := m[k].(string); strings.TrimSpace(s) != "" {
+			return s, true
+		}
+	}
+	return "", false
 }

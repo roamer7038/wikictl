@@ -16,6 +16,7 @@ import (
 type hit struct {
 	Path    string   `json:"path"`
 	Summary string   `json:"summary"`
+	Title   string   `json:"title"`
 	Matched []string `json:"matched"`
 	Updated string   `json:"updated"`
 }
@@ -64,7 +65,7 @@ func (a *app) cmdSearch(c *command, args []string) int {
 				matched = append(matched, w)
 			}
 		}
-		hits = append(hits, hit{Path: p, Summary: pg.Summary, Matched: matched, Updated: fmtTime(updated[p])})
+		hits = append(hits, hit{Path: p, Summary: pg.Summary, Title: pg.Title, Matched: matched, Updated: fmtTime(updated[p])})
 	}
 	sort.SliceStable(hits, func(i, j int) bool {
 		if o.any && len(hits[i].Matched) != len(hits[j].Matched) {
@@ -80,7 +81,7 @@ func (a *app) cmdSearch(c *command, args []string) int {
 	}
 	a.emit(map[string]any{"items": hits}, func(w io.Writer) {
 		for _, h := range hits {
-			fmt.Fprintf(w, "%s\t%s\n", h.Path, h.Summary)
+			fmt.Fprintf(w, "%s\t%s\n", h.Path, summaryOrTitle(h.Summary, h.Title))
 		}
 	})
 	return ExitOK
@@ -185,6 +186,7 @@ func (a *app) backlinks(target string) []backlinkOut {
 type lsItem struct {
 	Path    string `json:"path"`
 	Summary string `json:"summary"`
+	Title   string `json:"title"`
 	Type    string `json:"type"`
 	Updated string `json:"updated"`
 }
@@ -228,11 +230,11 @@ func (a *app) cmdLs(c *command, args []string) int {
 		if o.tag != "" && !hasTag(pg.Frontmatter, o.tag) {
 			continue
 		}
-		items = append(items, lsItem{p, pg.Summary, t, fmtTime(updated[p])})
+		items = append(items, lsItem{p, pg.Summary, pg.Title, t, fmtTime(updated[p])})
 	}
 	a.emit(map[string]any{"items": items}, func(w io.Writer) {
 		for _, it := range items {
-			fmt.Fprintf(w, "%s\t%s\n", it.Path, it.Summary)
+			fmt.Fprintf(w, "%s\t%s\n", it.Path, summaryOrTitle(it.Summary, it.Title))
 		}
 	})
 	return ExitOK
@@ -265,6 +267,15 @@ func (a *app) cmdContext(c *command, args []string) int {
 		fmt.Fprintf(w, "dirs: %s\n", strings.Join(a.dirs, ", "))
 	})
 	return ExitOK
+}
+
+// summaryOrTitle returns the summary, or the title when the page has none,
+// so that text output always shows something for a page.
+func summaryOrTitle(summary, title string) string {
+	if summary != "" {
+		return summary
+	}
+	return title
 }
 
 func hasTag(fm map[string]any, tag string) bool {

@@ -106,14 +106,14 @@ The mirror lives under `~/.cache/wikictl/` (or `$XDG_CACHE_HOME/wikictl/`). Dele
 | 1 | error, for example a missing page |
 | 2 | usage or configuration error |
 | 3 | conflict: the page changed since it was read |
-| 4 | the page violates the wiki format (missing or invalid frontmatter, no summary, bad path) |
+| 4 | the page violates the wiki format (invalid frontmatter, bad path) |
 | 5 | a git command failed |
 
 With `--json`, errors are printed as `{"error": "<kind>", "message": "..."}` where `<kind>` is `error`, `usage`, `conflict`, `invalid` or `git`.
 
 ## Page format
 
-A page is a Markdown file in a subdirectory (never at the root) whose frontmatter has a one-line `summary`:
+A page is a Markdown file in a subdirectory (never at the root). Its frontmatter should have a one-line `summary`:
 
 ```markdown
 ---
@@ -130,6 +130,7 @@ Body. Link to other pages with relative paths: [index](index.md).
 ```
 
 - File and directory names match `^[a-z0-9][a-z0-9-]*$`; pages end in `.md`.
+- `summary` is recommended, not required. Without it, `put` still writes the page and prints a `missing_summary` warning, `lint` reports `missing_summary`, and `search` and `ls` show the title (first heading, else the file name) instead. `description` is read as a synonym of `summary`; `summary` wins when both are present.
 - Optional frontmatter keys: `type`, `status` (`deprecated` hides the page from `search` and `ls`), `tags`, `aliases`, `review_after`.
 - The `## Links` section, when present, is the last heading. Each line is `- <type>: <target> | <note>`; `<target>` is a relative path or a URL. A line with only a target, `- <target>`, is a `see_also` relation; an untyped URL target must be of the form `<scheme>://...`. The bullet may be `-`, `*` or `+` and may be indented.
 - Write page targets as `[text](path)`. `mv` rewrites only links of that form; a bare path such as `- part_of: index.md` or `- index.md` is left unchanged and becomes a broken link when its target moves.

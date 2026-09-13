@@ -185,8 +185,15 @@ func TestPutRmInit(t *testing.T) {
 	if code != 3 || cf.Reason != "changed" || !strings.Contains(cf.Content, "updated page") {
 		t.Errorf("code=%d %s", code, out)
 	}
-	if code, _, _ = runCLI(t, cfg, "# no fm\n", "put", "global/bad.md"); code != 4 {
-		t.Errorf("missing summary code=%d", code)
+	// A missing summary, or no frontmatter at all, is only a warning; the write goes through.
+	if code, _, errs := runCLI(t, cfg, "# no fm\n", "put", "global/nofm.md"); code != 0 || !strings.Contains(errs, "missing_summary") {
+		t.Errorf("no frontmatter: code=%d errs=%q", code, errs)
+	}
+	if code, _, errs := runCLI(t, cfg, "---\ntype: note\n---\n# no summary\n", "put", "global/nosum.md"); code != 0 || !strings.Contains(errs, "missing_summary") {
+		t.Errorf("no summary: code=%d errs=%q", code, errs)
+	}
+	if code, _, _ := runCLI(t, cfg, "---\nsummary: [\n---\n", "put", "global/bad.md"); code != 4 {
+		t.Errorf("invalid frontmatter code=%d", code)
 	}
 	if code, _, _ = runCLI(t, cfg, "---\nsummary: a\n---\n", "put", "global/Bad.md"); code != 4 {
 		t.Errorf("bad slug code=%d", code)
@@ -331,5 +338,65 @@ func TestMvDir(t *testing.T) {
 	}
 	if code, _, errs := runCLI(t, cfg, "", "mv", "projects/app2/", "global/x.md"); code != 2 || !strings.Contains(errs, "both arguments") {
 		t.Errorf("mixed dir/page mv must be a usage error: code=%d errs=%q", code, errs)
+	}
+}
+
+func TestOptionalSummary(t *testing.T) {
+	cfg := setup(t)
+	runCLI(t, cfg, "---\ntype: note\n---\n# Heading Title\nlease\n", "put", "global/nosum.md")
+	runCLI(t, cfg, "---\ndescription: from description\n---\n# d\nlease\n", "put", "global/desc.md")
+	runCLI(t, cfg, "no heading, no frontmatter\nlease\n", "put", "global/nofm.md")
+	type item struct{ Path, Summary, Title string }
+	var res struct{ Items []item }
+	byPath := func(items []item) map[string]item {
+		m := map[string]item{}
+		for _, it := range items {
+			m[it.Path] = it
+		}
+		return m
+	}
+	code, out, errs := runCLI(t, cfg, "", "search", "--json", "--dirs", "global", "lease")
+	if code != 0 {
+		t.Fatalf("code=%d %s", code, errs)
+	}
+	json.Unmarshal([]byte(out), &res)
+	got := byPath(res.Items)
+	if it := got["global/nosum.md"]; it.Summary != "" || it.Title != "Heading Title" {
+		t.Errorf("search nosum: %+v", it)
+	}
+	if it := got["global/desc.md"]; it.Summary != "from description" || it.Title != "d" {
+		t.Errorf("search desc: %+v", it)
+	}
+	if it := got["global/nofm.md"]; it.Summary != "" || it.Title != "nofm" {
+		t.Errorf("search nofm: %+v", it)
+	}
+	if it := got["global/push.md"]; it.Summary != "how to push" || it.Title != "push" {
+		t.Errorf("search push: %+v", it)
+	}
+	_, out, _ = runCLI(t, cfg, "", "search", "--dirs", "global", "lease")
+	for _, want := range []string{"global/nosum.md\tHeading Title\n", "global/desc.md\tfrom description\n", "global/nofm.md\tnofm\n", "global/push.md\thow to push\n"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("search text missing %q in %q", want, out)
+		}
+	}
+	_, out, _ = runCLI(t, cfg, "", "ls", "--json", "--dirs", "global")
+	json.Unmarshal([]byte(out), &res)
+	got = byPath(res.Items)
+	if it := got["global/nosum.md"]; it.Summary != "" || it.Title != "Heading Title" {
+		t.Errorf("ls nosum: %+v", it)
+	}
+	if it := got["global/desc.md"]; it.Summary != "from description" {
+		t.Errorf("ls desc: %+v", it)
+	}
+	_, out, _ = runCLI(t, cfg, "", "ls", "--dirs", "global")
+	for _, want := range []string{"global/nosum.md\tHeading Title\n", "global/nofm.md\tnofm\n", "global/index.md\tentry point\n"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("ls text missing %q in %q", want, out)
+		}
+	}
+	// lint still reports the missing summary.
+	code, out, _ = runCLI(t, cfg, "", "lint", "global/nosum.md", "global/nofm.md", "global/desc.md")
+	if code != 4 || strings.Count(out, "missing_summary") != 2 || strings.Contains(out, "desc.md") {
+		t.Errorf("lint: code=%d out=%q", code, out)
 	}
 }
