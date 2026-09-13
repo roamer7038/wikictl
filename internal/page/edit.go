@@ -59,7 +59,7 @@ func AddAlias(content []byte, alias string) []byte {
 		l := tk.Position.Line - 1
 		i := byteIndex(lines[l], tk.Position.Column)
 		if strings.HasPrefix(lines[l][i:], tk.Value) {
-			lines[l] = lines[l][:i] + "[" + entry + "]" + lines[l][i+len(tk.Value):]
+			lines[l] = lines[l][:i] + "[" + yamlFlowString(alias) + "]" + lines[l][i+len(tk.Value):]
 		} else {
 			lines = insertLine(lines, l+1, "  - "+entry)
 		}
@@ -73,11 +73,12 @@ func AddAlias(content []byte, alias string) []byte {
 		if v.IsFlowStyle {
 			l := v.End.Position.Line - 1
 			i := byteIndex(lines[l], v.End.Position.Column)
-			text := ", " + entry
+			flow := yamlFlowString(alias)
+			text := ", " + flow
 			if prev := lastNonSpace(lines[:l+1], l, i); prev == '[' {
-				text = entry
+				text = flow
 			} else if prev == ',' {
-				text = " " + entry
+				text = " " + flow
 			}
 			lines[l] = lines[l][:i] + text + lines[l][i:]
 		} else {
@@ -139,11 +140,26 @@ func insertLine(lines []string, at int, line string) []string {
 	return append(lines[:at], append([]string{line}, lines[at:]...)...)
 }
 
-// yamlString returns s as a YAML scalar that decodes to the string s: s itself
-// when it already does, otherwise s in double quotes.
+// yamlString returns s as an item of a block sequence that decodes to the
+// string s: s itself when it already does, otherwise s in double quotes.
 func yamlString(s string) string {
+	return yamlScalar(s, "- ", "")
+}
+
+// yamlFlowString returns s as an item of a flow sequence that decodes to the
+// string s: s itself when it already does, otherwise s in double quotes. A
+// plain scalar in a flow collection must not contain flow indicators, so s is
+// always quoted when it has one.
+func yamlFlowString(s string) string {
+	if strings.ContainsAny(s, ",[]{}") {
+		return strconv.Quote(s)
+	}
+	return yamlScalar(s, "[", "]")
+}
+
+func yamlScalar(s, prefix, suffix string) string {
 	var v []any
-	if err := yaml.Unmarshal([]byte("- "+s), &v); err == nil && len(v) == 1 && v[0] == s {
+	if err := yaml.Unmarshal([]byte(prefix+s+suffix), &v); err == nil && len(v) == 1 && v[0] == s {
 		return s
 	}
 	return strconv.Quote(s)
