@@ -7,43 +7,136 @@ import (
 	"strings"
 
 	"github.com/goccy/go-yaml"
+	"github.com/goccy/go-yaml/ast"
+	"github.com/goccy/go-yaml/parser"
 )
 
 // AddAlias appends alias to the aliases list of the frontmatter, creating the
-// list if needed. The content is returned unchanged when the alias is already
-// present or when there is no frontmatter. Other lines are not touched.
+// list if needed. The aliases node is located with the YAML parser and only
+// the text around it is edited, so other keys and comments are kept as they
+// are. The content is returned unchanged when the alias is already present,
+// when there is no frontmatter, or when the frontmatter is not a mapping whose
+// aliases value is a sequence, null, or absent.
 func AddAlias(content []byte, alias string) []byte {
 	fm, rest, _, ok := SplitFrontmatter(content)
 	if !ok {
 		return content
 	}
+	file, err := parser.ParseBytes(fm, 0)
+	if err != nil || len(file.Docs) > 1 {
+		return content
+	}
+	var body ast.Node
+	if len(file.Docs) == 1 {
+		body = file.Docs[0].Body
+	}
 	lines := strings.Split(strings.TrimSuffix(string(fm), "\n"), "\n")
-	idx := -1
-	for i, l := range lines {
-		l = strings.TrimRight(l, "\r")
-		if l == "aliases:" {
-			idx = i
-		}
-		if t := strings.TrimSpace(l); t == "- "+alias || t == "- "+yamlString(alias) {
+	if len(fm) == 0 {
+		lines = nil
+	}
+	entry := yamlString(alias)
+	var value ast.Node
+	switch b := body.(type) {
+	case nil:
+	case *ast.MappingNode:
+		if b.IsFlowStyle {
 			return content
 		}
-	}
-	entry := "  - " + yamlString(alias)
-	if idx < 0 {
-		lines = append(lines, "aliases:", entry)
-	} else {
-		end := idx + 1
-		for end < len(lines) && strings.HasPrefix(lines[end], "  - ") {
-			end++
+		for _, mv := range b.Values {
+			if mv.Key.GetToken().Value == "aliases" {
+				value = mv.Value
+				break
+			}
 		}
-		lines = append(lines[:end], append([]string{entry}, lines[end:]...)...)
+	default:
+		return content
+	}
+	switch v := value.(type) {
+	case nil:
+		lines = append(lines, "aliases:", "  - "+entry)
+	case *ast.NullNode:
+		tk := v.GetToken()
+		l := tk.Position.Line - 1
+		i := byteIndex(lines[l], tk.Position.Column)
+		if strings.HasPrefix(lines[l][i:], tk.Value) {
+			lines[l] = lines[l][:i] + "[" + entry + "]" + lines[l][i+len(tk.Value):]
+		} else {
+			lines = insertLine(lines, l+1, "  - "+entry)
+		}
+	case *ast.SequenceNode:
+		for _, item := range v.Values {
+			var s string
+			if err := yaml.Unmarshal([]byte(item.String()), &s); err == nil && s == alias {
+				return content
+			}
+		}
+		if v.IsFlowStyle {
+			l := v.End.Position.Line - 1
+			i := byteIndex(lines[l], v.End.Position.Column)
+			text := ", " + entry
+			if prev := lastNonSpace(lines[:l+1], l, i); prev == '[' {
+				text = entry
+			} else if prev == ',' {
+				text = " " + entry
+			}
+			lines[l] = lines[l][:i] + text + lines[l][i:]
+		} else {
+			indent := v.Start.Position.Column - 1
+			last := v.Values[len(v.Values)-1].GetToken().Position.Line - 1
+			at := last + 1
+			for i := last + 1; i < len(lines); i++ {
+				t := strings.TrimRight(lines[i], "\r")
+				if strings.TrimSpace(t) == "" {
+					continue
+				}
+				if len(t)-len(strings.TrimLeft(t, " ")) <= indent {
+					break
+				}
+				at = i + 1
+			}
+			lines = insertLine(lines, at, strings.Repeat(" ", indent)+"- "+entry)
+		}
+	default:
+		return content
 	}
 	var b bytes.Buffer
 	b.WriteString("---\n")
-	b.WriteString(strings.Join(lines, "\n"))
-	b.WriteString("\n---\n")
+	for _, l := range lines {
+		b.WriteString(l)
+		b.WriteByte('\n')
+	}
+	b.WriteString("---\n")
 	b.Write(rest)
 	return b.Bytes()
+}
+
+// byteIndex returns the byte index in line of the 1-based character column.
+func byteIndex(line string, column int) int {
+	n := 1
+	for i := range line {
+		if n == column {
+			return i
+		}
+		n++
+	}
+	return len(line)
+}
+
+// lastNonSpace returns the last non-space character before byte i of line l.
+func lastNonSpace(lines []string, l, i int) byte {
+	s := strings.TrimRight(lines[l][:i], " \t\r")
+	for s == "" && l > 0 {
+		l--
+		s = strings.TrimRight(lines[l], " \t\r")
+	}
+	if s == "" {
+		return 0
+	}
+	return s[len(s)-1]
+}
+
+func insertLine(lines []string, at int, line string) []string {
+	return append(lines[:at], append([]string{line}, lines[at:]...)...)
 }
 
 // yamlString returns s as a YAML scalar that decodes to the string s: s itself
