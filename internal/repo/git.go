@@ -38,9 +38,10 @@ func (r *Repo) GitIn(stdin []byte, args ...string) (string, error) { return r.ru
 
 // run executes git in the mirror. core.quotePath is turned off so that
 // ls-tree, grep and log print non-ASCII paths verbatim instead of quoting
-// them.
+// them. --literal-pathspecs makes directory names containing '*', '?' or
+// '[' match only themselves instead of acting as wildcards.
 func (r *Repo) run(extraEnv []string, stdin []byte, args ...string) (string, error) {
-	c := exec.Command("git", append([]string{"-c", "core.quotePath=false"}, args...)...)
+	c := exec.Command("git", append([]string{"--literal-pathspecs", "-c", "core.quotePath=false"}, args...)...)
 	c.Dir = r.Dir
 	c.Env = append(baseEnv(), extraEnv...)
 	if stdin != nil {

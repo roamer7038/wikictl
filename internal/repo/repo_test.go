@@ -211,3 +211,35 @@ func TestCommitEmptyRemote(t *testing.T) {
 		t.Error("head not set")
 	}
 }
+
+// Directory names may contain '*' and '[', so dirs must match literally
+// rather than as git wildcards.
+func TestReadLiteralDirs(t *testing.T) {
+	remote := newRemote(t, true)
+	seedRemote(t, remote, map[string]string{
+		"projects/a*/p.md":   "---\nsummary: p\nstatus: deprecated\n---\n# p\nlease\n",
+		"projects/app/x.md":  "---\nsummary: x\nstatus: deprecated\n---\n# x\nlease\n",
+		"projects/[ab]/q.md": "---\nsummary: q\n---\n# q\nlease\n",
+		"projects/a/y.md":    "---\nsummary: y\n---\n# y\nlease\n",
+	})
+	r := openFetched(t, remote)
+	for _, tc := range []struct{ dir, want string }{
+		{"projects/a*", "projects/a*/p.md"},
+		{"projects/[ab]", "projects/[ab]/q.md"},
+	} {
+		dirs := []string{tc.dir}
+		if got, _ := r.List(dirs); len(got) != 1 || got[0] != tc.want {
+			t.Errorf("list %s=%v", tc.dir, got)
+		}
+		if got, _ := r.Grep([]string{"lease"}, false, dirs); len(got) != 1 || got[0] != tc.want {
+			t.Errorf("grep %s=%v", tc.dir, got)
+		}
+		up, _ := r.Updated(dirs)
+		if len(up) != 1 || up[tc.want].IsZero() {
+			t.Errorf("updated %s=%v", tc.dir, up)
+		}
+	}
+	if dep, _ := r.GrepDeprecated([]string{"projects/a*"}); len(dep) != 1 || !dep["projects/a*/p.md"] {
+		t.Errorf("dep=%v", dep)
+	}
+}
