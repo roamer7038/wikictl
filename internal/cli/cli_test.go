@@ -155,8 +155,18 @@ func TestPutRmInit(t *testing.T) {
 	if code, _, _ = runCLI(t, cfg, "# no fm\n", "put", "global/bad.md"); code != 4 {
 		t.Errorf("missing summary code=%d", code)
 	}
-	if code, _, _ = runCLI(t, cfg, "---\nsummary: a\n---\n", "put", "global/Bad.md"); code != 4 {
-		t.Errorf("bad slug code=%d", code)
+	if code, _, errs := runCLI(t, cfg, "---\nsummary: a\n---\n", "put", "global/my page.md"); code != 4 || !strings.Contains(errs, "bad_path") {
+		t.Errorf("bad path: code=%d errs=%q", code, errs)
+	}
+	// A name outside the recommended form is only a warning.
+	if code, _, errs := runCLI(t, cfg, "---\nsummary: a\n---\n", "put", "global/Bad_Name.md"); code != 0 || !strings.Contains(errs, "name_style") {
+		t.Errorf("style name: code=%d errs=%q", code, errs)
+	}
+	if code, _, errs := runCLI(t, cfg, "---\nsummary: a\n---\n", "put", "global/日本語.md"); code != 0 || !strings.Contains(errs, "name_style") {
+		t.Errorf("non-ascii name: code=%d errs=%q", code, errs)
+	}
+	if code, _, _ := runCLI(t, cfg, "", "get", "global/日本語.md"); code != 0 {
+		t.Errorf("non-ascii get code=%d", code)
 	}
 	// A broken link is only a warning; the write goes through.
 	code, _, errs := runCLI(t, cfg, "---\nsummary: w\n---\n# w\n[g](gone.md)\n", "put", "global/warn.md")
@@ -228,6 +238,13 @@ func TestMvAndLint(t *testing.T) {
 	if code, _, _ := runCLI(t, cfg, "", "mv", "global/push.md", "global/index.md"); code != 1 {
 		t.Error("mv onto existing must fail")
 	}
+	if code, _, errs := runCLI(t, cfg, "", "mv", "global/push.md", "global/a b.md"); code != 4 || !strings.Contains(errs, "bad_path") {
+		t.Errorf("mv to bad path: code=%d errs=%q", code, errs)
+	}
+	if code, _, errs := runCLI(t, cfg, "", "mv", "global/push.md", "global/Push.md"); code != 0 || !strings.Contains(errs, "name_style") {
+		t.Errorf("mv to style name: code=%d errs=%q", code, errs)
+	}
+	runCLI(t, cfg, "", "mv", "global/Push.md", "global/push.md")
 	runCLI(t, cfg, "---\nsummary: b\n---\n# b\n[gone](gone.md)\n\n## Links\n- x\n", "put", "global/broken.md")
 	code, out, _ = runCLI(t, cfg, "", "lint", "--json", "--dirs", "global")
 	var li struct {
@@ -246,6 +263,38 @@ func TestMvAndLint(t *testing.T) {
 	}
 	if code, _, _ := runCLI(t, cfg, "", "lint", "--dirs", "projects/app"); code != 0 {
 		t.Error("clean dir must pass")
+	}
+}
+
+func TestLintNames(t *testing.T) {
+	cfg := setup(t)
+	runCLI(t, cfg, "---\nsummary: i\n---\n", "put", "global/Index.md")
+	runCLI(t, cfg, "---\nsummary: s\n---\n", "put", "global/style_name.md")
+	runCLI(t, cfg, "---\nsummary: d\n---\n", "put", "projects/App/d.md")
+	code, out, _ := runCLI(t, cfg, "", "lint", "--json", "--dirs", "global,projects")
+	var li struct {
+		Items []struct {
+			Path, Code, Message string
+		}
+	}
+	json.Unmarshal([]byte(out), &li)
+	got := map[string]string{}
+	for _, it := range li.Items {
+		got[it.Path+" "+it.Code] = it.Message
+	}
+	want := []string{"global/Index.md case_collision", "global/index.md case_collision", "global/Index.md name_style", "global/style_name.md name_style", "projects/App/d.md case_collision", "projects/app/x.md case_collision", "projects/App/d.md name_style"}
+	for _, w := range want {
+		if _, ok := got[w]; !ok {
+			t.Errorf("missing %q in %s", w, out)
+		}
+	}
+	if code != 4 || len(li.Items) != len(want) {
+		t.Errorf("code=%d items=%d %s", code, len(li.Items), out)
+	}
+	// Explicit paths report only their own issues, but collisions are still found against the whole tree.
+	code, out, _ = runCLI(t, cfg, "", "lint", "global/index.md")
+	if code != 4 || !strings.Contains(out, "global/index.md:0: case_collision") || strings.Contains(out, "Index.md:0") {
+		t.Errorf("code=%d out=%q", code, out)
 	}
 }
 
@@ -287,6 +336,15 @@ func TestMvDir(t *testing.T) {
 	}
 	if code, _, _ := runCLI(t, cfg, "", "mv", "projects/app2/", "global/"); code != 1 {
 		t.Error("mv onto dir with existing pages must fail")
+	}
+	if code, _, errs := runCLI(t, cfg, "", "mv", "projects/app2/", "projects/new dir/"); code != 4 || !strings.Contains(errs, "bad_path") {
+		t.Errorf("mv dir to bad name: code=%d errs=%q", code, errs)
+	}
+	if code, _, errs := runCLI(t, cfg, "", "mv", "projects/app2/", "projects/App3/"); code != 0 || !strings.Contains(errs, "name_style") {
+		t.Errorf("mv dir to style name: code=%d errs=%q", code, errs)
+	}
+	if code, _, errs := runCLI(t, cfg, "", "mv", "projects/App3/", "projects/app2/"); code != 0 {
+		t.Errorf("mv dir back: code=%d errs=%q", code, errs)
 	}
 	if code, _, errs := runCLI(t, cfg, "", "mv", "projects/app2/", "global/x.md"); code != 2 || !strings.Contains(errs, "both arguments") {
 		t.Errorf("mixed dir/page mv must be a usage error: code=%d errs=%q", code, errs)

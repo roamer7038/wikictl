@@ -116,7 +116,8 @@ Body. Link to other pages with relative paths: [index](index.md).
 - cites: https://example.com/spec | what this source supports
 ```
 
-- File and directory names match `^[a-z0-9][a-z0-9-]*$`; pages end in `.md`.
+- File and directory names must not be empty, start with `.`, or contain whitespace, control characters or any of `" \ # )`; pages end in `.md`. `put` and `mv` reject other paths (`bad_path`, exit code 4).
+- Lowercase ASCII letters, digits and hyphens are recommended for names. `lint` reports other names as `name_style`, and names in one directory that differ only by case (which collide on case-insensitive file systems) as `case_collision`.
 - Optional frontmatter keys: `type`, `status` (`deprecated` hides the page from `search` and `ls`), `tags`, `aliases`, `review_after`.
 - The `## Links` section, when present, is the last heading. Each line is `- <type>: <target> | <note>`; `<target>` is a relative path or a URL.
 - Code fences are never interpreted; a `## Links` heading inside one does not start the section.

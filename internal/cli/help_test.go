@@ -82,6 +82,21 @@ func TestUsageErrorsNeedNoConfig(t *testing.T) {
 	}
 }
 
+func TestHelpDescribesNameRules(t *testing.T) {
+	_, out, _ := runNoConfig(t, "help", "lint")
+	for _, w := range []string{"bad_path", "name_style", "case_collision"} {
+		if !strings.Contains(out, w) {
+			t.Errorf("help lint must mention %s: %q", w, out)
+		}
+	}
+	for _, c := range []string{"put", "mv"} {
+		_, out, _ := runNoConfig(t, "help", c)
+		if strings.Contains(out, "slug") || !strings.Contains(out, "file name") {
+			t.Errorf("help %s must describe the file name rules: %q", c, out)
+		}
+	}
+}
+
 func TestEveryCommandHasHelp(t *testing.T) {
 	for _, c := range commands {
 		code, out, _ := runNoConfig(t, "help", c.name)
