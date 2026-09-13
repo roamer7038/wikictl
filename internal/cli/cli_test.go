@@ -54,6 +54,15 @@ func runCLI(t *testing.T, cfg string, stdin string, args ...string) (int, string
 	return code, out.String(), errb.String()
 }
 
+// mustUnmarshal decodes the JSON output of a command into v and stops the test
+// when out is not valid JSON.
+func mustUnmarshal(t *testing.T, out string, v any) {
+	t.Helper()
+	if err := json.Unmarshal([]byte(out), v); err != nil {
+		t.Fatalf("unmarshal %q: %v", out, err)
+	}
+}
+
 func TestSearchGetLs(t *testing.T) {
 	cfg := setup(t)
 	code, out, errs := runCLI(t, cfg, "", "search", "--json", "--dirs", "global,projects/app,machines/h1", "lease")
@@ -66,17 +75,17 @@ func TestSearchGetLs(t *testing.T) {
 			Matched       []string
 		}
 	}
-	json.Unmarshal([]byte(out), &res)
+	mustUnmarshal(t, out, &res)
 	if len(res.Items) != 2 {
 		t.Errorf("%s", out)
 	}
 	_, out, _ = runCLI(t, cfg, "", "search", "--json", "--all", "--dirs", "global,projects/app,machines/h1", "lease")
-	json.Unmarshal([]byte(out), &res)
+	mustUnmarshal(t, out, &res)
 	if len(res.Items) != 3 {
 		t.Errorf("--all: %s", out)
 	}
 	_, out, _ = runCLI(t, cfg, "", "search", "--json", "--dirs", "global", "zzz-none")
-	json.Unmarshal([]byte(out), &res)
+	mustUnmarshal(t, out, &res)
 	if !strings.Contains(out, `"items":[]`) {
 		t.Errorf("empty: %s", out)
 	}
@@ -86,12 +95,12 @@ func TestSearchGetLs(t *testing.T) {
 		Links                  []struct{ Type, Target, Note string }
 		Backlinks              []struct{ Path, Type string }
 	}
-	json.Unmarshal([]byte(out), &g)
+	mustUnmarshal(t, out, &g)
 	if code != 0 || len(g.Sha) != 40 || g.Title != "push" || len(g.Links) != 1 || g.Links[0].Target != "global/index.md" || strings.Contains(g.Body, "## Links") {
 		t.Errorf("%s", out)
 	}
 	_, out, _ = runCLI(t, cfg, "", "get", "--json", "global/index.md")
-	json.Unmarshal([]byte(out), &g)
+	mustUnmarshal(t, out, &g)
 	if len(g.Backlinks) != 1 || g.Backlinks[0].Path != "global/push.md" || g.Backlinks[0].Type != "part_of" {
 		t.Errorf("backlinks: %s", out)
 	}
@@ -99,7 +108,7 @@ func TestSearchGetLs(t *testing.T) {
 	var ls struct {
 		Items []struct{ Path, Summary, Type string }
 	}
-	json.Unmarshal([]byte(out), &ls)
+	mustUnmarshal(t, out, &ls)
 	if len(ls.Items) != 2 {
 		t.Errorf("ls: %s", out)
 	}
@@ -108,12 +117,12 @@ func TestSearchGetLs(t *testing.T) {
 		t.Errorf("context: %s", out)
 	}
 	var cx struct{ Dirs []string }
-	json.Unmarshal([]byte(out), &cx)
+	mustUnmarshal(t, out, &cx)
 	if len(cx.Dirs) < 2 || cx.Dirs[0] != "global" || cx.Dirs[1] != "personal" {
 		t.Errorf("context dirs: %v", cx.Dirs)
 	}
 	_, out, _ = runCLI(t, cfg, "", "ls", "--json", "--dirs", "global", "--tag", "git")
-	json.Unmarshal([]byte(out), &ls)
+	mustUnmarshal(t, out, &ls)
 	if len(ls.Items) != 1 || ls.Items[0].Path != "global/push.md" {
 		t.Errorf("ls --tag: %s", out)
 	}
@@ -143,7 +152,7 @@ func TestPersonalScope(t *testing.T) {
 		Items []struct{ Path string }
 	}
 	code, out, errs := runCLI(t, cfg, "", "search", "--json", "conventional-commits")
-	json.Unmarshal([]byte(out), &res)
+	mustUnmarshal(t, out, &res)
 	if code != 0 || len(res.Items) != 0 {
 		t.Fatalf("search without personal/: code=%d out=%s %s", code, out, errs)
 	}
@@ -157,7 +166,7 @@ func TestPersonalScope(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("search: code=%d %s", code, errs)
 	}
-	json.Unmarshal([]byte(out), &res)
+	mustUnmarshal(t, out, &res)
 	if len(res.Items) != 1 || res.Items[0].Path != "personal/commits.md" {
 		t.Errorf("search: %s", out)
 	}
@@ -167,13 +176,13 @@ func TestPutRmInit(t *testing.T) {
 	cfg := setup(t)
 	code, out, _ := runCLI(t, cfg, "---\nsummary: new page\n---\n# n\n", "put", "--json", "global/new.md")
 	var res struct{ Path, Sha, Commit string }
-	json.Unmarshal([]byte(out), &res)
+	mustUnmarshal(t, out, &res)
 	if code != 0 || len(res.Sha) != 40 {
 		t.Fatalf("code=%d %s", code, out)
 	}
 	code, out, _ = runCLI(t, cfg, "---\nsummary: x\n---\n", "put", "--json", "global/new.md")
 	var cf struct{ Error, Reason, Sha, Content string }
-	json.Unmarshal([]byte(out), &cf)
+	mustUnmarshal(t, out, &cf)
 	if code != 3 || cf.Error != "conflict" || cf.Reason != "exists" || cf.Sha != res.Sha {
 		t.Errorf("code=%d %s", code, out)
 	}
@@ -182,7 +191,7 @@ func TestPutRmInit(t *testing.T) {
 		t.Fatalf("%s", out)
 	}
 	code, out, _ = runCLI(t, cfg, "---\nsummary: z\n---\n", "put", "--json", "--base", res.Sha, "global/new.md")
-	json.Unmarshal([]byte(out), &cf)
+	mustUnmarshal(t, out, &cf)
 	if code != 3 || cf.Reason != "changed" || !strings.Contains(cf.Content, "updated page") {
 		t.Errorf("code=%d %s", code, out)
 	}
@@ -264,7 +273,7 @@ func TestMvAndLint(t *testing.T) {
 		Frontmatter map[string]any
 		Links       []struct{ Target string }
 	}
-	json.Unmarshal([]byte(out), &g)
+	mustUnmarshal(t, out, &g)
 	if !strings.Contains(g.Body, "](../../global/index.md)") || len(g.Links) != 1 || g.Links[0].Target != "global/index.md" {
 		t.Errorf("self links not rewritten: %s", out)
 	}
@@ -300,7 +309,7 @@ func TestMvAndLint(t *testing.T) {
 	var b struct {
 		Links []struct{ Type, Target, Note string }
 	}
-	json.Unmarshal([]byte(out), &b)
+	mustUnmarshal(t, out, &b)
 	if len(b.Links) != 2 || b.Links[0].Type != "see_also" || b.Links[1].Type != "see_also" || b.Links[1].Target != "global/index.md" || b.Links[1].Note != "untyped" {
 		t.Errorf("tolerant links: %s", out)
 	}
@@ -311,7 +320,7 @@ func TestMvAndLint(t *testing.T) {
 			Line       int
 		}
 	}
-	json.Unmarshal([]byte(out), &li)
+	mustUnmarshal(t, out, &li)
 	codes := map[string]int{}
 	for _, it := range li.Items {
 		codes[it.Code]++
@@ -367,7 +376,7 @@ func TestLintNames(t *testing.T) {
 			Path, Code, Message string
 		}
 	}
-	json.Unmarshal([]byte(out), &li)
+	mustUnmarshal(t, out, &li)
 	got := map[string]string{}
 	for _, it := range li.Items {
 		got[it.Path+" "+it.Code] = it.Message
@@ -392,7 +401,7 @@ func getSha(t *testing.T, cfg, p string) string {
 	t.Helper()
 	_, out, _ := runCLI(t, cfg, "", "get", "--json", p)
 	var g struct{ Sha string }
-	json.Unmarshal([]byte(out), &g)
+	mustUnmarshal(t, out, &g)
 	return g.Sha
 }
 
@@ -467,7 +476,7 @@ func TestOptionalSummary(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code=%d %s", code, errs)
 	}
-	json.Unmarshal([]byte(out), &res)
+	mustUnmarshal(t, out, &res)
 	got := byPath(res.Items)
 	if it := got["global/nosum.md"]; it.Summary != "" || it.Title != "Heading Title" {
 		t.Errorf("search nosum: %+v", it)
@@ -488,7 +497,7 @@ func TestOptionalSummary(t *testing.T) {
 		}
 	}
 	_, out, _ = runCLI(t, cfg, "", "ls", "--json", "--dirs", "global")
-	json.Unmarshal([]byte(out), &res)
+	mustUnmarshal(t, out, &res)
 	got = byPath(res.Items)
 	if it := got["global/nosum.md"]; it.Summary != "" || it.Title != "Heading Title" {
 		t.Errorf("ls nosum: %+v", it)
@@ -733,7 +742,7 @@ profiles:
 			Repo          string `json:"repo"`
 			Mirror        string `json:"mirror"`
 		}
-		json.Unmarshal([]byte(out), &raw)
+		mustUnmarshal(t, out, &raw)
 		return ctxOut{raw.Profile, raw.ProfileSource, raw.Repo, raw.Mirror}
 	}
 	byRemote, byPath, byDefault := contextIn(app), contextIn(labDir), contextIn(other)
