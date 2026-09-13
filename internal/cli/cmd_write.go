@@ -33,7 +33,7 @@ func (a *app) commit(changes []repo.Change, msg string) (*repo.Result, int) {
 		var cf *repo.Conflict
 		if errors.As(err, &cf) {
 			if a.json {
-				a.emit(conflictOut{"conflict", cf.Reason, cf.Path, cf.SHA, string(cf.Content), "the page changed since it was read; re-read the current content and reapply the change"}, nil)
+				a.emit(conflictOut{"conflict", cf.Reason, cf.Path, cf.SHA, string(cf.Content), conflictMessage(cf)}, nil)
 			} else {
 				fmt.Fprintf(a.stderr, "wikictl: conflict (%s): %s sha=%s\n", cf.Reason, cf.Path, cf.SHA)
 				a.stdout.Write(cf.Content)
@@ -43,6 +43,18 @@ func (a *app) commit(changes []repo.Change, msg string) (*repo.Result, int) {
 		return nil, a.fail(ExitGit, "git", err.Error())
 	}
 	return res, ExitOK
+}
+
+// conflictMessage returns the "message" of a conflict for its reason.
+func conflictMessage(cf *repo.Conflict) string {
+	switch {
+	case cf.Reason == "exists":
+		return "the page already exists; pass its sha with --base to replace it, or choose another path"
+	case cf.SHA == "":
+		return "the page was deleted since it was read"
+	default:
+		return "the page changed since it was read; re-read the current content and reapply the change"
+	}
 }
 
 type putOpts struct {
