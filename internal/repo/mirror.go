@@ -16,7 +16,8 @@ type Repo struct {
 
 // Open prepares the mirror at mirrorDir, creating it with create when it does
 // not exist. When branch is empty, the branch saved in the mirror's git config
-// (wikictl.branch) is used; when that is empty too, the remote HEAD is queried with "ls-remote --symref" and the result saved.
+// (wikictl.branch) is used; when that is empty too, the remote HEAD is queried
+// with "ls-remote --symref" and the result saved.
 func Open(mirrorDir, remote, branch string) (*Repo, error) {
 	r := &Repo{Dir: mirrorDir, Remote: remote}
 	if _, err := os.Stat(filepath.Join(mirrorDir, "HEAD")); err != nil {
@@ -84,6 +85,13 @@ func (r *Repo) create() error {
 	if _, err := os.Stat(filepath.Join(r.Dir, "HEAD")); err == nil {
 		return nil
 	}
+	// An empty directory left at the mirror path is replaced; anything else is
+	// left for the user to remove, since it may hold files that are not ours.
+	if fi, err := os.Lstat(r.Dir); err == nil {
+		if !fi.IsDir() || os.Remove(r.Dir) != nil {
+			return errors.New("mirror " + r.Dir + " is not a git repository; delete it and run the command again")
+		}
+	}
 	tmp, err := os.MkdirTemp(parent, filepath.Base(r.Dir)+".tmp-*")
 	if err != nil {
 		return err
@@ -99,8 +107,6 @@ func (r *Repo) create() error {
 	if _, err := t.Git("remote", "add", "origin", r.Remote); err != nil {
 		return err
 	}
-	// A directory left at the mirror path makes the rename fail; remove it when empty.
-	os.Remove(r.Dir)
 	return os.Rename(tmp, r.Dir)
 }
 

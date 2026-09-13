@@ -116,6 +116,44 @@ func TestOpenConcurrent(t *testing.T) {
 	}
 }
 
+func TestOpenLeftoverDir(t *testing.T) {
+	remote := newRemote(t, true)
+	empty := filepath.Join(t.TempDir(), "m")
+	if err := os.MkdirAll(empty, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r, err := Open(empty, remote, "")
+	if err != nil {
+		t.Fatalf("empty dir: %v", err)
+	}
+	if err := r.Fetch(); err != nil {
+		t.Fatal(err)
+	}
+	for name, setup := range map[string]func(string) error{
+		"non-empty dir": func(p string) error {
+			if err := os.MkdirAll(p, 0o755); err != nil {
+				return err
+			}
+			return os.WriteFile(filepath.Join(p, "stray"), nil, 0o644)
+		},
+		"file": func(p string) error { return os.WriteFile(p, nil, 0o644) },
+	} {
+		mirror := filepath.Join(t.TempDir(), "m")
+		if err := setup(mirror); err != nil {
+			t.Fatal(err)
+		}
+		_, err := Open(mirror, remote, "")
+		if err == nil || !strings.Contains(err.Error(), "is not a git repository; delete it") {
+			t.Errorf("%s: err=%v", name, err)
+		}
+		if name == "non-empty dir" {
+			if _, err := os.Stat(filepath.Join(mirror, "stray")); err != nil {
+				t.Errorf("stray file must be kept: %v", err)
+			}
+		}
+	}
+}
+
 func TestOpenEmptyRemote(t *testing.T) {
 	remote := newRemote(t, false)
 	r, err := Open(filepath.Join(t.TempDir(), "m"), remote, "main")
