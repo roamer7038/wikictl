@@ -352,7 +352,7 @@ wikictl keeps one bare mirror per `repo` value under `$XDG_CACHE_HOME/wikictl/` 
     go test ./...
     go build -o wikictl ./cmd/wikictl
 
-GitHub Actions runs `gofmt -l`, `go vet` and `go test` on pushes to `main` and on pull requests. Pushing a tag that starts with `v` builds the binaries and `checksums.txt` with GoReleaser and publishes them as a release.
+On pushes to `main` and on pull requests, GitHub Actions runs `gofmt -l`, `go vet` and `go test -race` on Linux, `go test -race` on macOS, `staticcheck` together with a check that `go mod tidy` leaves `go.mod` and `go.sum` unchanged, and `govulncheck`. Pushing a tag that starts with `v` builds the binaries and `checksums.txt` with GoReleaser and publishes them as a release.
 
 ## License
 

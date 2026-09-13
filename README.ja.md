@@ -352,7 +352,7 @@ wikictl は、`repo` の値ごとに 1 つの bare ミラーを `$XDG_CACHE_HOME
     go test ./...
     go build -o wikictl ./cmd/wikictl
 
-GitHub Actions は、`main` への push とプルリクエストで `gofmt -l`、`go vet`、`go test` を実行します。`v` で始まるタグを push すると、GoReleaser がバイナリと `checksums.txt` をビルドし、リリースとして公開します。
+GitHub Actions は、`main` への push とプルリクエストで、Linux での `gofmt -l`、`go vet`、`go test -race`、macOS での `go test -race`、`staticcheck` と `go mod tidy` で `go.mod` と `go.sum` が変わらないことの確認、`govulncheck` を実行します。`v` で始まるタグを push すると、GoReleaser がバイナリと `checksums.txt` をビルドし、リリースとして公開します。
 
 ## ライセンス
 
