@@ -354,6 +354,8 @@ wikictl は、`repo` の値ごとに 1 つの bare ミラーを `$XDG_CACHE_HOME
 
 GitHub Actions は、`main` への push とプルリクエストで `gofmt -l`、`go vet`、`go test` を実行します。`v` で始まるタグを push すると、GoReleaser がバイナリと `checksums.txt` をビルドし、リリースとして公開します。
 
+ブランチ、プルリクエスト、リリースの運用ルールは [CONTRIBUTING.md](CONTRIBUTING.md) を参照してください。
+
 ## ライセンス
 
 [MIT](LICENSE)
