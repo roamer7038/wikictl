@@ -118,7 +118,8 @@ Output: {path, commit, rewritten} or {path, commit, moved, rewritten}.`,
 	{name: "rm", args: "<path>", minArgs: 1, maxArgs: 1,
 		summary: "Delete a page",
 		detail: `Delete a page. Pages that link to it are left unchanged; lint reports them
-as broken_link.
+as broken_link. A path that is not a page path (see "help lint"), such as a
+file at the wiki root, is rejected with exit code 4.
 
 Output: {path, commit}.`,
 		flags: func(fs *flag.FlagSet) { msgFlag(fs) }, run: (*app).cmdRm},
@@ -131,7 +132,7 @@ directories is checked. Exits with code 4 when violations are found.
 File name rules: a page is <dir>/<name>.md, never at the wiki root. A file or
 directory name must not be empty, start with a dot or <, or contain
 whitespace, control characters or any of the characters " \ # ? : ( ) ` + "`" + `
-(bad_path; put and mv reject such paths). Lowercase ASCII letters, digits and hyphens are
+(bad_path; put, mv and rm reject such paths). Lowercase ASCII letters, digits and hyphens are
 recommended; other names are reported as name_style. Names in one directory
 that differ only by case collide on case-insensitive file systems and are
 reported as case_collision, against the whole wiki.
