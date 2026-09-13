@@ -2,6 +2,7 @@ package repo
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -89,8 +90,8 @@ func (r *Repo) conflict(path, reason, sha string) *Conflict {
 }
 
 // buildAndPush creates the commit with plumbing commands in a temporary index
-// and pushes it. retry is true when the push was rejected because the remote
-// moved (stale lease).
+// and pushes it. retry is true when the push was rejected because another push
+// moved or locked the remote branch.
 func (r *Repo) buildAndPush(head string, changes []Change, msg string, au Author) (res *Result, retry bool, err error) {
 	idx, err := os.CreateTemp("", "wikictl-index-*")
 	if err != nil {
@@ -162,11 +163,33 @@ func (r *Repo) buildAndPush(head string, changes []Change, msg string, au Author
 	case "stale":
 		return nil, true, fmt.Errorf("push rejected: the remote branch moved")
 	default:
+		retry := r.remoteMoved(head, pout, perr)
 		if perr != nil {
-			return nil, false, perr
+			return nil, retry, perr
 		}
-		return nil, false, fmt.Errorf("push failed: %s", strings.TrimSpace(pout))
+		return nil, retry, fmt.Errorf("push failed: %s", strings.TrimSpace(pout))
 	}
+}
+
+// remoteMoved reports whether a failed push lost a race with another push.
+// The server rejects the ref update with "cannot lock ref" when another push
+// updated or locked the branch first; that message appears in the porcelain
+// line or on stderr depending on the server. Otherwise the branch is fetched
+// and compared with head.
+func (r *Repo) remoteMoved(head, pout string, perr error) bool {
+	msg := pout
+	var ge *GitError
+	if errors.As(perr, &ge) {
+		msg += ge.Stderr
+	}
+	if strings.Contains(msg, "cannot lock ref") {
+		return true
+	}
+	if r.Fetch() != nil {
+		return false
+	}
+	cur, _ := r.Head()
+	return cur != head
 }
 
 // pushStatus classifies the refspec line of "push --porcelain" output as
