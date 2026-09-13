@@ -114,3 +114,16 @@ func TestParseDescriptionFallback(t *testing.T) {
 		t.Errorf("blank summary must fall back: summary=%q issues=%+v", p3.Summary, p3.Issues)
 	}
 }
+
+func TestParseLimits(t *testing.T) {
+	big := "---\nsummary: s\n---\n# t\n" + strings.Repeat("a", MaxPageSize)
+	p := Parse("global/big.md", []byte(big))
+	if len(p.Issues) != 1 || p.Issues[0].Code != "page_too_large" || p.Issues[0].Line != 0 || p.Summary != "" || p.Frontmatter != nil || p.Body != "" || p.Title != "big" {
+		t.Errorf("big: issues=%+v summary=%q title=%q", p.Issues, p.Summary, p.Title)
+	}
+	deep := "---\nx: " + strings.Repeat("[", 30000) + strings.Repeat("]", 30000) + "\n---\n# t\n"
+	p = Parse("global/deep.md", []byte(deep))
+	if len(p.Issues) != 1 || p.Issues[0].Code != "frontmatter_invalid" || p.Title != "t" {
+		t.Errorf("deep: issues=%+v title=%q", p.Issues, p.Title)
+	}
+}

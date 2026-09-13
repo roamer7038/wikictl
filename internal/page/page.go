@@ -4,6 +4,7 @@
 package page
 
 import (
+	"fmt"
 	"path"
 	"strings"
 )
@@ -20,11 +21,21 @@ type Page struct {
 	Issues      []Issue // format violations found while parsing
 }
 
+// MaxPageSize is the largest page, in bytes, that Parse interprets.
+const MaxPageSize = 1 << 20
+
 // Parse interprets a whole page. Violations are collected in Issues and the
-// parts that can still be interpreted are filled in.
+// parts that can still be interpreted are filled in. A page over MaxPageSize
+// is not interpreted: only its path issues, a page_too_large issue and the
+// title from the file name are set.
 func Parse(p string, content []byte) *Page {
 	pg := &Page{Path: p}
 	pg.Issues = append(pg.Issues, PathIssues(p)...)
+	if len(content) > MaxPageSize {
+		pg.Issues = append(pg.Issues, Issue{Path: p, Line: 0, Code: "page_too_large", Message: fmt.Sprintf("page is larger than %d bytes", MaxPageSize)})
+		pg.Title = strings.TrimSuffix(path.Base(p), ".md")
+		return pg
+	}
 	fm, rest, n, ok := SplitFrontmatter(content)
 	if !ok {
 		pg.Issues = append(pg.Issues, Issue{Path: p, Line: 1, Code: "missing_summary", Message: "frontmatter is missing"})
