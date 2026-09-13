@@ -159,7 +159,7 @@ func (a *app) cmdGet(c *command, args []string) int {
 		if len(links) > 0 {
 			fmt.Fprintln(w, "\nlinks:")
 			for _, l := range links {
-				fmt.Fprintf(w, "%s\n", strings.TrimRight("  "+l.Type+": "+l.Target+" "+l.Note, " "))
+				fmt.Fprintf(w, "%s\n", strings.TrimRight("  "+l.Type+": "+escapeControl(l.Target)+" "+escapeControl(l.Note), " "))
 			}
 		}
 		if len(backlinks) > 0 {
