@@ -1,6 +1,10 @@
 package page
 
-import "testing"
+import (
+	"fmt"
+	"strings"
+	"testing"
+)
 
 func TestSplitFrontmatter(t *testing.T) {
 	cases := []struct {
@@ -34,5 +38,48 @@ func TestParseFrontmatter(t *testing.T) {
 	}
 	if _, err := ParseFrontmatter([]byte("summary: a: b\n")); err == nil {
 		t.Error("expected error for invalid yaml")
+	}
+}
+
+func TestFrontmatterLimits(t *testing.T) {
+	nest := func(n int) string { return strings.Repeat("[", n) + strings.Repeat("]", n) }
+	var block, blockDeep strings.Builder
+	for i := 0; i < MaxFrontmatterDepth; i++ {
+		fmt.Fprintf(&block, "%sk%d:\n", strings.Repeat(" ", i), i)
+	}
+	blockDeep.WriteString(block.String())
+	fmt.Fprintf(&blockDeep, "%sk:\n", strings.Repeat(" ", MaxFrontmatterDepth))
+	var mixed strings.Builder
+	for i := 0; i < MaxFrontmatterDepth/2+1; i++ {
+		fmt.Fprintf(&mixed, "%s- k%d:\n", strings.Repeat("  ", i), i)
+	}
+	var siblings strings.Builder
+	for i := 0; i < 500; i++ {
+		fmt.Fprintf(&siblings, "a%d: 1\nb%d:\n- x\n- y\n", i, i)
+	}
+	ok := []struct{ name, in string }{
+		{"size at limit", "summary: " + strings.Repeat("a", MaxFrontmatterSize-len("summary: \n")) + "\n"},
+		{"flow at limit", "x: " + nest(MaxFrontmatterDepth-1) + "\n"},
+		{"block at limit", block.String()},
+		{"brackets in strings", "summary: \"" + strings.Repeat("[", 500) + "\"\nnote: |\n  " + strings.Repeat("{", 500) + "\ntags: [a, b]\n"},
+		{"sibling keys", siblings.String()},
+	}
+	for _, c := range ok {
+		if _, err := ParseFrontmatter([]byte(c.in)); err != nil {
+			t.Errorf("%s: %v", c.name, err)
+		}
+	}
+	bad := []struct{ name, in, msg string }{
+		{"size", "summary: " + strings.Repeat("a", MaxFrontmatterSize) + "\n", "larger than"},
+		{"flow", "x: " + nest(MaxFrontmatterDepth) + "\n", "deeper than"},
+		{"deep flow", "x: " + nest(30000) + "\n", "deeper than"},
+		{"block", blockDeep.String(), "deeper than"},
+		{"compact sequence", strings.Repeat("- ", MaxFrontmatterDepth+1) + "x\n", "deeper than"},
+		{"sequence under key", mixed.String(), "deeper than"},
+	}
+	for _, c := range bad {
+		if _, err := ParseFrontmatter([]byte(c.in)); err == nil || !strings.Contains(err.Error(), c.msg) {
+			t.Errorf("%s: err=%v", c.name, err)
+		}
 	}
 }

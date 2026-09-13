@@ -132,6 +132,12 @@ Frontmatter:
 - The keys wikictl interprets are `type` (`ls --type`), `tags` written as a YAML list (`ls --tag`), `aliases` (`mv` adds the old file name to it) and `status`. Any other key, such as `review_after`, may be written and is not interpreted.
 - A line `status: deprecated` (unquoted) anywhere in the file hides the page from `search` and `ls` unless `--all` is given.
 
+Size limits:
+
+- Frontmatter larger than 64 KiB (65,536 bytes), or with collections nested more than 100 levels deep, is `frontmatter_invalid`. Each block mapping, block sequence and flow collection (`[...]`, `{...}`) counts as one level.
+- A page larger than 1 MiB (1,048,576 bytes) is not parsed and is `page_too_large`.
+- `put` rejects such pages. For pages already in the wiki, `lint` reports them, and `search`, `ls` and `get` show them as having no frontmatter; a page over 1 MiB also has no body and takes its title from the file name.
+
 Links:
 
 - A link to a page is a relative path ending in `.md`, optionally with a `#fragment`. Absolute paths and paths that leave the wiki are not page links.
@@ -200,7 +206,7 @@ Details of each command:
 - `init` writes both files to the branch in one commit. It fails with exit code 1 if the branch already exists.
 - `search` matches the words as fixed strings, ignoring case (non-ASCII letters included), anywhere in the file, frontmatter included. Results are ordered by last update, newest first; with `--any`, pages matching more words come first.
 - `get` prints the parsed page, not the file as stored. As text, it shows the body without the frontmatter and the Links section, the links and the backlinks from other pages; the frontmatter is included only with `--json`.
-- `put` takes the whole page, frontmatter included, on standard input. Invalid frontmatter or a bad path is rejected with exit code 4; other problems (`missing_summary`, `broken_link`, `links_syntax`, `name_style`) are printed as warnings and the page is written.
+- `put` takes the whole page, frontmatter included, on standard input. Invalid frontmatter, a page over the size limits (`frontmatter_invalid`, `page_too_large`) or a bad path is rejected with exit code 4; other problems (`missing_summary`, `broken_link`, `links_syntax`, `name_style`) are printed as warnings and the page is written.
 - `mv` rewrites the links inside the moved page and the links to it from other pages in the same commit. It also normalises relative page links written in another form, such as `./b.md` to `b.md`, in any page of the wiki, so pages unrelated to the move can be part of the commit; the body of a rewritten page gets LF line endings, and a BOM is removed. When the file name changes, the old file name (without `.md`) is added to `aliases` unless it is already listed. The alias is added only when the page has frontmatter that is empty or a block-style YAML mapping, and `aliases` is absent, a sequence (block or flow style) or null (`aliases:`, `aliases: ~` or `aliases: null`). Otherwise, for example when `aliases` is a string or the page has no frontmatter, the page is moved without adding the alias and no warning is printed. `mv` fails with exit code 1 if the destination exists; the directory form fails if any page exists under `<newdir>/`.
 - `rm` leaves the pages that link to the deleted page unchanged; `lint` reports those links as `broken_link`. `rm` deletes only pages: a path that breaks the file name rules, such as `README.md` at the wiki root, is rejected with exit code 4. To delete such a file, clone the wiki repository and use git directly.
 - `lint` checks the given pages, or every page under the search directories; `wikictl --dirs . lint` checks the whole wiki. `case_collision` is always checked against the whole wiki.
@@ -325,7 +331,7 @@ With `--json`:
 | 1 | error, for example a missing page |
 | 2 | usage or configuration error |
 | 3 | conflict: the page already exists, or changed or was deleted since it was read |
-| 4 | the page violates the wiki format: `put` rejects invalid frontmatter or a bad path, `mv` a bad destination path, and `rm` a bad path; `lint` exits with 4 on any finding |
+| 4 | the page violates the wiki format: `put` rejects invalid frontmatter, a page over the size limits or a bad path, `mv` a bad destination path, and `rm` a bad path; `lint` exits with 4 on any finding |
 | 5 | a git command failed |
 
 ### Lint codes
@@ -335,7 +341,8 @@ With `--json`:
 | Code | Finding | On `put` |
 |---|---|---|
 | `bad_path` | The path breaks the file name rules | rejected |
-| `frontmatter_invalid` | The frontmatter is not valid YAML | rejected |
+| `frontmatter_invalid` | The frontmatter is not valid YAML, or is over the size or nesting limit | rejected |
+| `page_too_large` | The page is larger than 1 MiB | rejected |
 | `missing_summary` | No `summary` or `description`, or no frontmatter | warning |
 | `links_syntax` | A line in the Links section is not a valid link line | warning |
 | `broken_link` | A link points to a file that does not exist in the wiki repository | warning |

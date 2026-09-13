@@ -16,10 +16,11 @@ import (
 // the text around it is edited, so other keys and comments are kept as they
 // are. The content is returned unchanged when the alias is already present,
 // when there is no frontmatter, or when the frontmatter is not a mapping whose
-// aliases value is a sequence, null, or absent.
+// aliases value is a sequence, null, or absent. Frontmatter over the limits
+// of ParseFrontmatter is also left unchanged.
 func AddAlias(content []byte, alias string) []byte {
 	fm, rest, _, ok := SplitFrontmatter(content)
-	if !ok {
+	if !ok || checkFrontmatter(fm) != nil {
 		return content
 	}
 	file, err := parser.ParseBytes(fm, 0)
