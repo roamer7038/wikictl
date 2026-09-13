@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -24,14 +25,32 @@ type hit struct {
 
 type searchOpts struct {
 	any bool
-	n   int
+	n   positiveInt
 	all bool
 }
 
+// positiveInt is an int flag value that rejects values below 1, so that the
+// check runs wherever the flags are parsed.
+type positiveInt int
+
+func (v *positiveInt) String() string { return strconv.Itoa(int(*v)) }
+
+func (v *positiveInt) Set(s string) error {
+	n, err := strconv.ParseInt(s, 0, strconv.IntSize)
+	if err != nil {
+		return errors.New("parse error")
+	}
+	if n < 1 {
+		return errors.New("must be at least 1")
+	}
+	*v = positiveInt(n)
+	return nil
+}
+
 func searchFlags(fs *flag.FlagSet) *searchOpts {
-	o := &searchOpts{}
+	o := &searchOpts{n: 20}
 	fs.BoolVar(&o.any, "any", false, "match pages containing any of the words instead of all of them")
-	fs.IntVar(&o.n, "n", 20, "show at most `N` results")
+	fs.Var(&o.n, "n", "show at most `N` results; N must be at least 1")
 	fs.BoolVar(&o.all, "all", false, "include pages with status: deprecated")
 	return o
 }
@@ -77,8 +96,8 @@ func (a *app) cmdSearch(c *command, args []string) int {
 		}
 		return hits[i].Path < hits[j].Path
 	})
-	if len(hits) > o.n {
-		hits = hits[:o.n]
+	if n := int(o.n); len(hits) > n {
+		hits = hits[:n]
 	}
 	a.emit(map[string]any{"items": hits}, func(w io.Writer) {
 		for _, h := range hits {
