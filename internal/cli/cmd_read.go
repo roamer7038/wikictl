@@ -290,6 +290,15 @@ type dirItem struct {
 // cmdDirs groups one listing of the tree by directory and reads only the
 // index.md files, so the cost does not grow with the number of pages read.
 func (a *app) cmdDirs(c *command, args []string) int {
+	for _, d := range args {
+		p := path.Clean(d)
+		if path.IsAbs(p) || p == ".." || strings.HasPrefix(p, "../") {
+			return a.usageError(c, "directory outside the wiki: "+d)
+		}
+		if strings.HasSuffix(p, ".md") {
+			return a.usageError(c, "not a directory: "+d)
+		}
+	}
 	paths, err := a.repo.List(args)
 	if err != nil {
 		return a.fail(ExitGit, "git", err.Error())

@@ -296,17 +296,25 @@ func TestMvDir(t *testing.T) {
 func TestDirs(t *testing.T) {
 	cfg := setup(t)
 	runCLI(t, cfg, "---\nsummary: z\n---\n# z\n", "put", "projects/app/sub/z.md")
-	code, out, errs := runCLI(t, cfg, "", "dirs", "--json")
-	if code != 0 {
-		t.Fatalf("code=%d %s", code, errs)
-	}
-	var res struct {
+	type dirsRes struct {
 		Items []struct {
 			Dir, Summary string
 			Pages        int
 		}
 	}
-	json.Unmarshal([]byte(out), &res)
+	decode := func(out string) dirsRes {
+		t.Helper()
+		var res dirsRes
+		if err := json.Unmarshal([]byte(out), &res); err != nil {
+			t.Fatalf("unmarshal %q: %v", out, err)
+		}
+		return res
+	}
+	code, out, errs := runCLI(t, cfg, "", "dirs", "--json")
+	if code != 0 {
+		t.Fatalf("code=%d %s", code, errs)
+	}
+	res := decode(out)
 	want := []struct {
 		dir, summary string
 		pages        int
@@ -321,17 +329,26 @@ func TestDirs(t *testing.T) {
 		}
 	}
 	_, out, _ = runCLI(t, cfg, "", "dirs", "--json", "projects")
-	json.Unmarshal([]byte(out), &res)
+	res = decode(out)
 	if len(res.Items) != 2 || res.Items[0].Dir != "projects/app/" || res.Items[1].Dir != "projects/app/sub/" {
 		t.Errorf("dirs projects: %s", out)
 	}
 	_, out, _ = runCLI(t, cfg, "", "dirs", "--json", "global/", "machines")
-	json.Unmarshal([]byte(out), &res)
+	res = decode(out)
 	if len(res.Items) != 2 || res.Items[0].Dir != "global/" || res.Items[1].Dir != "machines/h1/" {
 		t.Errorf("dirs with two args: %s", out)
 	}
+	_, out, _ = runCLI(t, cfg, "", "dirs", "--json", "--dirs", "global")
+	if res = decode(out); len(res.Items) != len(want) {
+		t.Errorf("dirs must ignore --dirs: %s", out)
+	}
 	if code, out, _ := runCLI(t, cfg, "", "dirs", "--json", "none"); code != 0 || !strings.Contains(out, `"items":[]`) {
 		t.Errorf("dirs none: code=%d out=%s", code, out)
+	}
+	for _, arg := range []string{"../x", "/abs", "global/index.md"} {
+		if code, _, errs := runCLI(t, cfg, "", "dirs", arg); code != ExitUsage {
+			t.Errorf("dirs %s: code=%d errs=%q", arg, code, errs)
+		}
 	}
 	code, out, _ = runCLI(t, cfg, "", "dirs")
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
@@ -340,6 +357,29 @@ func TestDirs(t *testing.T) {
 	}
 	if f := strings.Fields(lines[0]); len(f) < 3 || f[1] != "2" {
 		t.Errorf("dirs text count: %q", lines[0])
+	}
+
+	// An index.md without a summary cannot be written through put.
+	cfgData, err := os.ReadFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote := strings.TrimPrefix(strings.SplitN(string(cfgData), "\n", 2)[0], "repo: ")
+	work := filepath.Join(t.TempDir(), "work")
+	mustRun(t, "", "git", "clone", "-q", remote, work)
+	os.WriteFile(filepath.Join(work, "projects/app/index.md"), []byte("# app\n"), 0o644)
+	mustRun(t, work, "git", "add", "-A")
+	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "index")
+	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
+	_, out, _ = runCLI(t, cfg, "", "dirs", "--json", "projects/app")
+	res = decode(out)
+	if len(res.Items) != 2 || res.Items[0].Dir != "projects/app/" || res.Items[0].Pages != 2 || res.Items[0].Summary != "" {
+		t.Errorf("index without summary: %s", out)
+	}
+	_, out, _ = runCLI(t, cfg, "", "dirs", "projects/app")
+	lines = strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if len(lines) != 2 || strings.Contains(lines[0], "(no index)") || !strings.HasSuffix(lines[1], "(no index)") {
+		t.Errorf("index without summary text: %q", out)
 	}
 }
 
@@ -350,7 +390,9 @@ func TestContextPages(t *testing.T) {
 		Dirs  []string
 		Pages map[string]int
 	}
-	json.Unmarshal([]byte(out), &res)
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("unmarshal %q: %v", out, err)
+	}
 	want := map[string]int{"global": 2, "projects/app": 1, "machines/h1": 1, "projects/none": 0}
 	if code != 0 || len(res.Dirs) != 4 || len(res.Pages) != 4 {
 		t.Fatalf("context: code=%d %s", code, out)

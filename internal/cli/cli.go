@@ -113,18 +113,19 @@ Output: items[] {path, line, code, message}.`,
 number of pages directly in it (nested directories are listed on their own)
 and the summary of its index.md, or "(no index)" when it has none. Deprecated
 pages are counted. The whole wiki is listed regardless of the search
-directories; arguments restrict the output to the directories at or below
-each <dir>.
+directories, so --dirs has no effect; arguments restrict the output to the
+directories at or below each <dir>, which must be a directory path inside the
+wiki, not a page path.
 
 Output: items[] {dir, pages, summary}; summary is "" without an index.md.`,
 		run: (*app).cmdDirs},
 	{name: "context", maxArgs: 0,
-		summary: "Show the resolved configuration and search directories",
+		summary: "Show the resolved configuration and search directories with their page counts",
 		detail: `Show the config file, mirror directory, branch, author, the machine and
 project names (as used for machines/<name>/ and projects/<name>/), the origin
 remote of the current directory, and the search directories that other
 commands use by default, each with the number of pages directly in it; 0
-means the directory does not exist yet.
+means no page is directly in it, even if it has subdirectories with pages.
 
 Output: {config, mirror, branch, author, machine, project, remote, dirs, pages}.`,
 		run: (*app).cmdContext},
