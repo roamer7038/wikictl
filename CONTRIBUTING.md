@@ -30,11 +30,11 @@ wikictl のブランチ、プルリクエスト、リリースの運用ルール
   - 外部仕様（コマンドの出力、JSON のキー、終了コード、受け付ける入力、設定ファイル、既定の挙動）が変わる場合は、何がどう変わるか、既存の利用者が何をすればよいかを書きます。
   - 変わらない場合は「なし」と書きます。
 - 挙動を変える PR には、README（英語版と日本語版）とヘルプ文の更新を含めます。
-- main と衝突したら、PR のブランチで解消します。main をブランチに merge しても、ブランチを main に rebase してもかまいません。squash でマージするので、ブランチの履歴は main に残りません。
+- main と衝突したら、main をブランチに merge して解消します。squash でマージするのでブランチの履歴は main に残らず、rebase と違って force push も要りません。
 
 ## コミットメッセージと PR タイトル
 
-PR は squash でマージするので、PR のタイトルがそのまま main のコミットメッセージになり、リリースノートの分類にも使われます。
+PR は squash でマージするので、PR のタイトルがそのまま main のコミットメッセージになり、リリースノートにも使われます。
 
 - [Conventional Commits](https://www.conventionalcommits.org/ja/v1.0.0/) の形式にし、説明は日本語で書きます（例: `fix: push の ref ロック失敗を再試行する`）。
 - type は `feat`、`fix`、`docs`、`refactor`、`test`、`ci`、`chore` のいずれかです。
@@ -51,7 +51,7 @@ AI ツール（コーディングエージェントなど）で作成した場�
 - main へのマージはメンテナが行います。AI ツールは PR の作成、レビュー、修正までを行い、PR の承認やマージはしません。
 - main はルールセットで保護されており、次を満たさないとマージできません。
   - PR を経由すること
-  - CI の `test`（`gofmt -l`、`go vet`、`go test`）が成功していること
+  - CI の必須チェック `test`（`.github/workflows/test.yml`）が成功していること
   - レビューのスレッドがすべて解決していること
   - マージ方法が squash であること（main の履歴は直線に保たれます）
 - ルールセットは、マージ前にブランチが main の最新を含むことを求めません。そのため、並行する PR を続けてマージすると、それぞれの CI が成功していても main でテストが失敗することがあります。同じファイルやテストの期待値に触れる PR が他にマージされた後は、main を取り込んで CI を通してからマージします。マージ後は main の CI を確認します。
@@ -83,4 +83,4 @@ AI ツール（コーディングエージェントなど）で作成した場�
 
 ## セキュリティ
 
-未公開の脆弱性は、公開 Issue ではなく、GitHub の [Private vulnerability reporting](https://github.com/roamer7038/wikictl/security/advisories/new) で報告してください。修正したら patch リリースを出します。
+未公開の脆弱性は、公開 Issue ではなく、GitHub の [Private vulnerability reporting](https://github.com/roamer7038/wikictl/security/advisories/new) で報告してください。修正したら、「バージョン」節に従って速やかにリリースします。
