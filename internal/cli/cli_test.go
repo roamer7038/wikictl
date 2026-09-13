@@ -106,6 +106,11 @@ func TestSearchGetLs(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "machines/h1") || !strings.Contains(out, `"machine":"h1"`) {
 		t.Errorf("context: %s", out)
 	}
+	var cx struct{ Dirs []string }
+	json.Unmarshal([]byte(out), &cx)
+	if len(cx.Dirs) < 2 || cx.Dirs[0] != "global" || cx.Dirs[1] != "personal" {
+		t.Errorf("context dirs: %v", cx.Dirs)
+	}
 	_, out, _ = runCLI(t, cfg, "", "ls", "--json", "--dirs", "global", "--tag", "git")
 	json.Unmarshal([]byte(out), &ls)
 	if len(ls.Items) != 1 || ls.Items[0].Path != "global/push.md" {
@@ -126,6 +131,34 @@ func TestSearchGetLs(t *testing.T) {
 	}
 	if code, _, _ = runCLI(t, cfg, "", "bogus"); code != 2 {
 		t.Errorf("unknown command code=%d", code)
+	}
+}
+
+func TestPersonalScope(t *testing.T) {
+	cfg := setup(t)
+	// personal/ is a default directory even before anything is put there,
+	// so reads on a wiki without it must succeed with no matches.
+	var res struct {
+		Items []struct{ Path string }
+	}
+	code, out, errs := runCLI(t, cfg, "", "search", "--json", "conventional-commits")
+	json.Unmarshal([]byte(out), &res)
+	if code != 0 || len(res.Items) != 0 {
+		t.Fatalf("search without personal/: code=%d out=%s %s", code, out, errs)
+	}
+	if code, out, errs := runCLI(t, cfg, "", "ls", "--json", "--dirs", "personal"); code != 0 || out != `{"items":[]}`+"\n" {
+		t.Fatalf("ls without personal/: code=%d out=%q %s", code, out, errs)
+	}
+	if code, _, errs := runCLI(t, cfg, "---\nsummary: commit style\n---\n# commits\nconventional-commits\n", "put", "personal/commits.md"); code != 0 {
+		t.Fatalf("put: code=%d %s", code, errs)
+	}
+	code, out, errs = runCLI(t, cfg, "", "search", "--json", "conventional-commits")
+	if code != 0 {
+		t.Fatalf("search: code=%d %s", code, errs)
+	}
+	json.Unmarshal([]byte(out), &res)
+	if len(res.Items) != 1 || res.Items[0].Path != "personal/commits.md" {
+		t.Errorf("search: %s", out)
 	}
 }
 

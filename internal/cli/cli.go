@@ -120,7 +120,8 @@ Output: items[] {path, line, code, message}.`,
 		detail: `Show the config file, mirror directory, branch, author, the machine and
 project names (as used for machines/<name>/ and projects/<name>/), the origin
 remote of the current directory, and the search directories that other
-commands use by default.
+commands use by default: up to four of global/, personal/, projects/<name>/
+and machines/<name>/.
 
 Output: {config, mirror, branch, author, machine, project, remote, dirs}.`,
 		run: (*app).cmdContext},
