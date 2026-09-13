@@ -11,7 +11,7 @@ func TestCheckPath(t *testing.T) {
 			t.Errorf("%q should be accepted: %v", p, err)
 		}
 	}
-	for _, p := range []string{"", "x.md", "global/x", "global/x.md/", "/global/x.md", "global//x.md", "global/.md", ".hidden/x.md", "global/../x.md", "./global/x.md", "global/my page.md", "global/a\tb.md", "global/a\x00b.md", "global/a#b.md", "global/a)b.md", "global/a\"b.md", "global/a\\b.md", "global/a:b.md", "global/a?b.md", "global/a(b.md", "global/<x.md", "a:b/x.md"} {
+	for _, p := range []string{"", "x.md", "global/x", "global/x.md/", "/global/x.md", "global//x.md", "global/.md", ".hidden/x.md", "global/../x.md", "./global/x.md", "global/my page.md", "global/a\tb.md", "global/a\x00b.md", "global/a#b.md", "global/a)b.md", "global/a\"b.md", "global/a\\b.md", "global/a:b.md", "global/a?b.md", "global/a(b.md", "global/<x.md", "a:b/x.md", "global/a`b.md"} {
 		if err := CheckPath(p); err == nil {
 			t.Errorf("%q should be rejected", p)
 		}

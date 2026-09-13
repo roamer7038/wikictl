@@ -84,7 +84,7 @@ func TestUsageErrorsNeedNoConfig(t *testing.T) {
 
 func TestHelpDescribesNameRules(t *testing.T) {
 	_, out, _ := runNoConfig(t, "help", "lint")
-	for _, w := range []string{"bad_path", "name_style", "case_collision"} {
+	for _, w := range []string{"bad_path", "name_style", "case_collision", `" \ # ? : ( ) ` + "`"} {
 		if !strings.Contains(out, w) {
 			t.Errorf("help lint must mention %s: %q", w, out)
 		}

@@ -158,6 +158,9 @@ func TestPutRmInit(t *testing.T) {
 	if code, _, errs := runCLI(t, cfg, "---\nsummary: a\n---\n", "put", "global/my page.md"); code != 4 || !strings.Contains(errs, "bad_path") {
 		t.Errorf("bad path: code=%d errs=%q", code, errs)
 	}
+	if code, _, errs := runCLI(t, cfg, "---\nsummary: a\n---\n", "put", "global/a`b.md"); code != 4 || !strings.Contains(errs, "bad_path") {
+		t.Errorf("put name with '`': code=%d errs=%q", code, errs)
+	}
 	// A name outside the recommended form is only a warning.
 	if code, _, errs := runCLI(t, cfg, "---\nsummary: a\n---\n", "put", "global/Bad_Name.md"); code != 0 || !strings.Contains(errs, "name_style") {
 		t.Errorf("style name: code=%d errs=%q", code, errs)
@@ -243,6 +246,9 @@ func TestMvAndLint(t *testing.T) {
 	}
 	if code, _, errs := runCLI(t, cfg, "", "mv", "global/push.md", "global/a:b.md"); code != 4 || !strings.Contains(errs, "bad_path") {
 		t.Errorf("mv to name with ':': code=%d errs=%q", code, errs)
+	}
+	if code, _, errs := runCLI(t, cfg, "", "mv", "global/push.md", "global/a`b.md"); code != 4 || !strings.Contains(errs, "bad_path") {
+		t.Errorf("mv to name with '`': code=%d errs=%q", code, errs)
 	}
 	if code, _, errs := runCLI(t, cfg, "", "mv", "global/push.md", "global/Push.md"); code != 0 || !strings.Contains(errs, "name_style") {
 		t.Errorf("mv to style name: code=%d errs=%q", code, errs)
