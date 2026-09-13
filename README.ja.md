@@ -56,7 +56,8 @@ Linux と macOS（x86_64 と arm64）のバイナリとチェックサムは [re
 | `mv <dir>/ <newdir>/` | ディレクトリ配下の全ページを移動する |
 | `rm <path>` | ページを削除する |
 | `lint [<path>...]` | 形式違反を報告する |
-| `context` | 解決済みの設定と検索対象ディレクトリを表示する |
+| `dirs [<dir>...]` | wiki 全体のディレクトリを、ページ数と `index.md` の summary とともに一覧する |
+| `context` | 解決済みの設定と検索対象ディレクトリを、ページ数とともに表示する |
 
 `wikictl help <command>` で各コマンドの説明とフラグを表示します。`wikictl version` は版を表示します。
 
@@ -68,7 +69,9 @@ Linux と macOS（x86_64 と arm64）のバイナリとチェックサムは [re
 
 ### コマンドが見る場所
 
-既定では最大 3 つのディレクトリを検索します。`global/`、カレントディレクトリの `origin` リモート名から決まる `projects/<name>/`（git 管理外では省かれます）、ホスト名から決まる `machines/<name>/` です。`--dirs a,b` で上書きでき、`wikictl context` で確認できます。
+既定では最大 3 つのディレクトリを検索します。`global/`、カレントディレクトリの `origin` リモート名から決まる `projects/<name>/`（git 管理外では省かれます）、ホスト名から決まる `machines/<name>/` です。`--dirs a,b` で上書きでき、`wikictl context` で各ディレクトリ直下のページ数（まだ無ければ 0）とともに確認できます。
+
+ページをどこに置くか決める前に wiki 全体の構造を見るには `wikictl dirs` を使います。ページを直接含む全ディレクトリを、そのページ数と `index.md` の `summary`（無ければ `(no index)`）とともに一覧します。検索対象ディレクトリの設定は無視され、`wikictl dirs projects` のように引数で `projects/` 配下に絞れます。
 
 ## 設定
 

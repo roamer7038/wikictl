@@ -292,3 +292,76 @@ func TestMvDir(t *testing.T) {
 		t.Errorf("mixed dir/page mv must be a usage error: code=%d errs=%q", code, errs)
 	}
 }
+
+func TestDirs(t *testing.T) {
+	cfg := setup(t)
+	runCLI(t, cfg, "---\nsummary: z\n---\n# z\n", "put", "projects/app/sub/z.md")
+	code, out, errs := runCLI(t, cfg, "", "dirs", "--json")
+	if code != 0 {
+		t.Fatalf("code=%d %s", code, errs)
+	}
+	var res struct {
+		Items []struct {
+			Dir, Summary string
+			Pages        int
+		}
+	}
+	json.Unmarshal([]byte(out), &res)
+	want := []struct {
+		dir, summary string
+		pages        int
+	}{{"global/", "entry point", 2}, {"machines/h1/", "", 1}, {"projects/app/", "", 1}, {"projects/app/sub/", "", 1}}
+	if len(res.Items) != len(want) {
+		t.Fatalf("dirs: %s", out)
+	}
+	for i, w := range want {
+		it := res.Items[i]
+		if it.Dir != w.dir || it.Summary != w.summary || it.Pages != w.pages {
+			t.Errorf("item %d: got %+v want %+v", i, it, w)
+		}
+	}
+	_, out, _ = runCLI(t, cfg, "", "dirs", "--json", "projects")
+	json.Unmarshal([]byte(out), &res)
+	if len(res.Items) != 2 || res.Items[0].Dir != "projects/app/" || res.Items[1].Dir != "projects/app/sub/" {
+		t.Errorf("dirs projects: %s", out)
+	}
+	_, out, _ = runCLI(t, cfg, "", "dirs", "--json", "global/", "machines")
+	json.Unmarshal([]byte(out), &res)
+	if len(res.Items) != 2 || res.Items[0].Dir != "global/" || res.Items[1].Dir != "machines/h1/" {
+		t.Errorf("dirs with two args: %s", out)
+	}
+	if code, out, _ := runCLI(t, cfg, "", "dirs", "--json", "none"); code != 0 || !strings.Contains(out, `"items":[]`) {
+		t.Errorf("dirs none: code=%d out=%s", code, out)
+	}
+	code, out, _ = runCLI(t, cfg, "", "dirs")
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if code != 0 || len(lines) != 4 || !strings.HasPrefix(lines[0], "global/") || !strings.HasSuffix(lines[0], "entry point") || !strings.HasSuffix(lines[1], "(no index)") {
+		t.Errorf("dirs text: code=%d out=%q", code, out)
+	}
+	if f := strings.Fields(lines[0]); len(f) < 3 || f[1] != "2" {
+		t.Errorf("dirs text count: %q", lines[0])
+	}
+}
+
+func TestContextPages(t *testing.T) {
+	cfg := setup(t)
+	code, out, _ := runCLI(t, cfg, "", "context", "--json", "--dirs", "global,projects/app,machines/h1,projects/none")
+	var res struct {
+		Dirs  []string
+		Pages map[string]int
+	}
+	json.Unmarshal([]byte(out), &res)
+	want := map[string]int{"global": 2, "projects/app": 1, "machines/h1": 1, "projects/none": 0}
+	if code != 0 || len(res.Dirs) != 4 || len(res.Pages) != 4 {
+		t.Fatalf("context: code=%d %s", code, out)
+	}
+	for d, n := range want {
+		if res.Pages[d] != n {
+			t.Errorf("pages[%s]=%d want %d: %s", d, res.Pages[d], n, out)
+		}
+	}
+	_, out, _ = runCLI(t, cfg, "", "context", "--dirs", "global,projects/app,projects/none")
+	if !strings.Contains(out, "dirs: global (2 pages), projects/app (1 page), projects/none (0 pages)\n") {
+		t.Errorf("context text: %s", out)
+	}
+}

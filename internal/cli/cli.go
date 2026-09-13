@@ -107,14 +107,26 @@ checked. Exits with code 4 when violations are found.
 
 Output: items[] {path, line, code, message}.`,
 		run: (*app).cmdLint},
+	{name: "dirs", args: "[<dir>...]", maxArgs: -1,
+		summary: "List the directories of the wiki with their page counts",
+		detail: `List every directory that directly contains at least one page, with the
+number of pages directly in it (nested directories are listed on their own)
+and the summary of its index.md, or "(no index)" when it has none. Deprecated
+pages are counted. The whole wiki is listed regardless of the search
+directories; arguments restrict the output to the directories at or below
+each <dir>.
+
+Output: items[] {dir, pages, summary}; summary is "" without an index.md.`,
+		run: (*app).cmdDirs},
 	{name: "context", maxArgs: 0,
 		summary: "Show the resolved configuration and search directories",
 		detail: `Show the config file, mirror directory, branch, author, the machine and
 project names (as used for machines/<name>/ and projects/<name>/), the origin
 remote of the current directory, and the search directories that other
-commands use by default.
+commands use by default, each with the number of pages directly in it; 0
+means the directory does not exist yet.
 
-Output: {config, mirror, branch, author, machine, project, remote, dirs}.`,
+Output: {config, mirror, branch, author, machine, project, remote, dirs, pages}.`,
 		run: (*app).cmdContext},
 }
 

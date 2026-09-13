@@ -56,7 +56,8 @@ Add `--json` to any command for machine-readable output.
 | `mv <dir>/ <newdir>/` | Move every page under a directory |
 | `rm <path>` | Delete a page |
 | `lint [<path>...]` | Report format violations |
-| `context` | Show the resolved configuration and search directories |
+| `dirs [<dir>...]` | List the directories of the whole wiki with their page counts and `index.md` summaries |
+| `context` | Show the resolved configuration and search directories with their page counts |
 
 `wikictl help <command>` describes each command and its flags. `wikictl version` prints the version.
 
@@ -68,7 +69,9 @@ Global flags, accepted before or after the command: `--json`, `--dirs a,b`, `--c
 
 ### Where commands look
 
-By default a command searches up to three directories: `global/`, `projects/<name>/` where `<name>` comes from the `origin` remote of the current directory (skipped outside a git repository), and `machines/<name>/` where `<name>` is the hostname. `--dirs a,b` overrides the list and `wikictl context` shows it.
+By default a command searches up to three directories: `global/`, `projects/<name>/` where `<name>` comes from the `origin` remote of the current directory (skipped outside a git repository), and `machines/<name>/` where `<name>` is the hostname. `--dirs a,b` overrides the list and `wikictl context` shows it, with the number of pages directly in each directory (0 when it does not exist yet).
+
+To see the structure of the whole wiki before deciding where a page goes, `wikictl dirs` lists every directory that directly contains a page, with its page count and the `summary` of its `index.md` (`(no index)` when there is none). It ignores the search directories; `wikictl dirs projects` restricts the list to the directories under `projects/`.
 
 ## Configuration
 
