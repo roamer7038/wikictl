@@ -8,4 +8,4 @@ $ wikictl put --json global/Warn_Name.md
 -- stderr --
 wikictl: warning: global/Warn_Name.md:0: name_style: name "Warn_Name": lowercase ASCII letters, digits and hyphens are recommended
 wikictl: warning: global/Warn_Name.md:1: missing_summary: frontmatter is missing
-wikictl: warning: global/Warn_Name.md:2: broken_link: global/gone.md
+wikictl: warning: global/Warn_Name.md:2: broken_link: link target does not exist: global/gone.md
