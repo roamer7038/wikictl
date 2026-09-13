@@ -543,7 +543,7 @@ func TestDirs(t *testing.T) {
 		t.Errorf("dirs text count: %q", lines[0])
 	}
 
-	// An index.md without a summary cannot be written through put.
+	// An index.md without a summary, committed directly to the wiki repository.
 	cfgData, err := os.ReadFile(cfg)
 	if err != nil {
 		t.Fatal(err)

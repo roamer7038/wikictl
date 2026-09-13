@@ -133,7 +133,7 @@ The profile is chosen by the first of these that applies:
 4. `default_profile`
 5. No profile: only the top-level keys are used.
 
-An unknown profile name is an error (exit code 2). In a profile, `author.name` and `author.email` override separately, `dirs` and `projects` replace the top-level values, and `branch` is not inherited when the profile sets `repo`. `wikictl context` shows the selected profile, how it was selected and the repository.
+An unknown profile name is an error (exit code 2). In a profile, `author.name` and `author.email` override separately, `dirs` and `projects` replace the top-level values (a profile's `dirs` also replaces the default four directories), and `branch` is not inherited when the profile sets `repo`. `wikictl context` shows the selected profile, how it was selected and the repository.
 
 The mirror lives under `~/.cache/wikictl/` (or `$XDG_CACHE_HOME/wikictl/`). Delete it if it ever breaks; the next command recreates it.
 
@@ -145,7 +145,7 @@ The mirror lives under `~/.cache/wikictl/` (or `$XDG_CACHE_HOME/wikictl/`). Dele
 | 1 | error, for example a missing page |
 | 2 | usage or configuration error |
 | 3 | conflict: the page changed since it was read |
-| 4 | the page violates the wiki format (invalid frontmatter, bad path) |
+| 4 | the page violates the wiki format: `put` and `mv` reject invalid frontmatter or a bad path; `lint` exits with 4 on any finding, warnings such as `missing_summary`, `broken_link` and `name_style` included |
 | 5 | a git command failed |
 
 With `--json`, errors are printed as `{"error": "<kind>", "message": "..."}` where `<kind>` is `error`, `usage`, `conflict`, `invalid` or `git`.

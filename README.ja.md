@@ -133,7 +133,7 @@ profiles:
 4. `default_profile`
 5. プロファイル無し。最上位のキーだけを使います。
 
-存在しないプロファイル名はエラー（終了コード 2）です。プロファイル内の `author.name` と `author.email` は個別に上書きし、`dirs` と `projects` は最上位の値を置き換えます。プロファイルが `repo` を設定した場合、`branch` は継承しません。`wikictl context` で選ばれたプロファイル、その選ばれ方、リポジトリを確認できます。
+存在しないプロファイル名はエラー（終了コード 2）です。プロファイル内の `author.name` と `author.email` は個別に上書きし、`dirs` と `projects` は最上位の値を置き換えます（プロファイルの `dirs` は既定の 4 つのディレクトリも置き換えます）。プロファイルが `repo` を設定した場合、`branch` は継承しません。`wikictl context` で選ばれたプロファイル、その選ばれ方、リポジトリを確認できます。
 
 ミラーは `~/.cache/wikictl/`（または `$XDG_CACHE_HOME/wikictl/`）にあります。壊れたら削除してください。次のコマンド実行時に作り直されます。
 
@@ -145,7 +145,7 @@ profiles:
 | 1 | エラー（ページが無い、など） |
 | 2 | 使い方または設定の誤り |
 | 3 | 衝突。読んだ後にページが変わった |
-| 4 | ページが wiki の形式に合わない（フロントマター不正、パス不正） |
+| 4 | ページが wiki の形式に合わない。`put` と `mv` はフロントマター不正かパス不正で拒否する。`lint` は `missing_summary`、`broken_link`、`name_style` などの警告を含め、指摘が 1 件でもあれば 4 で終わる |
 | 5 | git コマンドの失敗 |
 
 `--json` ではエラーは `{"error": "<kind>", "message": "..."}` になります。`<kind>` は `error`、`usage`、`conflict`、`invalid`、`git` のいずれかです。
