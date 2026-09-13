@@ -56,7 +56,8 @@ Add `--json` to any command for machine-readable output.
 | `mv <dir>/ <newdir>/` | Move every page under a directory |
 | `rm <path>` | Delete a page |
 | `lint [<path>...]` | Report format violations |
-| `context` | Show the resolved configuration and search directories |
+| `dirs [<dir>...]` | List the directories of the whole wiki with their page counts and `index.md` summaries |
+| `context` | Show the resolved configuration and search directories with their page counts |
 
 `wikictl help <command>` describes each command and its flags. `wikictl version` prints the version.
 
@@ -68,7 +69,7 @@ Global flags, accepted before or after the command: `--json`, `--dirs a,b`, `--c
 
 ### Where commands look
 
-By default a command searches up to four directories: `global/`, `personal/`, `projects/<name>/` where `<name>` comes from the `origin` remote of the current directory (skipped outside a git repository), and `machines/<name>/` where `<name>` is the hostname. `--dirs a,b` overrides the list and `wikictl context` shows it.
+By default a command searches up to four directories: `global/`, `personal/`, `projects/<name>/` where `<name>` comes from the `origin` remote of the current directory (skipped outside a git repository), and `machines/<name>/` where `<name>` is the hostname. `--dirs a,b` overrides the list and `wikictl context` shows it, with the number of pages at any depth under each directory (0 when the directory has no page yet; unlike `wikictl dirs`, pages in subdirectories are included).
 
 Each directory is a scope that answers "where is this knowledge valid?":
 
@@ -82,6 +83,8 @@ Each directory is a scope that answers "where is this knowledge valid?":
 Place a page in the narrowest scope that fits: only this project → `projects/<name>/`; only this execution environment → `machines/<name>/`; only this user → `personal/`; otherwise → `global/`. `personal/` holds facts an agent looks up when they become relevant; rules that must apply to every conversation belong in the agent's standing instructions (for Claude Code, `CLAUDE.md`), not in the wiki. `init` does not create `personal/`; like `projects/` and `machines/`, it appears with the first `put` into it.
 
 `personal/` assumes one person uses the wiki. Everyone who shares a wiki searches the same `personal/`, so in a wiki shared by several people either do not use `personal/`, or set `dirs` in the configuration to choose the search directories.
+
+To see the structure of the whole wiki before deciding where a page goes, `wikictl dirs` lists every directory that directly contains a page, with its page count and the `summary` of its `index.md` (`(no index)` when there is none). It ignores the search directories; `wikictl dirs projects` restricts the list to the directories under `projects/`.
 
 ## Configuration
 

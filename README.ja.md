@@ -56,7 +56,8 @@ Linux と macOS（x86_64 と arm64）のバイナリとチェックサムは [re
 | `mv <dir>/ <newdir>/` | ディレクトリ配下の全ページを移動する |
 | `rm <path>` | ページを削除する |
 | `lint [<path>...]` | 形式違反を報告する |
-| `context` | 解決済みの設定と検索対象ディレクトリを表示する |
+| `dirs [<dir>...]` | wiki 全体のディレクトリを、ページ数と `index.md` の summary とともに一覧する |
+| `context` | 解決済みの設定と検索対象ディレクトリを、ページ数とともに表示する |
 
 `wikictl help <command>` で各コマンドの説明とフラグを表示します。`wikictl version` は版を表示します。
 
@@ -68,7 +69,7 @@ Linux と macOS（x86_64 と arm64）のバイナリとチェックサムは [re
 
 ### コマンドが見る場所
 
-既定では最大 4 つのディレクトリを検索します。`global/`、`personal/`、カレントディレクトリの `origin` リモート名から決まる `projects/<name>/`（git 管理外では省かれます）、ホスト名から決まる `machines/<name>/` です。`--dirs a,b` で上書きでき、`wikictl context` で確認できます。
+既定では最大 4 つのディレクトリを検索します。`global/`、`personal/`、カレントディレクトリの `origin` リモート名から決まる `projects/<name>/`（git 管理外では省かれます）、ホスト名から決まる `machines/<name>/` です。`--dirs a,b` で上書きでき、`wikictl context` で各ディレクトリ配下のページ数（サブディレクトリ内も含む。0 はそのディレクトリにまだページが無いこと。`wikictl dirs` の直下のページ数とは異なります）とともに確認できます。
 
 各ディレクトリは「その知識がどこで有効か」を表すスコープです。
 
@@ -82,6 +83,8 @@ Linux と macOS（x86_64 と arm64）のバイナリとチェックサムは [re
 ページは当てはまる中で最も狭いスコープに置きます。このプロジェクトだけ → `projects/<name>/`、この実行環境だけ → `machines/<name>/`、このユーザだけ → `personal/`、それ以外 → `global/`。`personal/` はエージェントが必要になった時に検索して参照する事実を置く場所で、すべての会話に適用すべきルールはエージェントの常設の指示（Claude Code なら `CLAUDE.md`）に置きます。`init` は `personal/` を作りません。`projects/` や `machines/` と同様、最初の `put` で作られます。
 
 `personal/` は 1 人で wiki を使うことを前提にしています。wiki を共有する全員が同じ `personal/` を検索するため、複数人で共有する wiki では `personal/` を使わないか、設定の `dirs` で検索対象のディレクトリを指定してください。
+
+ページをどこに置くか決める前に wiki 全体の構造を見るには `wikictl dirs` を使います。ページを直接含む全ディレクトリを、そのページ数と `index.md` の `summary`（無ければ `(no index)`）とともに一覧します。検索対象ディレクトリの設定は無視され、`wikictl dirs projects` のように引数で `projects/` 配下に絞れます。
 
 ## 設定
 

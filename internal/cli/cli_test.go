@@ -475,3 +475,142 @@ func TestOptionalSummary(t *testing.T) {
 		t.Errorf("lint: code=%d out=%q", code, out)
 	}
 }
+
+func TestDirs(t *testing.T) {
+	cfg := setup(t)
+	runCLI(t, cfg, "---\nsummary: z\n---\n# z\n", "put", "projects/app/sub/z.md")
+	type dirsRes struct {
+		Items []struct {
+			Dir, Summary string
+			Pages        int
+		}
+	}
+	decode := func(out string) dirsRes {
+		t.Helper()
+		var res dirsRes
+		if err := json.Unmarshal([]byte(out), &res); err != nil {
+			t.Fatalf("unmarshal %q: %v", out, err)
+		}
+		return res
+	}
+	code, out, errs := runCLI(t, cfg, "", "dirs", "--json")
+	if code != 0 {
+		t.Fatalf("code=%d %s", code, errs)
+	}
+	res := decode(out)
+	want := []struct {
+		dir, summary string
+		pages        int
+	}{{"global/", "entry point", 2}, {"machines/h1/", "", 1}, {"projects/app/", "", 1}, {"projects/app/sub/", "", 1}}
+	if len(res.Items) != len(want) {
+		t.Fatalf("dirs: %s", out)
+	}
+	for i, w := range want {
+		it := res.Items[i]
+		if it.Dir != w.dir || it.Summary != w.summary || it.Pages != w.pages {
+			t.Errorf("item %d: got %+v want %+v", i, it, w)
+		}
+	}
+	_, out, _ = runCLI(t, cfg, "", "dirs", "--json", "projects")
+	res = decode(out)
+	if len(res.Items) != 2 || res.Items[0].Dir != "projects/app/" || res.Items[1].Dir != "projects/app/sub/" {
+		t.Errorf("dirs projects: %s", out)
+	}
+	_, out, _ = runCLI(t, cfg, "", "dirs", "--json", "global/", "machines")
+	res = decode(out)
+	if len(res.Items) != 2 || res.Items[0].Dir != "global/" || res.Items[1].Dir != "machines/h1/" {
+		t.Errorf("dirs with two args: %s", out)
+	}
+	_, out, _ = runCLI(t, cfg, "", "dirs", "--json", "--dirs", "global")
+	if res = decode(out); len(res.Items) != len(want) {
+		t.Errorf("dirs must ignore --dirs: %s", out)
+	}
+	if code, out, _ := runCLI(t, cfg, "", "dirs", "--json", "none"); code != 0 || !strings.Contains(out, `"items":[]`) {
+		t.Errorf("dirs none: code=%d out=%s", code, out)
+	}
+	for _, arg := range []string{"../x", "/abs", "global/index.md"} {
+		if code, _, errs := runCLI(t, cfg, "", "dirs", arg); code != ExitUsage {
+			t.Errorf("dirs %s: code=%d errs=%q", arg, code, errs)
+		}
+	}
+	code, out, _ = runCLI(t, cfg, "", "dirs")
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if code != 0 || len(lines) != 4 || !strings.HasPrefix(lines[0], "global/") || !strings.HasSuffix(lines[0], "entry point") || !strings.HasSuffix(lines[1], "(no index)") {
+		t.Errorf("dirs text: code=%d out=%q", code, out)
+	}
+	if f := strings.Fields(lines[0]); len(f) < 3 || f[1] != "2" {
+		t.Errorf("dirs text count: %q", lines[0])
+	}
+
+	// An index.md without a summary cannot be written through put.
+	cfgData, err := os.ReadFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote := strings.TrimPrefix(strings.SplitN(string(cfgData), "\n", 2)[0], "repo: ")
+	work := filepath.Join(t.TempDir(), "work")
+	mustRun(t, "", "git", "clone", "-q", remote, work)
+	os.WriteFile(filepath.Join(work, "projects/app/index.md"), []byte("# app\n"), 0o644)
+	mustRun(t, work, "git", "add", "-A")
+	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "index")
+	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
+	_, out, _ = runCLI(t, cfg, "", "dirs", "--json", "projects/app")
+	res = decode(out)
+	if len(res.Items) != 2 || res.Items[0].Dir != "projects/app/" || res.Items[0].Pages != 2 || res.Items[0].Summary != "" {
+		t.Errorf("index without summary: %s", out)
+	}
+	_, out, _ = runCLI(t, cfg, "", "dirs", "projects/app")
+	lines = strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if len(lines) != 2 || strings.Contains(lines[0], "(no index)") || !strings.HasSuffix(lines[1], "(no index)") {
+		t.Errorf("index without summary text: %q", out)
+	}
+}
+
+func TestContextPages(t *testing.T) {
+	cfg := setup(t)
+	code, out, _ := runCLI(t, cfg, "", "context", "--json", "--dirs", "global,projects/app,machines/h1,projects/none")
+	var res struct {
+		Dirs  []string
+		Pages map[string]int
+	}
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("unmarshal %q: %v", out, err)
+	}
+	want := map[string]int{"global": 2, "projects/app": 1, "machines/h1": 1, "projects/none": 0}
+	if code != 0 || len(res.Dirs) != 4 || len(res.Pages) != 4 {
+		t.Fatalf("context: code=%d %s", code, out)
+	}
+	for d, n := range want {
+		if res.Pages[d] != n {
+			t.Errorf("pages[%s]=%d want %d: %s", d, res.Pages[d], n, out)
+		}
+	}
+	_, out, _ = runCLI(t, cfg, "", "context", "--dirs", "global,projects/app,projects/none")
+	if !strings.Contains(out, "dirs: global (2 pages), projects/app (1 page), projects/none (0 pages)\n") {
+		t.Errorf("context text: %s", out)
+	}
+}
+
+func TestContextPagesRecursive(t *testing.T) {
+	cfg := setup(t)
+	code, out, _ := runCLI(t, cfg, "", "context", "--json", "--dirs", "projects,.,./,projects/,./global,projects/none")
+	var res struct {
+		Pages map[string]int
+	}
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("unmarshal %q: %v", out, err)
+	}
+	if code != 0 {
+		t.Fatalf("context: code=%d %s", code, out)
+	}
+	want := map[string]int{"projects": 1, ".": 4, "./": 4, "projects/": 1, "./global": 2, "projects/none": 0}
+	for d, n := range want {
+		if res.Pages[d] != n {
+			t.Errorf("pages[%s]=%d want %d: %s", d, res.Pages[d], n, out)
+		}
+	}
+	_, out, _ = runCLI(t, cfg, "", "context", "--dirs", ".")
+	if !strings.Contains(out, "dirs: . (4 pages)\n") {
+		t.Errorf("context text: %s", out)
+	}
+}
