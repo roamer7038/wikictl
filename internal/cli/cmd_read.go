@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 
 	ctx "github.com/roamer7038/wikictl/internal/context"
 	"github.com/roamer7038/wikictl/internal/page"
+	"github.com/roamer7038/wikictl/internal/repo"
 )
 
 type hit struct {
@@ -24,14 +26,32 @@ type hit struct {
 
 type searchOpts struct {
 	any bool
-	n   int
+	n   positiveInt
 	all bool
 }
 
+// positiveInt is an int flag value that rejects values below 1, so that the
+// check runs wherever the flags are parsed.
+type positiveInt int
+
+func (v *positiveInt) String() string { return strconv.Itoa(int(*v)) }
+
+func (v *positiveInt) Set(s string) error {
+	n, err := strconv.ParseInt(s, 0, strconv.IntSize)
+	if err != nil {
+		return errors.New("parse error")
+	}
+	if n < 1 {
+		return errors.New("must be at least 1")
+	}
+	*v = positiveInt(n)
+	return nil
+}
+
 func searchFlags(fs *flag.FlagSet) *searchOpts {
-	o := &searchOpts{}
+	o := &searchOpts{n: 20}
 	fs.BoolVar(&o.any, "any", false, "match pages containing any of the words instead of all of them")
-	fs.IntVar(&o.n, "n", 20, "show at most `N` results")
+	fs.Var(&o.n, "n", "show at most `N` results; N must be at least 1")
 	fs.BoolVar(&o.all, "all", false, "include pages with status: deprecated")
 	return o
 }
@@ -60,9 +80,9 @@ func (a *app) cmdSearch(c *command, args []string) int {
 	for _, p := range paths {
 		pg := page.Parse(p, contents[p])
 		matched := []string{}
-		lower := strings.ToLower(string(contents[p]))
+		folded := repo.Fold(string(contents[p]))
 		for _, w := range words {
-			if strings.Contains(lower, strings.ToLower(w)) {
+			if strings.Contains(folded, repo.Fold(w)) {
 				matched = append(matched, w)
 			}
 		}
@@ -77,12 +97,12 @@ func (a *app) cmdSearch(c *command, args []string) int {
 		}
 		return hits[i].Path < hits[j].Path
 	})
-	if len(hits) > o.n {
-		hits = hits[:o.n]
+	if n := int(o.n); len(hits) > n {
+		hits = hits[:n]
 	}
 	a.emit(map[string]any{"items": hits}, func(w io.Writer) {
 		for _, h := range hits {
-			fmt.Fprintf(w, "%s\t%s\n", h.Path, summaryOrTitle(h.Summary, h.Title))
+			fmt.Fprintf(w, "%s\t%s\n", h.Path, escapeControl(summaryOrTitle(h.Summary, h.Title)))
 		}
 	})
 	return ExitOK
@@ -235,7 +255,7 @@ func (a *app) cmdLs(c *command, args []string) int {
 	}
 	a.emit(map[string]any{"items": items}, func(w io.Writer) {
 		for _, it := range items {
-			fmt.Fprintf(w, "%s\t%s\n", it.Path, summaryOrTitle(it.Summary, it.Title))
+			fmt.Fprintf(w, "%s\t%s\n", it.Path, escapeControl(summaryOrTitle(it.Summary, it.Title)))
 		}
 	})
 	return ExitOK
@@ -341,7 +361,7 @@ func (a *app) cmdDirs(c *command, args []string) int {
 			nw = max(nw, len(strconv.Itoa(it.Pages)))
 		}
 		for _, it := range items {
-			s := it.Summary
+			s := escapeControl(it.Summary)
 			if _, ok := contents[it.Dir+"index.md"]; !ok {
 				s = "(no index)"
 			}

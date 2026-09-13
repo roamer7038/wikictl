@@ -40,8 +40,8 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 echo "downloading $base/$asset"
-curl -fsSL -o "$tmp/wikictl" "$base/$asset" || fail "download failed: $base/$asset"
-curl -fsSL -o "$tmp/checksums.txt" "$base/checksums.txt" || fail "download failed: $base/checksums.txt"
+curl -fsSL --proto '=https' --tlsv1.2 -o "$tmp/wikictl" "$base/$asset" || fail "download failed: $base/$asset"
+curl -fsSL --proto '=https' --tlsv1.2 -o "$tmp/checksums.txt" "$base/checksums.txt" || fail "download failed: $base/checksums.txt"
 
 expected=$(grep " $asset\$" "$tmp/checksums.txt" | cut -d' ' -f1)
 [ -n "$expected" ] || fail "no checksum for $asset in checksums.txt"

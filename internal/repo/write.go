@@ -113,6 +113,11 @@ func (r *Repo) conflict(path, reason, sha string) *Conflict {
 // and pushes it. retry is true when the push was rejected because another push
 // moved or locked the remote branch.
 func (r *Repo) buildAndPush(head string, changes []Change, msg string, au Author) (res *Result, retry bool, err error) {
+	for _, c := range changes {
+		if strings.ContainsAny(c.Path, "\n\x00") {
+			return nil, false, fmt.Errorf("path %q contains a newline or NUL", c.Path)
+		}
+	}
 	idx, err := os.CreateTemp("", "wikictl-index-*")
 	if err != nil {
 		return nil, false, err
@@ -137,7 +142,7 @@ func (r *Repo) buildAndPush(head string, changes []Change, msg string, au Author
 	for _, c := range changes {
 		if c.Delete {
 			// Mode 0 removes the entry; --remove does not work without a working tree.
-			fmt.Fprintf(&info, "0 %s\t%s\n", zeroSHA, c.Path)
+			fmt.Fprintf(&info, "0 %s\t%s\x00", zeroSHA, c.Path)
 			continue
 		}
 		out, err := git(c.Content, "hash-object", "-w", "--stdin")
@@ -146,9 +151,9 @@ func (r *Repo) buildAndPush(head string, changes []Change, msg string, au Author
 		}
 		sha := strings.TrimSpace(out)
 		shas[c.Path] = sha
-		fmt.Fprintf(&info, "100644 %s\t%s\n", sha, c.Path)
+		fmt.Fprintf(&info, "100644 %s\t%s\x00", sha, c.Path)
 	}
-	if _, err := git(info.Bytes(), "update-index", "--index-info"); err != nil {
+	if _, err := git(info.Bytes(), "update-index", "-z", "--index-info"); err != nil {
 		return nil, false, err
 	}
 	out, err := git(nil, "write-tree")

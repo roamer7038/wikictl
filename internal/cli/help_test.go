@@ -76,6 +76,10 @@ func TestUsageErrorsNeedNoConfig(t *testing.T) {
 	if code != ExitUsage || !strings.Contains(errs, "Usage: wikictl mv") {
 		t.Errorf("mv: code=%d errs=%q", code, errs)
 	}
+	code, _, errs = runNoConfig(t, "search", "-n", "0", "lease")
+	if code != ExitUsage || !strings.Contains(errs, "Usage: wikictl search") {
+		t.Errorf("search -n 0: code=%d errs=%q", code, errs)
+	}
 	code, out, _ := runNoConfig(t, "--json", "get")
 	if code != ExitUsage || !strings.HasPrefix(out, `{"error":"usage"`) {
 		t.Errorf("json usage error: code=%d out=%q", code, out)

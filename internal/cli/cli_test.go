@@ -54,6 +54,15 @@ func runCLI(t *testing.T, cfg string, stdin string, args ...string) (int, string
 	return code, out.String(), errb.String()
 }
 
+// mustUnmarshal decodes the JSON output of a command into v and stops the test
+// when out is not valid JSON.
+func mustUnmarshal(t *testing.T, out string, v any) {
+	t.Helper()
+	if err := json.Unmarshal([]byte(out), v); err != nil {
+		t.Fatalf("unmarshal %q: %v", out, err)
+	}
+}
+
 func TestSearchGetLs(t *testing.T) {
 	cfg := setup(t)
 	code, out, errs := runCLI(t, cfg, "", "search", "--json", "--dirs", "global,projects/app,machines/h1", "lease")
@@ -66,17 +75,17 @@ func TestSearchGetLs(t *testing.T) {
 			Matched       []string
 		}
 	}
-	json.Unmarshal([]byte(out), &res)
+	mustUnmarshal(t, out, &res)
 	if len(res.Items) != 2 {
 		t.Errorf("%s", out)
 	}
 	_, out, _ = runCLI(t, cfg, "", "search", "--json", "--all", "--dirs", "global,projects/app,machines/h1", "lease")
-	json.Unmarshal([]byte(out), &res)
+	mustUnmarshal(t, out, &res)
 	if len(res.Items) != 3 {
 		t.Errorf("--all: %s", out)
 	}
 	_, out, _ = runCLI(t, cfg, "", "search", "--json", "--dirs", "global", "zzz-none")
-	json.Unmarshal([]byte(out), &res)
+	mustUnmarshal(t, out, &res)
 	if !strings.Contains(out, `"items":[]`) {
 		t.Errorf("empty: %s", out)
 	}
@@ -86,12 +95,12 @@ func TestSearchGetLs(t *testing.T) {
 		Links                  []struct{ Type, Target, Note string }
 		Backlinks              []struct{ Path, Type string }
 	}
-	json.Unmarshal([]byte(out), &g)
+	mustUnmarshal(t, out, &g)
 	if code != 0 || len(g.Sha) != 40 || g.Title != "push" || len(g.Links) != 1 || g.Links[0].Target != "global/index.md" || strings.Contains(g.Body, "## Links") {
 		t.Errorf("%s", out)
 	}
 	_, out, _ = runCLI(t, cfg, "", "get", "--json", "global/index.md")
-	json.Unmarshal([]byte(out), &g)
+	mustUnmarshal(t, out, &g)
 	if len(g.Backlinks) != 1 || g.Backlinks[0].Path != "global/push.md" || g.Backlinks[0].Type != "part_of" {
 		t.Errorf("backlinks: %s", out)
 	}
@@ -99,7 +108,7 @@ func TestSearchGetLs(t *testing.T) {
 	var ls struct {
 		Items []struct{ Path, Summary, Type string }
 	}
-	json.Unmarshal([]byte(out), &ls)
+	mustUnmarshal(t, out, &ls)
 	if len(ls.Items) != 2 {
 		t.Errorf("ls: %s", out)
 	}
@@ -108,12 +117,12 @@ func TestSearchGetLs(t *testing.T) {
 		t.Errorf("context: %s", out)
 	}
 	var cx struct{ Dirs []string }
-	json.Unmarshal([]byte(out), &cx)
+	mustUnmarshal(t, out, &cx)
 	if len(cx.Dirs) < 2 || cx.Dirs[0] != "global" || cx.Dirs[1] != "personal" {
 		t.Errorf("context dirs: %v", cx.Dirs)
 	}
 	_, out, _ = runCLI(t, cfg, "", "ls", "--json", "--dirs", "global", "--tag", "git")
-	json.Unmarshal([]byte(out), &ls)
+	mustUnmarshal(t, out, &ls)
 	if len(ls.Items) != 1 || ls.Items[0].Path != "global/push.md" {
 		t.Errorf("ls --tag: %s", out)
 	}
@@ -135,6 +144,20 @@ func TestSearchGetLs(t *testing.T) {
 	}
 }
 
+func TestSearchLimit(t *testing.T) {
+	cfg := setup(t)
+	for _, n := range []string{"0", "-1"} {
+		code, _, errs := runCLI(t, cfg, "", "search", "-n", n, "lease")
+		if code != ExitUsage || !strings.Contains(errs, "must be at least 1") {
+			t.Errorf("-n %s: code=%d errs=%q", n, code, errs)
+		}
+	}
+	code, out, errs := runCLI(t, cfg, "", "search", "--json", "-n", "1", "--dirs", "global,projects/app", "lease")
+	if code != ExitOK || strings.Count(out, `"path"`) != 1 {
+		t.Errorf("-n 1: code=%d out=%s errs=%s", code, out, errs)
+	}
+}
+
 func TestPersonalScope(t *testing.T) {
 	cfg := setup(t)
 	// personal/ is a default directory even before anything is put there,
@@ -143,7 +166,7 @@ func TestPersonalScope(t *testing.T) {
 		Items []struct{ Path string }
 	}
 	code, out, errs := runCLI(t, cfg, "", "search", "--json", "conventional-commits")
-	json.Unmarshal([]byte(out), &res)
+	mustUnmarshal(t, out, &res)
 	if code != 0 || len(res.Items) != 0 {
 		t.Fatalf("search without personal/: code=%d out=%s %s", code, out, errs)
 	}
@@ -157,7 +180,7 @@ func TestPersonalScope(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("search: code=%d %s", code, errs)
 	}
-	json.Unmarshal([]byte(out), &res)
+	mustUnmarshal(t, out, &res)
 	if len(res.Items) != 1 || res.Items[0].Path != "personal/commits.md" {
 		t.Errorf("search: %s", out)
 	}
@@ -167,14 +190,14 @@ func TestPutRmInit(t *testing.T) {
 	cfg := setup(t)
 	code, out, _ := runCLI(t, cfg, "---\nsummary: new page\n---\n# n\n", "put", "--json", "global/new.md")
 	var res struct{ Path, Sha, Commit string }
-	json.Unmarshal([]byte(out), &res)
+	mustUnmarshal(t, out, &res)
 	if code != 0 || len(res.Sha) != 40 {
 		t.Fatalf("code=%d %s", code, out)
 	}
 	code, out, _ = runCLI(t, cfg, "---\nsummary: x\n---\n", "put", "--json", "global/new.md")
-	var cf struct{ Error, Reason, Sha, Content string }
-	json.Unmarshal([]byte(out), &cf)
-	if code != 3 || cf.Error != "conflict" || cf.Reason != "exists" || cf.Sha != res.Sha {
+	var cf struct{ Error, Reason, Sha, Content, Message string }
+	mustUnmarshal(t, out, &cf)
+	if code != 3 || cf.Error != "conflict" || cf.Reason != "exists" || cf.Sha != res.Sha || !strings.Contains(cf.Message, "already exists") {
 		t.Errorf("code=%d %s", code, out)
 	}
 	code, out, _ = runCLI(t, cfg, "---\nsummary: updated page\n---\n# n2\n", "put", "--json", "--base", res.Sha, "global/new.md")
@@ -182,8 +205,8 @@ func TestPutRmInit(t *testing.T) {
 		t.Fatalf("%s", out)
 	}
 	code, out, _ = runCLI(t, cfg, "---\nsummary: z\n---\n", "put", "--json", "--base", res.Sha, "global/new.md")
-	json.Unmarshal([]byte(out), &cf)
-	if code != 3 || cf.Reason != "changed" || !strings.Contains(cf.Content, "updated page") {
+	mustUnmarshal(t, out, &cf)
+	if code != 3 || cf.Reason != "changed" || !strings.Contains(cf.Content, "updated page") || !strings.Contains(cf.Message, "changed since it was read") {
 		t.Errorf("code=%d %s", code, out)
 	}
 	// A missing summary, or no frontmatter at all, is only a warning; the write goes through.
@@ -222,6 +245,51 @@ func TestPutRmInit(t *testing.T) {
 	}
 	if code, _, _ := runCLI(t, cfg, "", "get", "global/new.md"); code != 1 {
 		t.Error("still exists")
+	}
+	code, out, _ = runCLI(t, cfg, "---\nsummary: z\n---\n", "put", "--json", "--base", res.Sha, "global/new.md")
+	cf = struct{ Error, Reason, Sha, Content, Message string }{}
+	mustUnmarshal(t, out, &cf)
+	if code != 3 || cf.Reason != "changed" || cf.Sha != "" || !strings.Contains(cf.Message, "deleted since it was read") {
+		t.Errorf("deleted: code=%d %s", code, out)
+	}
+}
+
+// TestRmRejectsBadPath checks that rm refuses paths that are not page paths,
+// including a path whose newline would add entries to the tree.
+func TestRmRejectsBadPath(t *testing.T) {
+	cfg := setup(t)
+	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
+	work := filepath.Join(t.TempDir(), "w")
+	mustRun(t, "", "git", "clone", "-q", remote, work)
+	os.WriteFile(filepath.Join(work, "README.md"), []byte("# wiki\n"), 0o644)
+	mustRun(t, work, "git", "add", "-A")
+	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "readme")
+	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
+	lsTree := func() string {
+		out, err := exec.Command("git", "--git-dir", remote, "ls-tree", "-r", "main").Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(out)
+	}
+	before := lsTree()
+	out, err := exec.Command("git", "--git-dir", remote, "rev-parse", "main:global/index.md").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sha := strings.TrimSpace(string(out))
+	for _, p := range []string{
+		"README.md",
+		"global/index.md\n120000 " + sha + "\tglobal/link.md\n100644 " + sha + "\t.github/workflows/x.yml",
+		"global/index.md\x00",
+		"global/.hidden.md",
+	} {
+		if code, _, errs := runCLI(t, cfg, "", "rm", p); code != 4 || !strings.Contains(errs, "bad_path") {
+			t.Errorf("rm %q: code=%d errs=%q", p, code, errs)
+		}
+	}
+	if after := lsTree(); after != before {
+		t.Errorf("rm changed the tree:\n%s", after)
 	}
 }
 
@@ -264,7 +332,7 @@ func TestMvAndLint(t *testing.T) {
 		Frontmatter map[string]any
 		Links       []struct{ Target string }
 	}
-	json.Unmarshal([]byte(out), &g)
+	mustUnmarshal(t, out, &g)
 	if !strings.Contains(g.Body, "](../../global/index.md)") || len(g.Links) != 1 || g.Links[0].Target != "global/index.md" {
 		t.Errorf("self links not rewritten: %s", out)
 	}
@@ -300,7 +368,7 @@ func TestMvAndLint(t *testing.T) {
 	var b struct {
 		Links []struct{ Type, Target, Note string }
 	}
-	json.Unmarshal([]byte(out), &b)
+	mustUnmarshal(t, out, &b)
 	if len(b.Links) != 2 || b.Links[0].Type != "see_also" || b.Links[1].Type != "see_also" || b.Links[1].Target != "global/index.md" || b.Links[1].Note != "untyped" {
 		t.Errorf("tolerant links: %s", out)
 	}
@@ -311,7 +379,7 @@ func TestMvAndLint(t *testing.T) {
 			Line       int
 		}
 	}
-	json.Unmarshal([]byte(out), &li)
+	mustUnmarshal(t, out, &li)
 	codes := map[string]int{}
 	for _, it := range li.Items {
 		codes[it.Code]++
@@ -367,7 +435,7 @@ func TestLintNames(t *testing.T) {
 			Path, Code, Message string
 		}
 	}
-	json.Unmarshal([]byte(out), &li)
+	mustUnmarshal(t, out, &li)
 	got := map[string]string{}
 	for _, it := range li.Items {
 		got[it.Path+" "+it.Code] = it.Message
@@ -392,7 +460,7 @@ func getSha(t *testing.T, cfg, p string) string {
 	t.Helper()
 	_, out, _ := runCLI(t, cfg, "", "get", "--json", p)
 	var g struct{ Sha string }
-	json.Unmarshal([]byte(out), &g)
+	mustUnmarshal(t, out, &g)
 	return g.Sha
 }
 
@@ -467,7 +535,7 @@ func TestOptionalSummary(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code=%d %s", code, errs)
 	}
-	json.Unmarshal([]byte(out), &res)
+	mustUnmarshal(t, out, &res)
 	got := byPath(res.Items)
 	if it := got["global/nosum.md"]; it.Summary != "" || it.Title != "Heading Title" {
 		t.Errorf("search nosum: %+v", it)
@@ -488,7 +556,7 @@ func TestOptionalSummary(t *testing.T) {
 		}
 	}
 	_, out, _ = runCLI(t, cfg, "", "ls", "--json", "--dirs", "global")
-	json.Unmarshal([]byte(out), &res)
+	mustUnmarshal(t, out, &res)
 	got = byPath(res.Items)
 	if it := got["global/nosum.md"]; it.Summary != "" || it.Title != "Heading Title" {
 		t.Errorf("ls nosum: %+v", it)
@@ -733,7 +801,7 @@ profiles:
 			Repo          string `json:"repo"`
 			Mirror        string `json:"mirror"`
 		}
-		json.Unmarshal([]byte(out), &raw)
+		mustUnmarshal(t, out, &raw)
 		return ctxOut{raw.Profile, raw.ProfileSource, raw.Repo, raw.Mirror}
 	}
 	byRemote, byPath, byDefault := contextIn(app), contextIn(labDir), contextIn(other)
@@ -765,6 +833,73 @@ profiles:
 	os.WriteFile(cfg, []byte("repo: "+home+"\nprofiles:\n  work:\n    match: {remote: [\"gitlab.example.com/team/*\"]}\n"), 0o600)
 	if code, _, errs := runCLI(t, cfg, "", "context"); code != ExitUsage || !strings.Contains(errs, `unknown field "remote"`) {
 		t.Errorf("unknown key: code=%d %s", code, errs)
+	}
+}
+
+// Two repo URLs that differ only where "/" and "_" swap places must use
+// separate mirrors, so that each write reaches its own wiki.
+func TestMirrorPerRepo(t *testing.T) {
+	cfg := setup(t)
+	d := filepath.Dir(cfg)
+	seed := filepath.Join(d, "remote.git")
+	work := filepath.Join(d, "srv", "foo_bar", "wiki.git")
+	private := filepath.Join(d, "srv", "foo", "bar_wiki.git")
+	mustRun(t, "", "git", "clone", "-q", "--bare", seed, work)
+	mustRun(t, "", "git", "clone", "-q", "--bare", seed, private)
+	os.WriteFile(cfg, []byte(`author: {name: agent, email: a@a}
+machine: h1
+profiles:
+  work: {repo: `+work+`}
+  private: {repo: `+private+`}
+`), 0o600)
+
+	if code, _, errs := runCLI(t, cfg, "", "--profile", "work", "ls"); code != 0 {
+		t.Fatalf("ls work: code=%d %s", code, errs)
+	}
+	if code, _, errs := runCLI(t, cfg, "---\nsummary: s\n---\n# s\n", "--profile", "private", "put", "personal/secret.md"); code != 0 {
+		t.Fatalf("put private: code=%d %s", code, errs)
+	}
+	for bare, want := range map[string]bool{private: true, work: false} {
+		err := exec.Command("git", "--git-dir", bare, "cat-file", "-e", "main:personal/secret.md").Run()
+		if (err == nil) != want {
+			t.Errorf("%s has page: %v, want %v", bare, err == nil, want)
+		}
+	}
+
+	mirror := func(profile string) string {
+		t.Helper()
+		code, out, errs := runCLI(t, cfg, "", "--profile", profile, "--no-fetch", "context", "--json")
+		if code != 0 {
+			t.Fatalf("context %s: code=%d %s", profile, code, errs)
+		}
+		var c struct {
+			Mirror string `json:"mirror"`
+		}
+		json.Unmarshal([]byte(out), &c)
+		return c.Mirror
+	}
+	if w, p := mirror("work"), mirror("private"); w == p || filepath.Dir(w) != filepath.Join(d, "cache", "wikictl") {
+		t.Errorf("mirrors: work %q, private %q", w, p)
+	}
+}
+
+func TestMirrorName(t *testing.T) {
+	a := mirrorName("/srv/foo_bar/wiki.git")
+	b := mirrorName("/srv/foo/bar_wiki.git")
+	if a == b {
+		t.Errorf("colliding names: %q", a)
+	}
+	for repo, prefix := range map[string]string{
+		"/srv/foo_bar/wiki.git":                      "wiki-",
+		"git@github.com:team/app.wiki.git":           "app.wiki-",
+		"https://alice:token@example.com/team/wiki/": "wiki-",
+		`C:\wikis\notes`:                             "notes-",
+		"":                                           "wiki-",
+	} {
+		got := mirrorName(repo)
+		if !strings.HasPrefix(got, prefix) || len(got) != len(prefix)+12 || strings.Contains(got, "token") {
+			t.Errorf("mirrorName(%q) = %q, want %s<12 hex digits>", repo, got, prefix)
+		}
 	}
 }
 
@@ -843,11 +978,41 @@ func TestWriteWithoutChange(t *testing.T) {
 	sha := getSha(t, cfg, "global/index.md")
 	code, out, errs := runCLI(t, cfg, "---\nsummary: entry point\n---\n# global\n", "put", "--json", "--base", sha, "global/index.md")
 	var res struct{ Path, Sha, Commit string }
-	json.Unmarshal([]byte(out), &res)
+	mustUnmarshal(t, out, &res)
 	if code != 0 || res.Sha != sha || res.Commit != head {
 		t.Errorf("put of unchanged content: code=%d out=%q errs=%q, want sha=%s commit=%s", code, out, errs, sha, head)
 	}
 	if got := gitOut(t, "--git-dir", remote, "rev-parse", "main"); got != head {
 		t.Errorf("put of unchanged content created a commit: %s -> %s", head, got)
+	}
+}
+
+func TestSearchNonASCIICase(t *testing.T) {
+	cfg := setup(t)
+	for p, c := range map[string]string{
+		"global/both.md": "---\nsummary: both\n---\n# both\nÄpfel ΟΔΟΣ\n",
+		"global/one.md":  "---\nsummary: one\n---\n# one\nÄPFEL\n",
+	} {
+		if code, _, errs := runCLI(t, cfg, c, "put", p); code != 0 {
+			t.Fatalf("put %s: %s", p, errs)
+		}
+	}
+	var res struct {
+		Items []struct {
+			Path    string
+			Matched []string
+		}
+	}
+	_, out, _ := runCLI(t, cfg, "", "search", "--json", "--dirs", "global", "äpfel", "οδος")
+	json.Unmarshal([]byte(out), &res)
+	if len(res.Items) != 1 || res.Items[0].Path != "global/both.md" || len(res.Items[0].Matched) != 2 {
+		t.Errorf("search: %s", out)
+	}
+	res.Items = nil
+	_, out, _ = runCLI(t, cfg, "", "search", "--json", "--any", "--dirs", "global", "äpfel", "οδος")
+	json.Unmarshal([]byte(out), &res)
+	if len(res.Items) != 2 || res.Items[0].Path != "global/both.md" || len(res.Items[0].Matched) != 2 ||
+		res.Items[1].Path != "global/one.md" || len(res.Items[1].Matched) != 1 || res.Items[1].Matched[0] != "äpfel" {
+		t.Errorf("search --any: %s", out)
 	}
 }

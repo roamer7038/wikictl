@@ -57,7 +57,7 @@ func (a *app) cmdLint(c *command, args []string) int {
 	})
 	a.emit(map[string]any{"items": items}, func(w io.Writer) {
 		for _, it := range items {
-			fmt.Fprintf(w, "%s:%d: %s: %s\n", it.Path, it.Line, it.Code, it.Message)
+			fmt.Fprintf(w, "%s:%d: %s: %s\n", it.Path, it.Line, it.Code, escapeControl(it.Message))
 		}
 	})
 	if len(items) > 0 {
