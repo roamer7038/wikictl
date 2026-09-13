@@ -64,7 +64,9 @@ func TestProfileSelection(t *testing.T) {
 		t.Fatalf("default: %+v %v", c, err)
 	}
 
-	c, err = Load(p, Selector{Dir: filepath.Join(work, "sub")})
+	sub := filepath.Join(work, "sub")
+	os.Mkdir(sub, 0o755)
+	c, err = Load(p, Selector{Dir: sub})
 	if err != nil || c.Profile != "work" || c.ProfileSource != SourceMatch {
 		t.Fatalf("paths: %+v %v", c, err)
 	}
