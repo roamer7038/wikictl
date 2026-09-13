@@ -77,7 +77,7 @@ func (a *app) cmdPut(c *command, args []string) int {
 	pg := page.Parse(p, content)
 	for _, is := range pg.Issues {
 		switch is.Code {
-		case "missing_summary", "bad_slug", "frontmatter_invalid":
+		case "bad_slug", "frontmatter_invalid":
 			return a.fail(ExitInvalid, "invalid", is.Code+": "+is.Message)
 		default:
 			fmt.Fprintf(a.stderr, "wikictl: warning: %s:%d: %s: %s\n", is.Path, is.Line, is.Code, is.Message)

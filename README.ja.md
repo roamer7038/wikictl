@@ -93,14 +93,14 @@ Linux と macOS（x86_64 と arm64）のバイナリとチェックサムは [re
 | 1 | エラー（ページが無い、など） |
 | 2 | 使い方または設定の誤り |
 | 3 | 衝突。読んだ後にページが変わった |
-| 4 | ページが wiki の形式に合わない（フロントマターの欠落・不正、summary 無し、パス不正） |
+| 4 | ページが wiki の形式に合わない（フロントマター不正、パス不正） |
 | 5 | git コマンドの失敗 |
 
 `--json` ではエラーは `{"error": "<kind>", "message": "..."}` になります。`<kind>` は `error`、`usage`、`conflict`、`invalid`、`git` のいずれかです。
 
 ## ページ形式
 
-ページは、サブディレクトリ（ルート直下は不可）にある Markdown ファイルで、フロントマターに 1 行の `summary` を持ちます:
+ページは、サブディレクトリ（ルート直下は不可）にある Markdown ファイルです。フロントマターには 1 行の `summary` を持たせることを推奨します:
 
 ```markdown
 ---
@@ -117,6 +117,7 @@ type: concept
 ```
 
 - ファイル名とディレクトリ名は `^[a-z0-9][a-z0-9-]*$`。ページは `.md` で終わる。
+- `summary` は推奨であり必須ではない。無い場合、`put` はページを書き込んだうえで `missing_summary` の警告を出し、`lint` は `missing_summary` を報告し、`search` と `ls` は代わりに題（最初の見出し、無ければファイル名）を表示する。`description` は `summary` の同義として読む。両方ある場合は `summary` が優先。
 - 任意のフロントマターキー: `type`、`status`（`deprecated` にすると `search` と `ls` から隠れる）、`tags`、`aliases`、`review_after`。
 - `## Links` 節がある場合は最後の見出しであること。各行は `- <type>: <target> | <note>`。`<target>` は相対パスまたは URL。
 - コードフェンスの中は解釈しない。フェンス内の `## Links` 見出しは節を始めない。

@@ -49,3 +49,18 @@ func TestParse(t *testing.T) {
 		t.Errorf("title=%q body=%q", p4.Title, p4.Body)
 	}
 }
+
+func TestParseDescriptionFallback(t *testing.T) {
+	p := Parse("global/d.md", []byte("---\ndescription: from description\n---\n# t\n"))
+	if p.Summary != "from description" || len(p.Issues) != 0 {
+		t.Errorf("summary=%q issues=%+v", p.Summary, p.Issues)
+	}
+	p2 := Parse("global/d.md", []byte("---\nsummary: from summary\ndescription: from description\n---\n# t\n"))
+	if p2.Summary != "from summary" {
+		t.Errorf("summary must win: %q", p2.Summary)
+	}
+	p3 := Parse("global/d.md", []byte("---\nsummary: \"\"\ndescription: from description\n---\n# t\n"))
+	if p3.Summary != "from description" || len(p3.Issues) != 0 {
+		t.Errorf("blank summary must fall back: summary=%q issues=%+v", p3.Summary, p3.Issues)
+	}
+}
