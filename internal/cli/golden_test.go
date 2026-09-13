@@ -11,6 +11,12 @@ import (
 	"testing"
 )
 
+// update rewrites the golden files instead of comparing with them. The flag
+// is defined only in this package, so name the package when updating:
+//
+//	go test ./internal/cli -run Golden -update
+//
+// Review the resulting diff of testdata/golden before committing it.
 var update = flag.Bool("update", false, "rewrite the golden files in testdata/golden")
 
 // goldenDir is absolute because the golden tests change the working
@@ -153,7 +159,7 @@ var goldenInitCases = []goldenCase{
 }
 
 func TestGoldenRead(t *testing.T) {
-	t.Chdir(t.TempDir())
+	chdirOutsideRepo(t)
 	cfg := setupFiles(t, goldenReadFiles)
 	for _, c := range goldenReadCases {
 		t.Run(c.name, func(t *testing.T) { runGolden(t, cfg, c) })
@@ -161,17 +167,27 @@ func TestGoldenRead(t *testing.T) {
 }
 
 func TestGoldenWrite(t *testing.T) {
-	t.Chdir(t.TempDir())
+	chdirOutsideRepo(t)
 	for _, c := range goldenWriteCases {
 		t.Run(c.name, func(t *testing.T) { runGolden(t, setup(t), c) })
 	}
 }
 
 func TestGoldenInit(t *testing.T) {
-	t.Chdir(t.TempDir())
+	chdirOutsideRepo(t)
 	for _, c := range goldenInitCases {
 		t.Run(c.name, func(t *testing.T) { runGolden(t, emptyWiki(t), c) })
 	}
+}
+
+// chdirOutsideRepo moves to a new temporary directory that git does not treat
+// as part of a repository, even when TMPDIR is inside one, so that the
+// project and remote reported by context do not depend on where the tests run.
+func chdirOutsideRepo(t *testing.T) {
+	t.Helper()
+	d := t.TempDir()
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(d))
+	t.Chdir(d)
 }
 
 // emptyWiki creates an empty bare repository and returns the path of a config

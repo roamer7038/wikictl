@@ -252,7 +252,9 @@ func TestPutRmInit(t *testing.T) {
 		}
 	})
 	t.Run("rm", func(t *testing.T) {
-		runCLI(t, cfg, "---\nsummary: r\n---\n# r\n", "put", "global/rm-me.md")
+		if code, _, errs := runCLI(t, cfg, "---\nsummary: r\n---\n# r\n", "put", "global/rm-me.md"); code != 0 {
+			t.Fatalf("put failed: code=%d %s", code, errs)
+		}
 		if code, _, errs := runCLI(t, cfg, "", "rm", "global/rm-me.md"); code != 0 {
 			t.Errorf("rm failed: code=%d %s", code, errs)
 		}
