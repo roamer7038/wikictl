@@ -336,7 +336,7 @@ profiles:
 | `frontmatter_invalid` | フロントマターが正しい YAML でない | 拒否 |
 | `missing_summary` | `summary` も `description` もない、またはフロントマターがない | 警告 |
 | `links_syntax` | Links セクションの行がリンク行の形式になっていない | 警告 |
-| `broken_link` | リンク先のページが存在しない | 警告 |
+| `broken_link` | リンク先のファイルが wiki リポジトリに存在しない | 警告 |
 | `name_style` | 名前が小文字の ASCII 英字、数字、ハイフンだけでできていない、またはハイフンで始まる | 警告 |
 | `case_collision` | 同じディレクトリ内に、大文字と小文字だけが異なる名前がある | 検査しない |
 

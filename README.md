@@ -336,7 +336,7 @@ With `--json`:
 | `frontmatter_invalid` | The frontmatter is not valid YAML | rejected |
 | `missing_summary` | No `summary` or `description`, or no frontmatter | warning |
 | `links_syntax` | A line in the Links section is not a valid link line | warning |
-| `broken_link` | A link points to a page that does not exist | warning |
+| `broken_link` | A link points to a file that does not exist in the wiki repository | warning |
 | `name_style` | A name is not made of lowercase ASCII letters, digits and hyphens, or starts with a hyphen | warning |
 | `case_collision` | Names in one directory differ only by case | not checked |
 
