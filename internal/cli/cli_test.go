@@ -135,6 +135,20 @@ func TestSearchGetLs(t *testing.T) {
 	}
 }
 
+func TestSearchLimit(t *testing.T) {
+	cfg := setup(t)
+	for _, n := range []string{"0", "-1"} {
+		code, _, errs := runCLI(t, cfg, "", "search", "-n", n, "lease")
+		if code != ExitUsage || !strings.Contains(errs, "must be at least 1") {
+			t.Errorf("-n %s: code=%d errs=%q", n, code, errs)
+		}
+	}
+	code, out, errs := runCLI(t, cfg, "", "search", "--json", "-n", "1", "--dirs", "global,projects/app", "lease")
+	if code != ExitOK || strings.Count(out, `"path"`) != 1 {
+		t.Errorf("-n 1: code=%d out=%s errs=%s", code, out, errs)
+	}
+}
+
 func TestPersonalScope(t *testing.T) {
 	cfg := setup(t)
 	// personal/ is a default directory even before anything is put there,

@@ -175,7 +175,7 @@ Command flags must come before the arguments, as in `wikictl search -n 5 lease`.
 | Flag | Commands | Meaning |
 |---|---|---|
 | `--any` | `search` | Find pages containing any of the words instead of all of them |
-| `-n <N>` | `search` | Show at most N results (default 20) |
+| `-n <N>` | `search` | Show at most N results (default 20). N must be at least 1 |
 | `--all` | `search`, `ls` | Include pages with `status: deprecated` |
 | `--type <type>` | `ls` | Show only pages with this `type` |
 | `--tag <tag>` | `ls` | Show only pages with this tag |
