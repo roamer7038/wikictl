@@ -81,6 +81,8 @@ Linux と macOS（x86_64 と arm64）のバイナリとチェックサムは [re
 
 ページは当てはまる中で最も狭いスコープに置きます。このプロジェクトだけ → `projects/<name>/`、この実行環境だけ → `machines/<name>/`、このユーザだけ → `personal/`、それ以外 → `global/`。`personal/` はエージェントが必要になった時に検索して参照する事実を置く場所で、すべての会話に適用すべきルールはエージェントの常設の指示（Claude Code なら `CLAUDE.md`）に置きます。`init` は `personal/` を作りません。`projects/` や `machines/` と同様、最初の `put` で作られます。
 
+`personal/` は 1 人で wiki を使うことを前提にしています。wiki を共有する全員が同じ `personal/` を検索するため、複数人で共有する wiki では `personal/` を使わないか、設定の `dirs` で検索対象のディレクトリを指定してください。
+
 ## 設定
 
 `~/.config/wikictl/config.yaml`（`$XDG_CONFIG_HOME` も尊重）、または `$WIKICTL_CONFIG` か `--config <path>` で指定したファイル:

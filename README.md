@@ -81,6 +81,8 @@ Each directory is a scope that answers "where is this knowledge valid?":
 
 Place a page in the narrowest scope that fits: only this project → `projects/<name>/`; only this execution environment → `machines/<name>/`; only this user → `personal/`; otherwise → `global/`. `personal/` holds facts an agent looks up when they become relevant; rules that must apply to every conversation belong in the agent's standing instructions (for Claude Code, `CLAUDE.md`), not in the wiki. `init` does not create `personal/`; like `projects/` and `machines/`, it appears with the first `put` into it.
 
+`personal/` assumes one person uses the wiki. Everyone who shares a wiki searches the same `personal/`, so in a wiki shared by several people either do not use `personal/`, or set `dirs` in the configuration to choose the search directories.
+
 ## Configuration
 
 `~/.config/wikictl/config.yaml` (`$XDG_CONFIG_HOME` is honoured), or the file named by `$WIKICTL_CONFIG` or `--config <path>`:
