@@ -25,11 +25,11 @@ func TestNames(t *testing.T) {
 func TestDefaultDirs(t *testing.T) {
 	c := &config.Config{}
 	got := DefaultDirs(c, "git@github.com:roki/app.git", "host1")
-	if !reflect.DeepEqual(got, []string{"global", "projects/app", "machines/host1"}) {
+	if !reflect.DeepEqual(got, []string{"global", "personal", "projects/app", "machines/host1"}) {
 		t.Error(got)
 	}
 	got = DefaultDirs(c, "", "host1")
-	if !reflect.DeepEqual(got, []string{"global", "machines/host1"}) {
+	if !reflect.DeepEqual(got, []string{"global", "personal", "machines/host1"}) {
 		t.Error(got)
 	}
 	c.Dirs = []string{"team"}
@@ -38,7 +38,7 @@ func TestDefaultDirs(t *testing.T) {
 	}
 	c.Dirs = nil
 	c.Machine = "m9"
-	if got := DefaultDirs(c, "", "host1"); got[1] != "machines/m9" {
+	if got := DefaultDirs(c, "", "host1"); got[2] != "machines/m9" {
 		t.Error(got)
 	}
 }
@@ -46,10 +46,10 @@ func TestDefaultDirs(t *testing.T) {
 func TestProjectMapping(t *testing.T) {
 	c := &config.Config{Projects: map[string]string{"wikictl-prototype": "wikictl"}}
 	got := DefaultDirs(c, "https://github.com/roamer7038/wikictl-prototype.git", "h")
-	if got[1] != "projects/wikictl" {
+	if got[2] != "projects/wikictl" {
 		t.Error(got)
 	}
-	if got := DefaultDirs(c, "git@x:y/other.git", "h"); got[1] != "projects/other" {
+	if got := DefaultDirs(c, "git@x:y/other.git", "h"); got[2] != "projects/other" {
 		t.Error(got)
 	}
 }

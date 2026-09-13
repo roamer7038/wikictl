@@ -28,14 +28,15 @@ func MachineName(host string) string {
 	return strings.ToLower(host)
 }
 
-// DefaultDirs returns the search directories: global/, projects/<name>/ for
-// the remote of the current directory (mapped through cfg.Projects), and
-// machines/<name>/ for this host. cfg.Dirs replaces the whole list when set.
+// DefaultDirs returns the search directories: global/, personal/,
+// projects/<name>/ for the remote of the current directory (mapped through
+// cfg.Projects), and machines/<name>/ for this host. cfg.Dirs replaces the
+// whole list when set.
 func DefaultDirs(cfg *config.Config, cwdRemote, host string) []string {
 	if len(cfg.Dirs) > 0 {
 		return cfg.Dirs
 	}
-	out := []string{"global"}
+	out := []string{"global", "personal"}
 	if cwdRemote != "" {
 		name := ProjectName(cwdRemote)
 		if m, ok := cfg.Projects[name]; ok && m != "" {
