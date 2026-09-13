@@ -13,6 +13,7 @@ import (
 func setup(t *testing.T) (cfgPath string) {
 	t.Helper()
 	isolateGit(t)
+	t.Setenv("WIKICTL_PROFILE", "")
 	d := t.TempDir()
 	remote := filepath.Join(d, "remote.git")
 	mustRun(t, "", "git", "init", "-q", "--bare", "-b", "main", remote)
@@ -290,5 +291,28 @@ func TestMvDir(t *testing.T) {
 	}
 	if code, _, errs := runCLI(t, cfg, "", "mv", "projects/app2/", "global/x.md"); code != 2 || !strings.Contains(errs, "both arguments") {
 		t.Errorf("mixed dir/page mv must be a usage error: code=%d errs=%q", code, errs)
+	}
+}
+
+func TestProfile(t *testing.T) {
+	cfg := setup(t)
+	b, _ := os.ReadFile(cfg)
+	remote := strings.TrimPrefix(strings.SplitN(string(b), "\n", 2)[0], "repo: ")
+	os.WriteFile(cfg, []byte("author: {name: agent, email: a@a}\nmachine: h1\nprofiles:\n  home: {repo: "+remote+"}\n  work: {repo: /nonexistent/work.git}\n"), 0o600)
+
+	code, out, errs := runCLI(t, cfg, "", "context", "--json", "--profile", "home")
+	if code != 0 || !strings.Contains(out, `"profile":"home"`) || !strings.Contains(out, `"profile_source":"flag"`) || !strings.Contains(out, `"repo":"`+remote+`"`) {
+		t.Errorf("--profile: code=%d %s %s", code, out, errs)
+	}
+	t.Setenv("WIKICTL_PROFILE", "home")
+	if code, out, errs := runCLI(t, cfg, "", "context", "--json"); code != 0 || !strings.Contains(out, `"profile_source":"env"`) {
+		t.Errorf("WIKICTL_PROFILE: code=%d %s %s", code, out, errs)
+	}
+	t.Setenv("WIKICTL_PROFILE", "")
+	if code, out, _ := runCLI(t, cfg, "", "--json", "context", "--profile", "nope"); code != ExitUsage || !strings.Contains(out, `"error":"usage"`) {
+		t.Errorf("unknown profile: code=%d %s", code, out)
+	}
+	if code, _, errs := runCLI(t, cfg, "", "context"); code != ExitUsage || !strings.Contains(errs, "no profile is selected") {
+		t.Errorf("no profile: code=%d %s", code, errs)
 	}
 }

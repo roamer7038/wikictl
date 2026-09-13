@@ -45,8 +45,8 @@ var commands = []*command{
 	{name: "init", maxArgs: 0,
 		summary: "Create the initial pages in an empty repository",
 		detail: `Create README.md and global/index.md, as a single commit, in the repository
-given by repo in the config file. The remote repository itself must already
-exist on the Git host. Fails with exit code 1 if the branch already exists.`,
+given by repo in the config file or its selected profile. The remote
+repository itself must already exist on the Git host. Fails with exit code 1 if the branch already exists.`,
 		run: (*app).cmdInit},
 	{name: "search", args: "<word>...", minArgs: 1, maxArgs: -1,
 		summary: "Find pages containing the given words",
@@ -109,12 +109,13 @@ Output: items[] {path, line, code, message}.`,
 		run: (*app).cmdLint},
 	{name: "context", maxArgs: 0,
 		summary: "Show the resolved configuration and search directories",
-		detail: `Show the config file, mirror directory, branch, author, the machine and
-project names (as used for machines/<name>/ and projects/<name>/), the origin
-remote of the current directory, and the search directories that other
-commands use by default.
+		detail: `Show the config file, the selected profile and how it was selected (flag,
+env, match, default or none), the wiki repository, mirror directory, branch,
+author, the machine and project names (as used for machines/<name>/ and
+projects/<name>/), the origin remote of the current directory, and the search
+directories that other commands use by default.
 
-Output: {config, mirror, branch, author, machine, project, remote, dirs}.`,
+Output: {config, profile, profile_source, repo, mirror, branch, author, machine, project, remote, dirs}.`,
 		run: (*app).cmdContext},
 }
 
@@ -122,7 +123,9 @@ type app struct {
 	cfg     *config.Config
 	repo    *repo.Repo
 	dirs    []string
+	remote  string // origin URL of the current directory; "" when there is none
 	cfgPath string
+	profile string
 	dirsArg string
 	json    bool
 	noFetch bool
@@ -142,6 +145,7 @@ var osHostname = os.Hostname
 // globalFlags registers the flags accepted before or after the command name.
 func (a *app) globalFlags(fs *flag.FlagSet) {
 	fs.StringVar(&a.cfgPath, "config", "", "read the configuration from `path` instead of $WIKICTL_CONFIG or $XDG_CONFIG_HOME/wikictl/config.yaml (~/.config/wikictl/config.yaml)")
+	fs.StringVar(&a.profile, "profile", "", "use the profile `name` from the config file instead of $WIKICTL_PROFILE, match or default_profile")
 	fs.StringVar(&a.dirsArg, "dirs", "", "search only the comma-separated `dirs` instead of the defaults")
 	fs.BoolVar(&a.json, "json", false, "print JSON")
 	fs.BoolVar(&a.noFetch, "no-fetch", false, "do not fetch from the remote before running")
@@ -214,9 +218,12 @@ func Main(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return c.run(a, c, cargs)
 }
 
-// setup loads the configuration, opens the mirror and resolves the search directories.
+// setup loads the configuration with its profile, opens the mirror and
+// resolves the search directories.
 func (a *app) setup() int {
-	cfg, err := config.Load(a.cfgPath)
+	a.remote = cwdRemote()
+	dir, _ := os.Getwd()
+	cfg, err := config.Load(a.cfgPath, config.Selector{Profile: a.profile, Dir: dir, Remote: a.remote})
 	if err != nil {
 		return a.fail(ExitUsage, "usage", err.Error())
 	}
@@ -228,14 +235,14 @@ func (a *app) setup() int {
 		a.dirs = strings.Split(a.dirsArg, ",")
 	} else {
 		host, _ := osHostname()
-		a.dirs = ctx.DefaultDirs(cfg, cwdRemote(), host)
+		a.dirs = ctx.DefaultDirs(cfg, a.remote, host)
 	}
 	return ExitOK
 }
 
 // splitCommon separates the global flags (--json, --dirs, --config,
-// --no-fetch, --version) from the command arguments so that they may follow
-// the command name. Everything after "--" belongs to the command.
+// --profile, --no-fetch, --version) from the command arguments so that they
+// may follow the command name. Everything after "--" belongs to the command.
 func splitCommon(args []string) (rest, common []string) {
 	for i := 0; i < len(args); i++ {
 		a := args[i]
@@ -246,9 +253,9 @@ func splitCommon(args []string) (rest, common []string) {
 		switch {
 		case name == "json" || name == "no-fetch" || name == "version":
 			common = append(common, a)
-		case strings.HasPrefix(name, "json=") || strings.HasPrefix(name, "no-fetch=") || strings.HasPrefix(name, "dirs=") || strings.HasPrefix(name, "config="):
+		case strings.HasPrefix(name, "json=") || strings.HasPrefix(name, "no-fetch=") || strings.HasPrefix(name, "dirs=") || strings.HasPrefix(name, "config=") || strings.HasPrefix(name, "profile="):
 			common = append(common, a)
-		case (name == "dirs" || name == "config") && i+1 < len(args):
+		case (name == "dirs" || name == "config" || name == "profile") && i+1 < len(args):
 			common = append(common, a, args[i+1])
 			i++
 		default:

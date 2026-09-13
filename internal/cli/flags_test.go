@@ -14,6 +14,7 @@ func TestSplitCommon(t *testing.T) {
 		{[]string{"--config=c.yaml", "--version"}, nil, []string{"--config=c.yaml", "--version"}},
 		{[]string{"--any", "--", "--json"}, []string{"--any", "--", "--json"}, nil},
 		{[]string{"--dirs"}, []string{"--dirs"}, nil},
+		{[]string{"a", "--profile", "work", "--profile=home"}, []string{"a"}, []string{"--profile", "work", "--profile=home"}},
 	}
 	for _, c := range cases {
 		rest, common := splitCommon(c.in)
