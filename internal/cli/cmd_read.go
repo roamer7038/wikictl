@@ -13,6 +13,7 @@ import (
 
 	ctx "github.com/roamer7038/wikictl/internal/context"
 	"github.com/roamer7038/wikictl/internal/page"
+	"github.com/roamer7038/wikictl/internal/repo"
 )
 
 type hit struct {
@@ -79,9 +80,9 @@ func (a *app) cmdSearch(c *command, args []string) int {
 	for _, p := range paths {
 		pg := page.Parse(p, contents[p])
 		matched := []string{}
-		lower := strings.ToLower(string(contents[p]))
+		folded := repo.Fold(string(contents[p]))
 		for _, w := range words {
-			if strings.Contains(lower, strings.ToLower(w)) {
+			if strings.Contains(folded, repo.Fold(w)) {
 				matched = append(matched, w)
 			}
 		}
