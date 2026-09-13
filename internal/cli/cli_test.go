@@ -333,6 +333,8 @@ func TestLinkExistence(t *testing.T) {
 	mustRun(t, "", "git", "clone", "-q", remote, work)
 	os.MkdirAll(filepath.Join(work, "global/sub.md"), 0o755)
 	os.WriteFile(filepath.Join(work, "README.md"), []byte("# wiki\n"), 0o644)
+	os.MkdirAll(filepath.Join(work, "misc"), 0o755)
+	os.WriteFile(filepath.Join(work, "misc", "a b.md"), []byte("---\nsummary: a\n---\n"), 0o644)
 	os.WriteFile(filepath.Join(work, "global/sub.md/a.md"), []byte("---\nsummary: a\n---\n"), 0o644)
 	mustRun(t, work, "git", "add", "-A")
 	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "extra")
@@ -811,4 +813,43 @@ func gitOut(t *testing.T, args ...string) string {
 		t.Fatalf("git %v: %v", args, err)
 	}
 	return strings.TrimSpace(string(out))
+}
+
+// TestWriteWithoutChange checks that writes whose source is not a page, or
+// that leave the tree unchanged, create no commit on the remote.
+func TestWriteWithoutChange(t *testing.T) {
+	cfg := setup(t)
+	d := filepath.Dir(cfg)
+	remote, work := filepath.Join(d, "remote.git"), filepath.Join(d, "work")
+	os.WriteFile(filepath.Join(work, "README.md"), []byte("# wiki\n"), 0o644)
+	os.MkdirAll(filepath.Join(work, "misc"), 0o755)
+	os.WriteFile(filepath.Join(work, "misc", "a b.md"), []byte("---\nsummary: a\n---\n"), 0o644)
+	mustRun(t, work, "git", "add", "-A")
+	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "readme")
+	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
+	head := gitOut(t, "--git-dir", remote, "rev-parse", "main")
+
+	if code, out, errs := runCLI(t, cfg, "", "mv", "README.md", "global/readme.md"); code != 4 || !strings.Contains(errs, "bad_path") {
+		t.Errorf("mv of a non-page file: code=%d out=%q errs=%q", code, out, errs)
+	}
+	if code, out, errs := runCLI(t, cfg, "", "mv", "global/push.md/", "newdir/"); code != 1 {
+		t.Errorf("mv of a page given as a directory: code=%d out=%q errs=%q", code, out, errs)
+	}
+	if code, out, errs := runCLI(t, cfg, "", "mv", "misc/", "misc2/"); code != 4 || !strings.Contains(errs, "bad_path") {
+		t.Errorf("mv of a directory with a bad page name: code=%d out=%q errs=%q", code, out, errs)
+	}
+	if got := gitOut(t, "--git-dir", remote, "rev-parse", "main"); got != head {
+		t.Fatalf("rejected mv moved the remote branch: %s -> %s", head, got)
+	}
+
+	sha := getSha(t, cfg, "global/index.md")
+	code, out, errs := runCLI(t, cfg, "---\nsummary: entry point\n---\n# global\n", "put", "--json", "--base", sha, "global/index.md")
+	var res struct{ Path, Sha, Commit string }
+	json.Unmarshal([]byte(out), &res)
+	if code != 0 || res.Sha != sha || res.Commit != head {
+		t.Errorf("put of unchanged content: code=%d out=%q errs=%q, want sha=%s commit=%s", code, out, errs, sha, head)
+	}
+	if got := gitOut(t, "--git-dir", remote, "rev-parse", "main"); got != head {
+		t.Errorf("put of unchanged content created a commit: %s -> %s", head, got)
+	}
 }

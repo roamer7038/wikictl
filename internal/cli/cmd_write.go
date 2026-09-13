@@ -144,6 +144,9 @@ func (a *app) cmdMv(c *command, args []string) int {
 	if fromDir || toDir {
 		return a.usageError(c, "to move a directory, end both arguments with /")
 	}
+	if err := page.CheckPath(from); err != nil {
+		return a.fail(ExitInvalid, "invalid", "bad_path: "+err.Error())
+	}
 	for _, is := range page.PathIssues(to) {
 		if is.Code == "bad_path" {
 			return a.fail(ExitInvalid, "invalid", is.Code+": "+is.Message)
@@ -200,9 +203,16 @@ func (a *app) mvDir(from, to, msg string) int {
 			a.warn(page.Issue{Path: to + "/", Code: "name_style", Message: fmt.Sprintf("name %q: lowercase ASCII letters, digits and hyphens are recommended", seg)})
 		}
 	}
-	src, err := a.repo.List([]string{from})
+	listed, err := a.repo.List([]string{from})
 	if err != nil {
 		return a.fail(ExitGit, "git", err.Error())
+	}
+	// List also matches from itself when from is a file.
+	var src []string
+	for _, p := range listed {
+		if strings.HasPrefix(p, from+"/") {
+			src = append(src, p)
+		}
 	}
 	if len(src) == 0 {
 		return a.fail(ExitError, "error", "no pages under "+from+"/")
@@ -212,7 +222,11 @@ func (a *app) mvDir(from, to, msg string) int {
 	}
 	mapping := map[string]string{}
 	for _, p := range src {
-		mapping[p] = to + strings.TrimPrefix(p, from)
+		np := to + strings.TrimPrefix(p, from)
+		if err := page.CheckPath(np); err != nil {
+			return a.fail(ExitInvalid, "invalid", "bad_path: "+np+": "+err.Error())
+		}
+		mapping[p] = np
 	}
 	changes, err := a.relocate(mapping)
 	if err != nil {

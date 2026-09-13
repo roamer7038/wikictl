@@ -88,7 +88,8 @@ whose frontmatter is invalid or whose path breaks the file name rules (see
 "help lint") is rejected with exit code 4. A missing summary, Links lines that
 do not parse, links to files missing from the wiki and names outside the
 recommended form only produce warnings on standard error; "description" in the
-frontmatter is read as a synonym of "summary".
+frontmatter is read as a synonym of "summary". When the content equals the
+current page, no commit is created and commit is the current commit.
 
 Output: {path, sha, commit}.`,
 		flags: func(fs *flag.FlagSet) { putFlags(fs) }, run: (*app).cmdPut},
@@ -101,8 +102,8 @@ is empty or a block-style mapping and aliases is absent, a sequence (block or
 flow style), or null; otherwise, such as when aliases is a string or there is
 no frontmatter, no alias is added and no warning is printed. When both
 arguments end with a slash, every page under <dir>/ is moved to <newdir>/
-instead; file names do not change, so no alias is added. A new path that
-breaks the file name rules (see "help lint") is rejected with exit code 4.
+instead; file names do not change, so no alias is added. A path or new path
+that breaks the file name rules (see "help lint") is rejected with exit code 4.
 
 Only links of the form [text](path) are rewritten. A bare path in a Links line,
 such as "- part_of: index.md" or "- index.md", is left unchanged and becomes
