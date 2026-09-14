@@ -3,7 +3,6 @@ package repo
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"io"
 	"regexp"
 	"strconv"
@@ -55,9 +54,9 @@ func stripRef(r *Repo, lines string) []string {
 // List returns the page paths under dirs (or the whole tree when dirs is nil).
 // Directories that do not exist are ignored.
 func (r *Repo) List(dirs []string) ([]string, error) {
-	head, _ := r.Head()
-	if head == "" {
-		return nil, nil
+	head, err := r.Head()
+	if err != nil || head == "" {
+		return nil, err
 	}
 	args := append([]string{"ls-tree", "-r", "--name-only", r.trackingRef()}, pathspec(dirs)...)
 	out, err := r.Git(args...)
@@ -106,9 +105,9 @@ func foldPattern(word string) string {
 // ignoring case as Fold does. With all set, a page must contain every word
 // (--all-match).
 func (r *Repo) Grep(words []string, all bool, dirs []string) ([]string, error) {
-	head, _ := r.Head()
-	if head == "" || len(words) == 0 {
-		return nil, nil
+	head, err := r.Head()
+	if err != nil || head == "" || len(words) == 0 {
+		return nil, err
 	}
 	args := []string{"grep", "-E", "-l"}
 	if all {
@@ -120,11 +119,10 @@ func (r *Repo) Grep(words []string, all bool, dirs []string) ([]string, error) {
 	args = append(args, r.trackingRef())
 	args = append(args, pathspec(dirs)...)
 	out, err := r.Git(args...)
+	if noResult(err) {
+		return nil, nil
+	}
 	if err != nil {
-		var ge *GitError
-		if errors.As(err, &ge) && strings.TrimSpace(ge.Stderr) == "" {
-			return nil, nil // exit status 1: no match
-		}
 		return nil, err
 	}
 	return stripRef(r, out), nil
@@ -133,14 +131,20 @@ func (r *Repo) Grep(words []string, all bool, dirs []string) ([]string, error) {
 // GrepDeprecated returns the set of pages under dirs whose frontmatter has "status: deprecated".
 func (r *Repo) GrepDeprecated(dirs []string) (map[string]bool, error) {
 	res := map[string]bool{}
-	head, _ := r.Head()
+	head, err := r.Head()
+	if err != nil {
+		return nil, err
+	}
 	if head == "" {
 		return res, nil
 	}
 	args := append([]string{"grep", "-l", "-E", "-e", `^status:[[:space:]]*deprecated[[:space:]]*$`, r.trackingRef()}, pathspec(dirs)...)
 	out, err := r.Git(args...)
-	if err != nil {
+	if noResult(err) {
 		return res, nil
+	}
+	if err != nil {
+		return nil, err
 	}
 	for _, p := range stripRef(r, out) {
 		res[p] = true
@@ -198,7 +202,10 @@ func (r *Repo) CatSHA(paths []string) (map[string][]byte, map[string]string, err
 // pass over "git log --name-only". Renames are not followed.
 func (r *Repo) Updated(dirs []string) (map[string]time.Time, error) {
 	res := map[string]time.Time{}
-	head, _ := r.Head()
+	head, err := r.Head()
+	if err != nil {
+		return nil, err
+	}
 	if head == "" {
 		return res, nil
 	}
@@ -224,13 +231,17 @@ func (r *Repo) Updated(dirs []string) (map[string]time.Time, error) {
 }
 
 // BlobSHA returns the blob sha of path at commit head, or "" when absent.
+// A failure of git is an error.
 func (r *Repo) BlobSHA(head, path string) (string, error) {
 	if head == "" {
 		return "", nil
 	}
 	out, err := r.Git("rev-parse", "--verify", "-q", head+":"+path)
-	if err != nil {
+	if noResult(err) {
 		return "", nil
+	}
+	if err != nil {
+		return "", err
 	}
 	return strings.TrimSpace(out), nil
 }

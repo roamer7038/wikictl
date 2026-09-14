@@ -180,8 +180,35 @@ func TestOpenEmptyRemote(t *testing.T) {
 	if err := r.Fetch(); err != nil {
 		t.Fatal(err)
 	}
-	if h, _ := r.Head(); h != "" {
-		t.Errorf("empty remote must have no head, got %q", h)
+	if h, err := r.Head(); err != nil || h != "" {
+		t.Errorf("empty remote must have no head, got %q, %v", h, err)
+	}
+}
+
+// TestReadGitFailure reads from a directory that is not a git repository, so
+// that every git command fails. No read may report the failure as an empty
+// result.
+func TestReadGitFailure(t *testing.T) {
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	r := &Repo{Dir: t.TempDir(), Branch: "main"}
+	if h, err := r.Head(); err == nil {
+		t.Errorf("Head = %q, nil", h)
+	}
+	if got, err := r.List(nil); err == nil {
+		t.Errorf("List = %v, nil", got)
+	}
+	if got, err := r.Grep([]string{"x"}, true, nil); err == nil {
+		t.Errorf("Grep = %v, nil", got)
+	}
+	if got, err := r.GrepDeprecated(nil); err == nil {
+		t.Errorf("GrepDeprecated = %v, nil", got)
+	}
+	if got, err := r.Updated(nil); err == nil {
+		t.Errorf("Updated = %v, nil", got)
+	}
+	if got, err := r.BlobSHA("0123456789012345678901234567890123456789", "global/a.md"); err == nil {
+		t.Errorf("BlobSHA = %q, nil", got)
 	}
 }
 

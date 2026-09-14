@@ -53,6 +53,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Exit codes:")
 	fmt.Fprintln(w, "  0 success   1 error   2 usage or configuration   3 conflict   4 invalid page   5 git failure")
+	fmt.Fprintln(w, "  A git failure while reading the wiki also exits with 5 and prints no partial result.")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, `Run "wikictl help <command>" for details on a command.`)
 }

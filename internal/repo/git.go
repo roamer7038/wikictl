@@ -5,6 +5,7 @@ package repo
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -29,6 +30,16 @@ func (e *GitError) Error() string {
 }
 
 func (e *GitError) Unwrap() error { return e.Err }
+
+// noResult reports whether err is a git command that exited with status 1
+// and wrote nothing on stderr: "rev-parse --verify -q" for a name that does
+// not exist, and grep with no match. Any other failure, such as grep exiting
+// with 1 after "unable to read" an object, is an error.
+func noResult(err error) bool {
+	var ge *GitError
+	var ee *exec.ExitError
+	return errors.As(err, &ge) && errors.As(ge.Err, &ee) && ee.ExitCode() == 1 && strings.TrimSpace(ge.Stderr) == ""
+}
 
 // localEnvVars are the repository-local variables reported by
 // "git rev-parse --local-env-vars", plus GIT_NAMESPACE, which prefixes the

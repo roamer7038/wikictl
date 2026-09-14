@@ -70,7 +70,10 @@ func (a *app) cmdPut(c *command, args []string) error {
 		}
 	}
 	// Broken links never block the write, so that link targets can be created afterwards.
-	broken, _ := a.brokenLinks([]*page.Page{pg})
+	broken, err := a.brokenLinks([]*page.Page{pg})
+	if err != nil {
+		return &gitError{err}
+	}
 	for _, is := range broken {
 		a.warn(is)
 	}
@@ -104,7 +107,10 @@ func (a *app) cmdRm(c *command, args []string) error {
 	if err := page.CheckPath(p); err != nil {
 		return &invalidError{"bad_path: " + err.Error()}
 	}
-	contents, shas, _ := a.repo.CatSHA([]string{p})
+	contents, shas, err := a.repo.CatSHA([]string{p})
+	if err != nil {
+		return &gitError{err}
+	}
 	if contents[p] == nil {
 		return &notFoundError{p}
 	}
@@ -208,7 +214,11 @@ func (a *app) mvDir(from, to, msg string) error {
 	if len(src) == 0 {
 		return errors.New("no pages under " + from + "/")
 	}
-	if dst, _ := a.repo.List([]string{to}); len(dst) > 0 {
+	dst, err := a.repo.List([]string{to})
+	if err != nil {
+		return &gitError{err}
+	}
+	if len(dst) > 0 {
 		return errors.New("pages already exist under " + to + "/")
 	}
 	mapping := map[string]string{}
@@ -277,7 +287,11 @@ machines/<name>/ for the rest.
 `
 
 func (a *app) cmdInit(c *command, args []string) error {
-	if head, _ := a.repo.Head(); head != "" {
+	head, err := a.repo.Head()
+	if err != nil {
+		return &gitError{err}
+	}
+	if head != "" {
 		return errors.New("branch " + a.repo.Branch + " already exists on the remote; init only works on an empty repository")
 	}
 	empty := ""

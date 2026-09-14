@@ -48,6 +48,8 @@ type gitError struct{ err error }
 
 func (e *gitError) Error() string { return e.err.Error() }
 
+func (e *gitError) Unwrap() error { return e.err }
+
 // conflictError is an optimistic-lock failure of a commit. rerun names the
 // command to run again; it is empty for put and init.
 type conflictError struct {
@@ -56,6 +58,8 @@ type conflictError struct {
 }
 
 func (e *conflictError) Error() string { return e.cf.Error() }
+
+func (e *conflictError) Unwrap() error { return e.cf }
 
 // exitStatus ends the command with its value as the exit code after the
 // command has written its output, such as lint with violations.

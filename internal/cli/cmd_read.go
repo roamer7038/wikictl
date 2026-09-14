@@ -68,10 +68,16 @@ func (a *app) cmdSearch(c *command, args []string) error {
 		return &gitError{err}
 	}
 	if !o.all {
-		dep, _ := a.repo.GrepDeprecated(a.dirs)
+		dep, err := a.repo.GrepDeprecated(a.dirs)
+		if err != nil {
+			return &gitError{err}
+		}
 		paths = filterOut(paths, dep)
 	}
-	updated, _ := a.repo.Updated(a.dirs)
+	updated, err := a.repo.Updated(a.dirs)
+	if err != nil {
+		return &gitError{err}
+	}
 	contents, err := a.repo.Cat(paths)
 	if err != nil {
 		return &gitError{err}
@@ -140,15 +146,27 @@ func (a *app) cmdGet(c *command, args []string) error {
 	if !ok {
 		return &notFoundError{p}
 	}
-	head, _ := a.repo.Head()
-	sha, _ := a.repo.BlobSHA(head, p)
+	head, err := a.repo.Head()
+	if err != nil {
+		return &gitError{err}
+	}
+	sha, err := a.repo.BlobSHA(head, p)
+	if err != nil {
+		return &gitError{err}
+	}
 	pg := page.Parse(p, content)
 	links := []linkOut{}
 	for _, l := range pg.Links {
 		links = append(links, linkOut{l.Type, l.Target, l.Note})
 	}
-	backlinks := a.backlinks(p)
-	updated, _ := a.repo.Updated([]string{path.Dir(p)})
+	backlinks, err := a.backlinks(p)
+	if err != nil {
+		return &gitError{err}
+	}
+	updated, err := a.repo.Updated([]string{path.Dir(p)})
+	if err != nil {
+		return &gitError{err}
+	}
 	fm := pg.Frontmatter
 	if fm == nil {
 		fm = map[string]any{}
@@ -175,10 +193,16 @@ func (a *app) cmdGet(c *command, args []string) error {
 // backlinks greps the whole wiki for the file name of target to collect candidate
 // pages, then parses each candidate and keeps those whose links resolve to
 // target. Typed links win over body mentions.
-func (a *app) backlinks(target string) []backlinkOut {
+func (a *app) backlinks(target string) ([]backlinkOut, error) {
 	name := strings.TrimSuffix(path.Base(target), ".md")
-	cands, _ := a.repo.Grep([]string{name + ".md"}, true, nil)
-	contents, _ := a.repo.Cat(cands)
+	cands, err := a.repo.Grep([]string{name + ".md"}, true, nil)
+	if err != nil {
+		return nil, err
+	}
+	contents, err := a.repo.Cat(cands)
+	if err != nil {
+		return nil, err
+	}
 	out := []backlinkOut{}
 	for _, cp := range cands {
 		if cp == target {
@@ -201,7 +225,7 @@ func (a *app) backlinks(target string) []backlinkOut {
 			}
 		}
 	}
-	return out
+	return out, nil
 }
 
 type lsItem struct {
@@ -236,11 +260,20 @@ func (a *app) cmdLs(c *command, args []string) error {
 		return &gitError{err}
 	}
 	if !o.all {
-		dep, _ := a.repo.GrepDeprecated(a.dirs)
+		dep, err := a.repo.GrepDeprecated(a.dirs)
+		if err != nil {
+			return &gitError{err}
+		}
 		paths = filterOut(paths, dep)
 	}
-	contents, _ := a.repo.Cat(paths)
-	updated, _ := a.repo.Updated(a.dirs)
+	contents, err := a.repo.Cat(paths)
+	if err != nil {
+		return &gitError{err}
+	}
+	updated, err := a.repo.Updated(a.dirs)
+	if err != nil {
+		return &gitError{err}
+	}
 	items := []lsItem{}
 	for _, p := range paths {
 		pg := page.Parse(p, contents[p])
