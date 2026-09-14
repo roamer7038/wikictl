@@ -97,7 +97,7 @@ type: concept
 
 - wikictl が解釈するフロントマターのキーは、`summary`（または `description`）、`type`、`tags`、`aliases`、`status: deprecated`（`search` と `ls` に表示しない）
 - ページへのリンクは、`mv` が書き換えられるように `[text](path)` の形式で書く
-- 各ディレクトリに `index.md` を置いて `summary` にディレクトリの内容を書き、他のページから `- part_of: [index](index.md)` でリンクする。`wikictl dirs` がその summary を表示し、`wikictl get <dir>/index.md` がそれらのページをバックリンクとして一覧する
+- 各ディレクトリに `index.md` を置いて `summary` にディレクトリの内容を書き、他のページから `- part_of: [index](index.md)` でリンクする。`wikictl dirs` がその summary を表示し、`wikictl links -i <dir>/index.md` がそこへリンクするページを一覧する
 - 名前には小文字の ASCII 英字、数字、ハイフンを使うことを推奨する
 
 形式の規則の詳細は `wikictl help lint` で確認できます。

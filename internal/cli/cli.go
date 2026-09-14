@@ -52,9 +52,9 @@ Output: items[] {path, summary, title, matched, updated}.`,
 	{name: "cat", args: "<path>...", minArgs: 1, maxArgs: -1, paths: true,
 		summary: "Print files as stored",
 		detail: `Print each file as stored in the wiki, in the order given. A path that is not
-a file is reported on standard error, the other files are still printed, and
-the command exits with code 1. The sha in the JSON output is the one to pass
-to "put --base" when updating the page.
+a file is reported on standard error, also with --json, the other files are
+still printed, and the command exits with code 1. The sha in the JSON output
+is the one to pass to "put --base" when updating the page.
 
 Output: items[] {path, sha, content}.`,
 		run: (*app).cmdCat},
