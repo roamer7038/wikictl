@@ -20,16 +20,6 @@ import (
 	"github.com/roamer7038/wikictl/internal/repo"
 )
 
-// Exit codes. Each maps to the "error" field of the JSON error object.
-const (
-	ExitOK       = 0 // success
-	ExitError    = 1 // general error, such as a missing page
-	ExitUsage    = 2 // usage or configuration error
-	ExitConflict = 3 // the page already exists, or changed or was deleted since it was read
-	ExitInvalid  = 4 // the page violates the wiki format
-	ExitGit      = 5 // a git command failed
-)
-
 // command describes one subcommand.
 type command struct {
 	name    string
@@ -39,7 +29,7 @@ type command struct {
 	summary string                 // one line for the command list
 	detail  string                 // description shown by "help <command>"
 	flags   func(fs *flag.FlagSet) // registers command flags; nil when there are none
-	run     func(a *app, c *command, args []string) int
+	run     func(a *app, c *command, args []string) error
 }
 
 // commands lists the subcommands in the order shown by help.
@@ -206,11 +196,6 @@ type app struct {
 	stderr  io.Writer
 }
 
-type errorOut struct {
-	Error   string `json:"error"`
-	Message string `json:"message"`
-}
-
 var osHostname = os.Hostname
 
 // globalFlags registers the flags accepted before or after the command name.
@@ -226,27 +211,33 @@ func (a *app) globalFlags(fs *flag.FlagSet) {
 // Main runs the command line given in args and returns the exit code.
 func Main(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	a := &app{stdin: stdin, stdout: stdout, stderr: stderr}
+	return a.report(a.run(args))
+}
+
+// run parses the command line and runs the command. Errors are reported by
+// the caller.
+func (a *app) run(args []string) error {
 	fs := newFlagSet("wikictl")
 	a.globalFlags(fs)
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			printUsage(stdout)
-			return ExitOK
+			printUsage(a.stdout)
+			return nil
 		}
-		return a.fail(ExitUsage, "usage", err.Error()+`; run "wikictl help" for usage`)
+		return &usageError{msg: err.Error() + `; run "wikictl help" for usage`}
 	}
 	if a.version {
 		return a.cmdVersion()
 	}
 	rest := fs.Args()
 	if len(rest) == 0 {
-		printUsage(stderr)
-		return ExitUsage
+		printUsage(a.stderr)
+		return exitStatus(ExitUsage)
 	}
 	name, cargs := rest[0], rest[1:]
 	cargs, common := splitCommon(cargs)
 	if err := fs.Parse(common); err != nil {
-		return a.fail(ExitUsage, "usage", err.Error())
+		return &usageError{msg: err.Error()}
 	}
 	if a.version {
 		return a.cmdVersion()
@@ -262,11 +253,11 @@ func Main(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	c := lookup(name)
 	if c == nil {
-		return a.fail(ExitUsage, "usage", "unknown command: "+name+`; run "wikictl help" for the list of commands`)
+		return &usageError{msg: "unknown command: " + name + `; run "wikictl help" for the list of commands`}
 	}
 	if wantsHelp(cargs) {
-		printCommandHelp(stdout, c)
-		return ExitOK
+		printCommandHelp(a.stdout, c)
+		return nil
 	}
 	// Validate flags and argument count before touching the configuration,
 	// so that usage errors never depend on the environment. Commands with
@@ -276,31 +267,31 @@ func Main(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if c.flags != nil {
 		c.flags(check)
 	}
-	rest, code, ok := a.parseFlags(c, check, cargs)
-	if !ok {
-		return code
+	rest, err := parseFlags(c, check, cargs)
+	if err != nil {
+		return err
 	}
 	if c.flags == nil {
 		cargs = rest
 	}
-	if code := a.setup(); code != ExitOK {
-		return code
+	if err := a.setup(); err != nil {
+		return err
 	}
 	return c.run(a, c, cargs)
 }
 
 // setup loads the configuration with its profile, opens the mirror and
 // resolves the search directories.
-func (a *app) setup() int {
+func (a *app) setup() error {
 	a.remote = cwdRemote()
 	dir, _ := os.Getwd()
 	cfg, err := config.Load(a.cfgPath, config.Selector{Profile: a.profile, Dir: dir, Remote: a.remote})
 	if err != nil {
-		return a.fail(ExitUsage, "usage", err.Error())
+		return &usageError{msg: err.Error()}
 	}
 	a.cfg = cfg
 	if err := a.openRepo(); err != nil {
-		return a.fail(ExitGit, "git", err.Error())
+		return &gitError{err}
 	}
 	if a.dirsArg != "" {
 		a.dirs = strings.Split(a.dirsArg, ",")
@@ -308,7 +299,7 @@ func (a *app) setup() int {
 		host, _ := osHostname()
 		a.dirs = ctx.DefaultDirs(cfg, a.remote, host)
 	}
-	return ExitOK
+	return nil
 }
 
 // splitCommon separates the global flags (--json, --dirs, --config,
@@ -413,19 +404,6 @@ func (a *app) author() (repo.Author, error) {
 		return au, fmt.Errorf("author is not set: add author.name and author.email to %s, or set git config user.name and user.email", a.cfg.Path)
 	}
 	return au, nil
-}
-
-// fail reports an error of the given kind and returns code. With --json the
-// error object goes to stdout; otherwise one line goes to stderr.
-func (a *app) fail(code int, kind, msg string) int {
-	if a.json {
-		enc := json.NewEncoder(a.stdout)
-		enc.SetEscapeHTML(false)
-		enc.Encode(errorOut{Error: kind, Message: msg})
-	} else {
-		fmt.Fprintln(a.stderr, "wikictl: "+msg)
-	}
-	return code
 }
 
 // emit writes v as JSON when --json is set; otherwise it calls text.

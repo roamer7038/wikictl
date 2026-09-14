@@ -8,17 +8,17 @@ import (
 	"github.com/roamer7038/wikictl/internal/page"
 )
 
-func (a *app) cmdLint(c *command, args []string) int {
+func (a *app) cmdLint(c *command, args []string) error {
 	paths := args
 	if len(paths) == 0 {
 		var err error
 		if paths, err = a.repo.List(a.dirs); err != nil {
-			return a.fail(ExitGit, "git", err.Error())
+			return &gitError{err}
 		}
 	}
 	all, err := a.repo.List(nil)
 	if err != nil {
-		return a.fail(ExitGit, "git", err.Error())
+		return &gitError{err}
 	}
 	checked := map[string]bool{}
 	for _, p := range paths {
@@ -27,7 +27,7 @@ func (a *app) cmdLint(c *command, args []string) int {
 	contents, _ := a.repo.Cat(paths)
 	for _, p := range args {
 		if contents[p] == nil {
-			return a.fail(ExitError, "error", "page not found: "+p)
+			return &notFoundError{p}
 		}
 	}
 	items := []page.Issue{}
@@ -46,7 +46,7 @@ func (a *app) cmdLint(c *command, args []string) int {
 	}
 	broken, err := a.brokenLinks(pages)
 	if err != nil {
-		return a.fail(ExitGit, "git", err.Error())
+		return &gitError{err}
 	}
 	items = append(items, broken...)
 	sort.SliceStable(items, func(i, j int) bool {
@@ -61,9 +61,9 @@ func (a *app) cmdLint(c *command, args []string) int {
 		}
 	})
 	if len(items) > 0 {
-		return ExitInvalid
+		return exitStatus(ExitInvalid)
 	}
-	return ExitOK
+	return nil
 }
 
 // brokenLinks returns a broken_link issue for every link and mention whose

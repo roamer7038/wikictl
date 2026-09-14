@@ -127,30 +127,30 @@ func wantsHelp(args []string) bool {
 	return false
 }
 
-func (a *app) cmdVersion() int {
+func (a *app) cmdVersion() error {
 	a.emit(map[string]string{"version": Version()}, func(w io.Writer) { fmt.Fprintln(w, "wikictl "+Version()) })
-	return ExitOK
+	return nil
 }
 
-func (a *app) cmdHelp(args []string) int {
+func (a *app) cmdHelp(args []string) error {
 	if len(args) == 0 {
 		printUsage(a.stdout)
-		return ExitOK
+		return nil
 	}
 	switch args[0] {
 	case "help", "-h", "--help", "-help":
 		fmt.Fprintln(a.stdout, "Usage: wikictl help [<command>]\n\nShow help for a command, or the list of commands.")
-		return ExitOK
+		return nil
 	case "version":
 		fmt.Fprintln(a.stdout, "Usage: wikictl version\n\nPrint the version.")
-		return ExitOK
+		return nil
 	}
 	c := lookup(args[0])
 	if c == nil {
-		return a.fail(ExitUsage, "usage", "unknown command: "+args[0])
+		return &usageError{msg: "unknown command: " + args[0]}
 	}
 	printCommandHelp(a.stdout, c)
-	return ExitOK
+	return nil
 }
 
 func lookup(name string) *command {
@@ -162,30 +162,18 @@ func lookup(name string) *command {
 	return nil
 }
 
-// usageError reports a usage error of c together with its synopsis and returns ExitUsage.
-func (a *app) usageError(c *command, msg string) int {
-	if a.json {
-		return a.fail(ExitUsage, "usage", c.name+": "+msg)
-	}
-	fmt.Fprintln(a.stderr, "wikictl: "+c.name+": "+msg)
-	fmt.Fprintln(a.stderr, "Usage: "+synopsis(c))
-	fmt.Fprintf(a.stderr, "Run \"wikictl help %s\" for details.\n", c.name)
-	return ExitUsage
-}
-
 // parseFlags parses args into fs and checks the number of positional
-// arguments against c. On failure it reports through usageError and returns
-// ok=false with the exit code.
-func (a *app) parseFlags(c *command, fs *flag.FlagSet, args []string) (rest []string, code int, ok bool) {
+// arguments against c. It returns a usageError of c on failure.
+func parseFlags(c *command, fs *flag.FlagSet, args []string) ([]string, error) {
 	if err := fs.Parse(args); err != nil {
-		return nil, a.usageError(c, err.Error()), false
+		return nil, &usageError{c, err.Error()}
 	}
-	rest = fs.Args()
+	rest := fs.Args()
 	if len(rest) < c.minArgs {
-		return nil, a.usageError(c, "missing argument"), false
+		return nil, &usageError{c, "missing argument"}
 	}
 	if c.maxArgs >= 0 && len(rest) > c.maxArgs {
-		return nil, a.usageError(c, "too many arguments: "+strings.Join(rest[c.maxArgs:], " ")), false
+		return nil, &usageError{c, "too many arguments: " + strings.Join(rest[c.maxArgs:], " ")}
 	}
-	return rest, ExitOK, true
+	return rest, nil
 }
