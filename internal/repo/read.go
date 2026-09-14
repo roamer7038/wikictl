@@ -89,22 +89,10 @@ func (r *Repo) Files(dirs []string) ([]string, error) {
 	return res, nil
 }
 
-// Fold maps every rune of s to the smallest rune of its simple Unicode case
-// folding orbit, so that strings.Contains(Fold(s), Fold(word)) matches word
-// in s ignoring case, non-ASCII letters included.
-func Fold(s string) string { return strings.Map(foldRune, s) }
-
-func foldRune(r rune) rune {
-	m := r
-	for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
-		m = min(m, f)
-	}
-	return m
-}
-
-// FoldPattern turns word into an extended regular expression matching the
-// same text as Fold. A rune with other case forms becomes an alternation of
-// all of them, so the match does not depend on the locale git runs in.
+// FoldPattern turns word into an extended regular expression matching word
+// ignoring case, non-ASCII letters included. A rune with other case forms
+// becomes an alternation of all of them, so the match does not depend on the
+// locale git runs in.
 func FoldPattern(word string) string {
 	var b strings.Builder
 	for i := 0; i < len(word); {
@@ -125,7 +113,7 @@ func FoldPattern(word string) string {
 }
 
 // Grep returns the pages under dirs that contain the words as fixed strings,
-// ignoring case as Fold does. With all set, a page must contain every word
+// ignoring case as FoldPattern does. With all set, a page must contain every word
 // (--all-match).
 func (r *Repo) Grep(words []string, all bool, dirs []string) ([]string, error) {
 	head, err := r.Head()
@@ -153,15 +141,16 @@ func (r *Repo) Grep(words []string, all bool, dirs []string) ([]string, error) {
 
 // GrepRecords runs "git grep -I -z" with flags and the patterns, each given
 // with -e, on the files under dirs at the commit that reads use, and returns
-// one record per entry of the output, its fields split at NUL: a path with -l
-// or -L, a path and a count with -c, and otherwise a path, a line number and
-// the line. No match is not an error.
+// one record per entry of the output: a path with -l or -L, a path and a count
+// with -c, and otherwise a path, a line number and the line. Color and column
+// output are turned off whatever the git configuration says. No match is not
+// an error.
 func (r *Repo) GrepRecords(flags, patterns, dirs []string) ([][]string, error) {
 	head, err := r.Head()
 	if err != nil || head == "" {
 		return nil, err
 	}
-	args := append([]string{"grep", "-I", "-z"}, flags...)
+	args := append([]string{"grep", "-I", "-z", "--no-color", "--no-column"}, flags...)
 	for _, p := range patterns {
 		args = append(args, "-e", p)
 	}
@@ -173,17 +162,26 @@ func (r *Repo) GrepRecords(flags, patterns, dirs []string) ([][]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	sep := "\n"
-	if slices.Contains(flags, "-l") || slices.Contains(flags, "-L") {
-		sep = "\x00"
+	// A path ends with NUL, and the last field of a record with a newline; a
+	// path may contain a newline, but a line cannot.
+	fields := 3
+	switch {
+	case slices.Contains(flags, "-l") || slices.Contains(flags, "-L"):
+		fields = 1
+	case slices.Contains(flags, "-c"):
+		fields = 2
 	}
 	prefix := r.readRef() + ":"
 	var res [][]string
-	for e := range strings.SplitSeq(out, sep) {
-		if e == "" {
-			continue
+	for out != "" {
+		f := make([]string, fields)
+		for i := range f {
+			sep := "\x00"
+			if i > 0 && i == fields-1 {
+				sep = "\n"
+			}
+			f[i], out, _ = strings.Cut(out, sep)
 		}
-		f := strings.SplitN(e, "\x00", 3)
 		f[0] = strings.TrimPrefix(f[0], prefix)
 		res = append(res, f)
 	}

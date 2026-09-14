@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"slices"
@@ -31,15 +32,15 @@ func grepFlags(a *app, fs *pflag.FlagSet) {
 	fs.BoolVarP(&a.ignoreCase, "ignore-case", "i", false, "ignore case; letters other than ASCII only with -F")
 	fs.BoolVarP(&a.filesWith, "files-with-matches", "l", false, "print only the paths of the files with a matching line")
 	fs.BoolVarP(&a.filesWithout, "files-without-match", "L", false, "print only the paths of the files without a matching line")
-	fs.BoolVarP(&a.countLines, "count", "c", false, "print the number of matching lines of each file")
+	fs.BoolVarP(&a.countLines, "count", "c", false, "print the number of matching lines of each file that has one")
 	fs.BoolVarP(&a.lineNumber, "line-number", "n", false, "print the line number before each line")
 	fs.BoolVarP(&a.word, "word-regexp", "w", false, "match whole words only")
 	fs.BoolVarP(&a.invert, "invert-match", "v", false, "select the lines that do not match")
-	fs.BoolVarP(&a.quiet, "quiet", "q", false, "print nothing; the exit code tells whether a line matched")
+	fs.BoolVarP(&a.quiet, "quiet", "q", false, "print nothing, also with --json; the exit code tells whether anything was selected")
 	fs.BoolVarP(&a.extended, "extended-regexp", "E", false, "read the patterns as extended regular expressions")
 	fs.BoolVarP(&a.fixed, "fixed-strings", "F", false, "read the patterns as fixed strings")
 	fs.StringArrayVarP(&a.patterns, "regexp", "e", nil, "search for `pattern`; may be given more than once")
-	fs.BoolVar(&a.allMatch, "all-match", false, "with several -e, select only the files that match every pattern")
+	fs.BoolVar(&a.allMatch, "all-match", false, "with several -e, select only the files that match every pattern; not with -L")
 }
 
 // grepArgs splits the positional arguments of grep into the patterns and the
@@ -55,15 +56,20 @@ func (a *app) grepArgs(args []string) (patterns, paths []string) {
 }
 
 func (a *app) checkGrep(c *command, args []string) error {
-	if patterns, _ := a.grepArgs(args); len(patterns) == 0 {
+	switch patterns, _ := a.grepArgs(args); {
+	case len(patterns) == 0:
 		return &usageError{c, "missing pattern"}
+	case a.extended && a.fixed:
+		return &usageError{c, "-E and -F cannot be combined"}
+	case a.filesWithout && a.allMatch:
+		return &usageError{c, "-L and --all-match cannot be combined"}
 	}
 	return nil
 }
 
 // cmdGrep searches the files under the paths with git grep, taking the options
-// of GNU grep. It exits with 0 when a line matches, 1 when none does, and 2
-// when a path does not exist.
+// of GNU grep. It exits with 0 when anything is selected, 1 when nothing is,
+// and 2 when a path does not exist, unless -q selected anything.
 func (a *app) cmdGrep(c *command, args []string) error {
 	patterns, paths := a.grepArgs(args)
 	paths, err := cleanPaths(paths)
@@ -88,6 +94,8 @@ func (a *app) cmdGrep(c *command, args []string) error {
 		flags = append(flags, "-F")
 	case a.extended:
 		flags = append(flags, "-E")
+	default:
+		flags = append(flags, "-G")
 	}
 	if a.ignoreCase && !a.fixed {
 		flags = append(flags, "-i")
@@ -102,19 +110,29 @@ func (a *app) cmdGrep(c *command, args []string) error {
 		flags = append(flags, "--all-match")
 	}
 	switch {
-	case a.filesWith || a.quiet:
+	case a.filesWith:
 		flags = append(flags, "-l")
 	case a.filesWithout:
 		flags = append(flags, "-L")
 	case a.countLines:
 		flags = append(flags, "-c")
+	case a.quiet:
+		flags = append(flags, "-l")
 	default:
 		flags = append(flags, "-n")
 	}
 	search := slices.DeleteFunc(slices.Clone(paths), func(p string) bool { return slices.Contains(missing, p) })
 	var records [][]string
 	if len(paths) == 0 || len(search) > 0 {
-		if records, err = a.repo.GrepRecords(flags, patterns, search); err != nil {
+		records, err = a.repo.GrepRecords(flags, patterns, search)
+		// git reports a pattern that does not compile as "fatal: -e option, '<pattern>': <reason>".
+		var ge *repo.GitError
+		if errors.As(err, &ge) {
+			if _, reason, ok := strings.Cut(ge.Stderr, "fatal: -e option, '"); ok {
+				return &usageError{c, "invalid pattern: '" + strings.TrimSpace(reason)}
+			}
+		}
+		if err != nil {
 			return &gitError{err}
 		}
 	}
@@ -140,15 +158,15 @@ func (a *app) cmdGrep(c *command, args []string) error {
 			}
 		}
 	}
-	a.emit(map[string]any{"items": items}, func(w io.Writer) {
-		if !a.quiet {
-			io.WriteString(w, text.String())
-		}
-	})
+	if !a.quiet {
+		a.emit(map[string]any{"items": items}, func(w io.Writer) { io.WriteString(w, text.String()) })
+	}
 	for _, p := range missing {
 		fmt.Fprintf(a.stderr, "wikictl: %s: no such file or directory\n", escapeControl(p))
 	}
 	switch {
+	case a.quiet && len(items) > 0:
+		return nil
 	case len(missing) > 0:
 		return exitStatus(ExitUsage)
 	case len(items) == 0:
