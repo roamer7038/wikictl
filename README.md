@@ -33,7 +33,7 @@ flowchart LR
 | Server over SSH | `ssh://you@server.example/srv/git/wiki.git` |
 | Local directory | `/home/you/wiki.git` |
 
-Do not write a password or token in `repo`, as in `https://user:token@github.com/you/wiki.git`: git saves the URL in the mirror's configuration as it is. Use an HTTPS URL without credentials together with a git credential helper, or an SSH URL with an SSH agent. When `repo` does hold credentials, wikictl hides them in its output: the user info part (`user:token@`) of an HTTPS or other URL becomes `***@` in `context` and in git error messages. For SSH URLs, including the `user@host:path` form, only a user information with a password is hidden; a plain user name such as `git@` is shown, because it is not a secret and tells which account is used.
+Do not write a password or token in `repo`, as in `https://user:token@github.com/you/wiki.git`: git saves the URL in the mirror's configuration as it is. Use an HTTPS URL without credentials together with a git credential helper, or an SSH URL with an SSH agent. When `repo` does hold credentials, wikictl hides them in its output: the user info part (`user:token@`) of an HTTPS or other URL becomes `***@` in `context` and in git error messages. For SSH URLs, including the `user@host:path` form, only user info that includes a password is hidden; a plain user name such as `git@` is shown, because it is not a secret and tells which account is used.
 
 On a server or in a local directory, create an empty bare repository, specifying the initial branch:
 
