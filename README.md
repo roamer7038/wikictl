@@ -97,7 +97,7 @@ Body. Link to other pages with relative paths: [index](index.md).
 
 - Frontmatter keys that wikictl interprets: `summary` (or `description`), `type`, `tags`, `aliases` and `status: deprecated`, which hides the page from `search` and `ls`.
 - Write links to pages as `[text](path)`, so that `mv` can rewrite them.
-- Give each directory an `index.md` whose `summary` states what the directory holds, and link the other pages to it with `- part_of: [index](index.md)`. `wikictl dirs` shows these summaries, and `wikictl get <dir>/index.md` lists the pages as backlinks.
+- Give each directory an `index.md` whose `summary` states what the directory holds, and link the other pages to it with `- part_of: [index](index.md)`. `wikictl dirs` shows these summaries, and `wikictl links -i <dir>/index.md` lists the pages that link to it.
 - Names made of lowercase ASCII letters, digits and hyphens are recommended.
 
 `wikictl help lint` describes the format rules in detail.

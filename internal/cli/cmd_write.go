@@ -34,7 +34,7 @@ func (a *app) commit(changes []repo.Change, msg, rerun string) (*repo.Result, er
 }
 
 func putFlags(a *app, fs *pflag.FlagSet) {
-	fs.StringVar(&a.base, "base", "", "blob `sha` of the existing page as printed by get; omit for a new page")
+	fs.StringVar(&a.base, "base", "", "blob `sha` of the existing page as printed by stat; omit for a new page")
 	msgFlag(a, fs)
 }
 
