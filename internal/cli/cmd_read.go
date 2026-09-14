@@ -288,8 +288,8 @@ func (a *app) cmdContext(c *command, args []string) int {
 		pages[d] = countPagesUnder(paths, d)
 	}
 	out := map[string]any{"config": a.cfg.Path, "profile": a.cfg.Profile, "profile_source": a.cfg.ProfileSource,
-		"repo": a.cfg.Repo, "mirror": a.repo.Dir, "branch": a.repo.Branch, "author": au.Name,
-		"machine": machine, "project": project, "remote": remote, "dirs": a.dirs, "pages": pages}
+		"repo": repo.RedactURL(a.cfg.Repo), "mirror": a.repo.Dir, "branch": a.repo.Branch, "author": au.Name,
+		"machine": machine, "project": project, "remote": repo.RedactURL(remote), "dirs": a.dirs, "pages": pages}
 	a.emit(out, func(w io.Writer) {
 		for _, k := range []string{"config", "profile", "profile_source", "repo", "mirror", "branch", "author", "machine", "project", "remote"} {
 			fmt.Fprintf(w, "%s: %v\n", k, out[k])

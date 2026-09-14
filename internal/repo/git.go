@@ -18,8 +18,14 @@ type GitError struct {
 	Err    error
 }
 
+// Error shows the arguments and stderr with the credentials in URLs redacted
+// by RedactURL.
 func (e *GitError) Error() string {
-	return fmt.Sprintf("git %s: %v: %s", strings.Join(e.Args, " "), e.Err, strings.TrimSpace(e.Stderr))
+	args := make([]string, len(e.Args))
+	for i, a := range e.Args {
+		args[i] = RedactURL(a)
+	}
+	return fmt.Sprintf("git %s: %v: %s", strings.Join(args, " "), e.Err, redactText(strings.TrimSpace(e.Stderr)))
 }
 
 func (e *GitError) Unwrap() error { return e.Err }
