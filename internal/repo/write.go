@@ -7,6 +7,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -68,18 +69,17 @@ func (r *Repo) Commit(changes []Change, msg string, au Author) (*Result, error) 
 		if err != nil {
 			return nil, err
 		}
+		shas, err := r.baseSHAs(head, changes)
+		if err != nil {
+			return nil, err
+		}
 		for _, c := range changes {
 			if c.Base == nil {
 				continue
 			}
-			cur, err := r.BlobSHA(head, c.Path)
-			if err != nil {
-				return nil, err
-			}
-			if *c.Base == "" && cur != "" {
+			if cur := shas[c.Path]; *c.Base == "" && cur != "" {
 				return nil, r.conflict(c.Path, "exists", cur)
-			}
-			if *c.Base != "" && cur != *c.Base {
+			} else if *c.Base != "" && cur != *c.Base {
 				return nil, r.conflict(c.Path, "changed", cur)
 			}
 		}
@@ -94,6 +94,36 @@ func (r *Repo) Commit(changes []Change, msg string, au Author) (*Result, error) 
 		wait = time.Since(start)
 	}
 	return nil, last
+}
+
+// baseSHAs returns the object sha at commit head of each path of the changes
+// that have a Base, from one "ls-tree"; a directory has the sha of its tree,
+// so that writing over it is a conflict. An absent path has no entry. ls-tree
+// fails when a tree on the way to a path cannot be read.
+func (r *Repo) baseSHAs(head string, changes []Change) (map[string]string, error) {
+	res := map[string]string{}
+	args := []string{"ls-tree", "-z", head, "--"}
+	seen := map[string]bool{}
+	for _, c := range changes {
+		if c.Base != nil && !seen[c.Path] {
+			seen[c.Path] = true
+			args = append(args, c.Path)
+		}
+	}
+	if head == "" || len(seen) == 0 {
+		return res, nil
+	}
+	out, err := r.Git(args...)
+	if err != nil {
+		return nil, err
+	}
+	for entry := range strings.SplitSeq(out, "\x00") {
+		meta, p, ok := strings.Cut(entry, "\t")
+		if f := strings.Fields(meta); ok && len(f) == 3 {
+			res[p] = f[2]
+		}
+	}
+	return res, nil
 }
 
 // retryWait returns a random duration in [0, 2^(attempt+3)*d), where d is
@@ -149,6 +179,29 @@ func (r *Repo) buildAndPush(head string, changes []Change, msg string, au Author
 	} else if _, err := git(nil, "read-tree", "--empty"); err != nil {
 		return nil, false, err
 	}
+	// The contents are written to files so that one hash-object stores them
+	// all; --no-filters stores them as given, whatever the attributes say.
+	var files []string
+	for i, c := range changes {
+		if c.Delete {
+			continue
+		}
+		f := filepath.Join(idxDir, strconv.Itoa(i))
+		if err := os.WriteFile(f, c.Content, 0o600); err != nil {
+			return nil, false, err
+		}
+		files = append(files, f)
+	}
+	var blobs []string
+	if len(files) > 0 {
+		out, err := git([]byte(strings.Join(files, "\n")+"\n"), "hash-object", "-w", "--no-filters", "--stdin-paths")
+		if err != nil {
+			return nil, false, err
+		}
+		if blobs = strings.Fields(out); len(blobs) != len(files) {
+			return nil, false, fmt.Errorf("hash-object printed %d object names for %d files", len(blobs), len(files))
+		}
+	}
 	shas := map[string]string{}
 	var info bytes.Buffer
 	for _, c := range changes {
@@ -157,13 +210,8 @@ func (r *Repo) buildAndPush(head string, changes []Change, msg string, au Author
 			fmt.Fprintf(&info, "0 %s\t%s\x00", zeroSHA, c.Path)
 			continue
 		}
-		out, err := git(c.Content, "hash-object", "-w", "--stdin")
-		if err != nil {
-			return nil, false, err
-		}
-		sha := strings.TrimSpace(out)
-		shas[c.Path] = sha
-		fmt.Fprintf(&info, "100644 %s\t%s\x00", sha, c.Path)
+		shas[c.Path], blobs = blobs[0], blobs[1:]
+		fmt.Fprintf(&info, "100644 %s\t%s\x00", shas[c.Path], c.Path)
 	}
 	if _, err := git(info.Bytes(), "update-index", "-z", "--index-info"); err != nil {
 		return nil, false, err
