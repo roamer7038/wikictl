@@ -2,7 +2,6 @@ package cli
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"path"
@@ -10,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/spf13/pflag"
 
 	ctx "github.com/roamer7038/wikictl/internal/context"
 	"github.com/roamer7038/wikictl/internal/page"
@@ -22,12 +23,6 @@ type hit struct {
 	Title   string   `json:"title"`
 	Matched []string `json:"matched"`
 	Updated string   `json:"updated"`
-}
-
-type searchOpts struct {
-	any bool
-	n   positiveInt
-	all bool
 }
 
 // positiveInt is an int flag value that rejects values below 1, so that the
@@ -48,26 +43,21 @@ func (v *positiveInt) Set(s string) error {
 	return nil
 }
 
-func searchFlags(fs *flag.FlagSet) *searchOpts {
-	o := &searchOpts{n: 20}
-	fs.BoolVar(&o.any, "any", false, "match pages containing any of the words instead of all of them")
-	fs.Var(&o.n, "n", "show at most `N` results; N must be at least 1")
-	fs.BoolVar(&o.all, "all", false, "include pages with status: deprecated")
-	return o
+func (v *positiveInt) Type() string { return "int" }
+
+func searchFlags(a *app, fs *pflag.FlagSet) {
+	a.n = 20
+	fs.BoolVar(&a.any, "any", false, "match pages containing any of the words instead of all of them")
+	fs.VarP(&a.n, "number", "n", "show at most `N` results; N must be at least 1")
+	fs.BoolVar(&a.all, "all", false, "include pages with status: deprecated")
 }
 
-func (a *app) cmdSearch(c *command, args []string) error {
-	fs := newFlagSet(c.name)
-	o := searchFlags(fs)
-	words, err := parseFlags(c, fs, args)
-	if err != nil {
-		return err
-	}
-	paths, err := a.repo.Grep(words, !o.any, a.dirs)
+func (a *app) cmdSearch(c *command, words []string) error {
+	paths, err := a.repo.Grep(words, !a.any, a.dirs)
 	if err != nil {
 		return &gitError{err}
 	}
-	if !o.all {
+	if !a.all {
 		dep, err := a.repo.GrepDeprecated(a.dirs)
 		if err != nil {
 			return &gitError{err}
@@ -98,7 +88,7 @@ func (a *app) cmdSearch(c *command, args []string) error {
 		hits = append(hits, hit{Path: p, Summary: pg.Summary, Title: pg.Title, Matched: matched, Updated: fmtTime(updated[p])})
 	}
 	sort.SliceStable(hits, func(i, j int) bool {
-		if o.any && len(hits[i].Matched) != len(hits[j].Matched) {
+		if a.any && len(hits[i].Matched) != len(hits[j].Matched) {
 			return len(hits[i].Matched) > len(hits[j].Matched)
 		}
 		if hits[i].Updated != hits[j].Updated {
@@ -106,7 +96,7 @@ func (a *app) cmdSearch(c *command, args []string) error {
 		}
 		return hits[i].Path < hits[j].Path
 	})
-	if n := int(o.n); len(hits) > n {
+	if n := int(a.n); len(hits) > n {
 		hits = hits[:n]
 	}
 	a.emit(map[string]any{"items": hits}, func(w io.Writer) {
@@ -288,30 +278,18 @@ type lsItem struct {
 	Updated string `json:"updated"`
 }
 
-type lsOpts struct {
-	typ, tag string
-	all      bool
-}
-
-func lsFlags(fs *flag.FlagSet) *lsOpts {
-	o := &lsOpts{}
-	fs.StringVar(&o.typ, "type", "", "only pages with this `type` in the frontmatter")
-	fs.StringVar(&o.tag, "tag", "", "only pages tagged `tag`")
-	fs.BoolVar(&o.all, "all", false, "include pages with status: deprecated")
-	return o
+func lsFlags(a *app, fs *pflag.FlagSet) {
+	fs.StringVar(&a.typ, "type", "", "only pages with this `type` in the frontmatter")
+	fs.StringVar(&a.tag, "tag", "", "only pages tagged `tag`")
+	fs.BoolVar(&a.all, "all", false, "include pages with status: deprecated")
 }
 
 func (a *app) cmdLs(c *command, args []string) error {
-	fs := newFlagSet(c.name)
-	o := lsFlags(fs)
-	if _, err := parseFlags(c, fs, args); err != nil {
-		return err
-	}
 	paths, err := a.repo.List(a.dirs)
 	if err != nil {
 		return &gitError{err}
 	}
-	if !o.all {
+	if !a.all {
 		dep, err := a.repo.GrepDeprecated(a.dirs)
 		if err != nil {
 			return &gitError{err}
@@ -330,10 +308,10 @@ func (a *app) cmdLs(c *command, args []string) error {
 	for _, p := range paths {
 		pg := pages.parse(p)
 		t, _ := pg.Frontmatter["type"].(string)
-		if o.typ != "" && t != o.typ {
+		if a.typ != "" && t != a.typ {
 			continue
 		}
-		if o.tag != "" && !hasTag(pg.Frontmatter, o.tag) {
+		if a.tag != "" && !hasTag(pg.Frontmatter, a.tag) {
 			continue
 		}
 		items = append(items, lsItem{p, pg.Summary, pg.Title, t, fmtTime(updated[p])})

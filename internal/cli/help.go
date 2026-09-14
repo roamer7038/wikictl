@@ -1,12 +1,12 @@
 package cli
 
 import (
-	"flag"
 	"fmt"
 	"io"
 	"runtime/debug"
-	"strings"
 	"text/tabwriter"
+
+	"github.com/spf13/pflag"
 )
 
 // version is set at build time:
@@ -66,8 +66,8 @@ func printUsage(w io.Writer) {
 	fmt.Fprintf(tw, "  %s\t%s\n", "help", "Show help for a command")
 	tw.Flush()
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, "Command flags must come before the arguments: \"wikictl search -n 5 lease\".")
-	fmt.Fprintln(w, "A flag after an argument is taken as an argument.")
+	fmt.Fprintln(w, "Flags may come before or after the arguments. Every argument after -- is an")
+	fmt.Fprintln(w, "argument, even if it starts with -.")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Global flags (before or after the command):")
 	fs := newFlagSet("wikictl")
@@ -93,7 +93,7 @@ func printCommandHelp(w io.Writer, c *command) {
 	fmt.Fprintln(w, c.detail)
 	if c.flags != nil {
 		fs := newFlagSet(c.name)
-		c.flags(fs)
+		c.flags(&app{}, fs)
 		fmt.Fprintln(w)
 		fmt.Fprintln(w, "Flags:")
 		printFlags(w, fs)
@@ -112,15 +112,15 @@ func synopsis(c *command) string {
 	return s
 }
 
-// printFlags lists the flags of fs as "--name <value>   usage (default x)".
-// A backquoted word in a usage string names the value, as flag.UnquoteUsage does.
-func printFlags(w io.Writer, fs *flag.FlagSet) {
+// printFlags lists the flags of fs as "-s, --name <value>   usage (default x)".
+// A backquoted word in a usage string names the value, as pflag.UnquoteUsage does.
+func printFlags(w io.Writer, fs *pflag.FlagSet) {
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
-	fs.VisitAll(func(f *flag.Flag) {
-		value, usage := flag.UnquoteUsage(f)
-		left := "-" + f.Name
-		if len(f.Name) > 1 {
-			left = "--" + f.Name
+	fs.VisitAll(func(f *pflag.Flag) {
+		value, usage := pflag.UnquoteUsage(f)
+		left := "--" + f.Name
+		if f.Shorthand != "" {
+			left = "-" + f.Shorthand + ", " + left
 		}
 		if value != "" {
 			left += " <" + value + ">"
@@ -133,27 +133,15 @@ func printFlags(w io.Writer, fs *flag.FlagSet) {
 	tw.Flush()
 }
 
-// newFlagSet returns a FlagSet that neither prints nor exits by itself;
-// callers report problems through usageError.
-func newFlagSet(name string) *flag.FlagSet {
-	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+// newFlagSet returns a FlagSet that neither prints nor exits by itself and
+// lists its flags in the order they were registered; callers report problems
+// through usageError.
+func newFlagSet(name string) *pflag.FlagSet {
+	fs := pflag.NewFlagSet(name, pflag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	fs.Usage = func() {}
+	fs.SortFlags = false
 	return fs
-}
-
-// wantsHelp reports whether args ask for help. Arguments after "--" are
-// never flags.
-func wantsHelp(args []string) bool {
-	for _, a := range args {
-		switch a {
-		case "--":
-			return false
-		case "-h", "--help", "-help":
-			return true
-		}
-	}
-	return false
 }
 
 func (a *app) cmdVersion() error {
@@ -167,7 +155,7 @@ func (a *app) cmdHelp(args []string) error {
 		return nil
 	}
 	switch args[0] {
-	case "help", "-h", "--help", "-help":
+	case "help":
 		fmt.Fprintln(a.stdout, "Usage: wikictl help [<command>]\n\nShow help for a command, or the list of commands.")
 		return nil
 	case "version":
@@ -189,20 +177,4 @@ func lookup(name string) *command {
 		}
 	}
 	return nil
-}
-
-// parseFlags parses args into fs and checks the number of positional
-// arguments against c. It returns a usageError of c on failure.
-func parseFlags(c *command, fs *flag.FlagSet, args []string) ([]string, error) {
-	if err := fs.Parse(args); err != nil {
-		return nil, &usageError{c, err.Error()}
-	}
-	rest := fs.Args()
-	if len(rest) < c.minArgs {
-		return nil, &usageError{c, "missing argument"}
-	}
-	if c.maxArgs >= 0 && len(rest) > c.maxArgs {
-		return nil, &usageError{c, "too many arguments: " + strings.Join(rest[c.maxArgs:], " ")}
-	}
-	return rest, nil
 }

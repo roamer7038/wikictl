@@ -2,11 +2,12 @@ package cli
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"path"
 	"strings"
+
+	"github.com/spf13/pflag"
 
 	"github.com/roamer7038/wikictl/internal/page"
 	"github.com/roamer7038/wikictl/internal/repo"
@@ -31,31 +32,18 @@ func (a *app) commit(changes []repo.Change, msg, rerun string) (*repo.Result, er
 	return res, nil
 }
 
-type putOpts struct {
-	base string
-	msg  string
+func putFlags(a *app, fs *pflag.FlagSet) {
+	fs.StringVar(&a.base, "base", "", "blob `sha` of the existing page as printed by get; omit for a new page")
+	msgFlag(a, fs)
 }
 
-func putFlags(fs *flag.FlagSet) *putOpts {
-	o := &putOpts{}
-	fs.StringVar(&o.base, "base", "", "blob `sha` of the existing page as printed by get; omit for a new page")
-	fs.StringVar(&o.msg, "m", "", "commit `message`")
-	return o
-}
-
-// msgFlag registers the -m flag shared by mv and rm.
-func msgFlag(fs *flag.FlagSet) *string {
-	return fs.String("m", "", "commit `message`")
+// msgFlag registers the -m flag shared by the commands that commit.
+func msgFlag(a *app, fs *pflag.FlagSet) {
+	fs.StringVarP(&a.msg, "message", "m", "", "commit `message`")
 }
 
 func (a *app) cmdPut(c *command, args []string) error {
-	fs := newFlagSet(c.name)
-	o := putFlags(fs)
-	rest, err := parseFlags(c, fs, args)
-	if err != nil {
-		return err
-	}
-	p := rest[0]
+	p := args[0]
 	content, err := io.ReadAll(a.stdin)
 	if err != nil {
 		return err
@@ -77,11 +65,11 @@ func (a *app) cmdPut(c *command, args []string) error {
 	for _, is := range broken {
 		a.warn(is)
 	}
-	msg := o.msg
+	msg := a.msg
 	if msg == "" {
 		msg = "wikictl: put " + p
 	}
-	base := o.base
+	base := a.base
 	res, err := a.commit([]repo.Change{{Path: p, Content: content, Base: &base}}, msg, "")
 	if err != nil {
 		return err
@@ -97,13 +85,7 @@ func (a *app) warn(is page.Issue) {
 }
 
 func (a *app) cmdRm(c *command, args []string) error {
-	fs := newFlagSet(c.name)
-	msg := msgFlag(fs)
-	rest, err := parseFlags(c, fs, args)
-	if err != nil {
-		return err
-	}
-	p := rest[0]
+	p := args[0]
 	if err := page.CheckPath(p); err != nil {
 		return &invalidError{"bad_path: " + err.Error()}
 	}
@@ -114,11 +96,12 @@ func (a *app) cmdRm(c *command, args []string) error {
 	if contents[p] == nil {
 		return a.notFound(p)
 	}
-	if *msg == "" {
-		*msg = "wikictl: rm " + p
+	msg := a.msg
+	if msg == "" {
+		msg = "wikictl: rm " + p
 	}
 	base := shas[p]
-	res, err := a.commit([]repo.Change{{Path: p, Delete: true, Base: &base}}, *msg, "rm")
+	res, err := a.commit([]repo.Change{{Path: p, Delete: true, Base: &base}}, msg, "rm")
 	if err != nil {
 		return err
 	}
@@ -127,16 +110,10 @@ func (a *app) cmdRm(c *command, args []string) error {
 }
 
 func (a *app) cmdMv(c *command, args []string) error {
-	fs := newFlagSet(c.name)
-	msg := msgFlag(fs)
-	rest, err := parseFlags(c, fs, args)
-	if err != nil {
-		return err
-	}
-	from, to := rest[0], rest[1]
+	from, to := args[0], args[1]
 	fromDir, toDir := strings.HasSuffix(from, "/"), strings.HasSuffix(to, "/")
 	if fromDir && toDir {
-		return a.mvDir(strings.TrimSuffix(from, "/"), strings.TrimSuffix(to, "/"), *msg)
+		return a.mvDir(strings.TrimSuffix(from, "/"), strings.TrimSuffix(to, "/"), a.msg)
 	}
 	if fromDir || toDir {
 		return &usageError{c, "to move a directory, end both arguments with /"}
@@ -176,10 +153,11 @@ func (a *app) cmdMv(c *command, args []string) error {
 			}
 		}
 	}
-	if *msg == "" {
-		*msg = "wikictl: mv " + from + " " + to
+	msg := a.msg
+	if msg == "" {
+		msg = "wikictl: mv " + from + " " + to
 	}
-	res, err := a.commit(changes, *msg, "mv")
+	res, err := a.commit(changes, msg, "mv")
 	if err != nil {
 		return err
 	}

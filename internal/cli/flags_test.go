@@ -3,39 +3,9 @@ package cli
 import (
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 )
-
-func TestSplitCommon(t *testing.T) {
-	cmd := newFlagSet("put")
-	putFlags(cmd)
-	cmd.Bool("any", false, "")
-	cases := []struct {
-		in, rest, common []string
-	}{
-		{[]string{"json", "config", "x", "--json"}, []string{"json", "config", "x"}, []string{"--json"}},
-		{[]string{"-m", "json", "a"}, []string{"-m", "json", "a"}, nil},
-		{[]string{"-m", "--json", "a"}, []string{"-m", "--json", "a"}, nil},
-		{[]string{"--base=s", "-m", "--dirs", "a", "--dirs", "x"}, []string{"--base=s", "-m", "--dirs", "a"}, []string{"--dirs", "x"}},
-		{[]string{"--any", "--json", "a"}, []string{"--any", "a"}, []string{"--json"}},
-		{[]string{"a", "-m", "--json"}, []string{"a", "-m"}, []string{"--json"}},
-		{[]string{"-m"}, []string{"-m"}, nil},
-		{[]string{"a", "--json", "b"}, []string{"a", "b"}, []string{"--json"}},
-		{[]string{"--dirs", "x,y", "a", "-no-fetch"}, []string{"a"}, []string{"--dirs", "x,y", "-no-fetch"}},
-		{[]string{"--config=c.yaml", "--version"}, nil, []string{"--config=c.yaml", "--version"}},
-		{[]string{"--any", "--", "--json"}, []string{"--any", "--", "--json"}, nil},
-		{[]string{"--dirs"}, []string{"--dirs"}, nil},
-		{[]string{"a", "--profile", "work", "--profile=home"}, []string{"a"}, []string{"--profile", "work", "--profile=home"}},
-	}
-	for _, c := range cases {
-		rest, common := splitCommon(c.in, cmd)
-		if !reflect.DeepEqual(rest, c.rest) || !reflect.DeepEqual(common, c.common) {
-			t.Errorf("%v: rest=%v common=%v", c.in, rest, common)
-		}
-	}
-}
 
 // Words without a leading dash, such as "json" or "config", are arguments or
 // flag values, not global flags.
@@ -72,15 +42,102 @@ func TestBareWordsAreNotGlobalFlags(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("put -m json: code=%d %s", code, errs)
 	}
-	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
-	out, err := exec.Command("git", "--git-dir", remote, "log", "-1", "--format=%s", "main").Output()
-	if err != nil || strings.TrimSpace(string(out)) != "json" {
-		t.Errorf("commit message: %q %v", out, err)
+	if got := lastCommitMessage(t, cfg); got != "json" {
+		t.Errorf("commit message: %q", got)
 	}
 }
 
-func TestWantsHelp(t *testing.T) {
-	if !wantsHelp([]string{"x", "--help"}) || wantsHelp([]string{"--", "-h"}) || wantsHelp([]string{"x"}) {
-		t.Error("wantsHelp")
+// Global and command flags may follow the positional arguments, and every
+// argument after "--" is positional.
+func TestFlagsAfterArguments(t *testing.T) {
+	cfg := setup(t)
+	var res struct{ Items []struct{ Path string } }
+	code, out, errs := runCLI(t, cfg, "", "search", "lease", "--dirs", "global,projects/app", "--json", "-n", "1")
+	if code != 0 {
+		t.Fatalf("search with flags after the word: code=%d %s", code, errs)
 	}
+	mustUnmarshal(t, out, &res)
+	if len(res.Items) != 1 {
+		t.Errorf("search -n 1 after the word: %s", out)
+	}
+	code, _, errs = runCLI(t, cfg, "---\nsummary: k\n---\n# k\n", "put", "global/k.md", "--message", "after")
+	if code != 0 {
+		t.Fatalf("put with -m after the path: code=%d %s", code, errs)
+	}
+	if got := lastCommitMessage(t, cfg); got != "after" {
+		t.Errorf("commit message: %q", got)
+	}
+	// "--any" after "--" is a search word that no page contains.
+	res.Items = nil
+	code, out, errs = runCLI(t, cfg, "", "search", "--json", "--dirs", "global", "--", "lease", "--any")
+	if code != 0 {
+		t.Fatalf("search -- lease --any: code=%d %s", code, errs)
+	}
+	mustUnmarshal(t, out, &res)
+	if len(res.Items) != 0 {
+		t.Errorf("search -- lease --any: %s", out)
+	}
+	for _, args := range [][]string{{"search", "-json", "lease"}, {"search", "lease", "--bogus"}} {
+		if code, _, errs := runCLI(t, cfg, "", args...); code != ExitUsage || !strings.Contains(errs, "Usage: wikictl search") {
+			t.Errorf("%v: code=%d errs=%q", args, code, errs)
+		}
+	}
+	for _, args := range [][]string{{"search", "--number", "1"}, {"search", "-n1"}, {"search", "-n=1"}} {
+		res.Items = nil
+		code, out, errs := runCLI(t, cfg, "", append(args, "--json", "lease")...)
+		if code != 0 {
+			t.Fatalf("%v: code=%d %s", args, code, errs)
+		}
+		if mustUnmarshal(t, out, &res); len(res.Items) != 1 {
+			t.Errorf("%v: %s", args, out)
+		}
+	}
+}
+
+// A --json that follows the flag in error still selects JSON for the usage
+// error, unless it is the value of a flag or comes after "--".
+func TestUsageErrorJSONAfterTheError(t *testing.T) {
+	for _, args := range [][]string{
+		{"search", "--bogus", "--json"},
+		{"search", "-n", "0", "--json", "x"},
+		{"--bogus", "--json", "search"},
+		{"help", "--bogus", "--json"},
+	} {
+		if code, out, _ := runNoConfig(t, args...); code != ExitUsage || !strings.HasPrefix(out, `{"error":"usage"`) {
+			t.Errorf("%v: code=%d out=%q", args, code, out)
+		}
+	}
+	for _, args := range [][]string{
+		{"put", "--bogus", "-m", "--json", "global/x.md"},
+		{"search", "--bogus", "--", "--json"},
+	} {
+		if code, out, errs := runNoConfig(t, args...); code != ExitUsage || out != "" || !strings.Contains(errs, "Usage: wikictl") {
+			t.Errorf("%v: code=%d out=%q errs=%q", args, code, out, errs)
+		}
+	}
+}
+
+func TestHelpAndVersionFlags(t *testing.T) {
+	if code, out, _ := runNoConfig(t, "help", "search", "-h"); code != ExitOK || !strings.Contains(out, "Usage: wikictl search") {
+		t.Errorf("help search -h: code=%d out=%q", code, out)
+	}
+	if code, out, _ := runNoConfig(t, "help", "-h"); code != ExitOK || !strings.Contains(out, "Usage: wikictl help") {
+		t.Errorf("help -h: code=%d out=%q", code, out)
+	}
+	if code, out, _ := runNoConfig(t, "search", "x", "--version"); code != ExitOK || !strings.HasPrefix(out, "wikictl ") {
+		t.Errorf("search x --version: code=%d out=%q", code, out)
+	}
+	if code, _, errs := runNoConfig(t, "put", "global/x.md", "-m"); code != ExitUsage || !strings.Contains(errs, "needs an argument") {
+		t.Errorf("put -m without a value: code=%d errs=%q", code, errs)
+	}
+}
+
+func lastCommitMessage(t *testing.T, cfg string) string {
+	t.Helper()
+	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
+	out, err := exec.Command("git", "--git-dir", remote, "log", "-1", "--format=%s", "main").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(string(out))
 }
