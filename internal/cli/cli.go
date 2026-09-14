@@ -168,6 +168,22 @@ in the same way.
 Output: {path, sha, commit}; with -v, text output is
 "<path><TAB><sha><TAB><commit>".`,
 		flags: putFlags, run: (*app).cmdPut},
+	{name: "edit", args: "<path>", minArgs: 1, maxArgs: 1, paths: true,
+		summary: "Edit a file in an editor and commit it",
+		detail: `Open the file in an editor and commit the result as put does, replacing the
+file only if it has not changed since it was opened; a file that does not exist
+starts empty. The editor is $VISUAL, else $EDITOR, else vi, run by the shell,
+so it may include arguments. Nothing is committed when the content is
+unchanged, which includes a new file left empty. When the result cannot be
+committed, because the file changed in the meantime (exit code 3), the content
+breaks the rules that put applies (exit code 4), or the editor fails (exit
+code 1), the edited content is kept in a temporary file whose path is printed
+on standard error. Standard input must be a terminal; otherwise the command
+exits with code 2. The default commit message is "wikictl: edit <path>".
+Nothing is printed on success unless -v is given.
+
+Output: {path, sha, commit}, printed only when the file is committed.`,
+		flags: editFlags, check: (*app).checkEdit, run: (*app).cmdEdit},
 	{name: "mv", args: "<src>... <dst>", minArgs: 1, maxArgs: -1,
 		summary: "Move or rename files and directories, rewriting links",
 		detail: `Move files and directories as mv does. With one source and a destination that

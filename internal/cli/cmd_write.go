@@ -58,11 +58,17 @@ func msgFlag(a *app, fs *pflag.FlagSet) {
 }
 
 func (a *app) cmdPut(c *command, args []string) error {
-	p := args[0]
 	content, err := io.ReadAll(a.stdin)
 	if err != nil {
 		return err
 	}
+	return a.writeFile(args[0], content, a.base, "put")
+}
+
+// writeFile checks content as put does and commits it as p, replacing the file
+// whose blob sha is base, or creating the file when base is empty. cmd names
+// the command in the default commit message.
+func (a *app) writeFile(p string, content []byte, base, cmd string) error {
 	if strings.HasSuffix(p, ".md") {
 		pg := page.Parse(p, content)
 		for _, is := range pg.Issues {
@@ -86,9 +92,8 @@ func (a *app) cmdPut(c *command, args []string) error {
 	}
 	msg := a.msg
 	if msg == "" {
-		msg = "wikictl: put " + p
+		msg = "wikictl: " + cmd + " " + p
 	}
-	base := a.base
 	res, err := a.commit([]repo.Change{{Path: p, Content: content, Base: &base}}, msg, "")
 	if err != nil {
 		return err
