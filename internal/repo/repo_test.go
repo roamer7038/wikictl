@@ -49,6 +49,39 @@ func run(t *testing.T, dir string, name string, args ...string) string {
 	return string(out)
 }
 
+// TestSnapshot checks that reads after Snapshot keep using the fixed commit
+// when a later fetch moves the tracking ref, and that Commit still builds on
+// the latest commit of the branch.
+func TestSnapshot(t *testing.T) {
+	remote := newRemote(t, true)
+	r := openFetched(t, remote)
+	if err := r.Snapshot(); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := r.Head()
+	seedRemote(t, remote, map[string]string{"global/new.md": "---\nsummary: n\n---\n# n\n"})
+	if err := r.Fetch(); err != nil {
+		t.Fatal(err)
+	}
+	if head, err := r.Head(); err != nil || head != before {
+		t.Errorf("Head after fetch: %s %v, want %s", head, err, before)
+	}
+	if list, err := r.List(nil); err != nil || strings.Contains(strings.Join(list, "\n"), "global/new.md") {
+		t.Errorf("List after fetch: %v %v", list, err)
+	}
+	if c, err := r.Cat([]string{"global/new.md"}); err != nil || c["global/new.md"] != nil {
+		t.Errorf("Cat after fetch: %v %v", c, err)
+	}
+	empty := ""
+	if _, err := r.Commit([]Change{{Path: "global/mine.md", Content: []byte("# m\n"), Base: &empty}}, "mine", Author{"a", "a@a"}); err != nil {
+		t.Fatal(err)
+	}
+	tree := run(t, "", "git", "--git-dir", remote, "ls-tree", "-r", "--name-only", "main")
+	if !strings.Contains(tree, "global/new.md") || !strings.Contains(tree, "global/mine.md") {
+		t.Errorf("Commit must build on the latest commit: %s", tree)
+	}
+}
+
 func openFetched(t *testing.T, remote string) *Repo {
 	t.Helper()
 	r, err := Open(filepath.Join(t.TempDir(), "m"), remote, "")

@@ -42,7 +42,7 @@ func pathspec(dirs []string) []string {
 // stripRef removes the "<ref>:" prefix that ls-tree and grep print, and drops non-pages.
 func stripRef(r *Repo, lines string) []string {
 	var res []string
-	prefix := r.trackingRef() + ":"
+	prefix := r.readRef() + ":"
 	for _, l := range strings.Split(strings.TrimSpace(lines), "\n") {
 		p := strings.TrimPrefix(l, prefix)
 		if p != "" && isPagePath(p) {
@@ -59,7 +59,7 @@ func (r *Repo) List(dirs []string) ([]string, error) {
 	if err != nil || head == "" {
 		return nil, err
 	}
-	args := append([]string{"ls-tree", "-r", "--name-only", r.trackingRef()}, pathspec(dirs)...)
+	args := append([]string{"ls-tree", "-r", "--name-only", r.readRef()}, pathspec(dirs)...)
 	out, err := r.Git(args...)
 	if err != nil {
 		return nil, err
@@ -117,7 +117,7 @@ func (r *Repo) Grep(words []string, all bool, dirs []string) ([]string, error) {
 	for _, w := range words {
 		args = append(args, "-e", foldPattern(w))
 	}
-	args = append(args, r.trackingRef())
+	args = append(args, r.readRef())
 	args = append(args, pathspec(dirs)...)
 	out, err := r.gitStrict(args...)
 	if noResult(err) {
@@ -139,7 +139,7 @@ func (r *Repo) GrepDeprecated(dirs []string) (map[string]bool, error) {
 	if head == "" {
 		return res, nil
 	}
-	args := append([]string{"grep", "-l", "-E", "-e", `^status:[[:space:]]*deprecated[[:space:]]*$`, r.trackingRef()}, pathspec(dirs)...)
+	args := append([]string{"grep", "-l", "-E", "-e", `^status:[[:space:]]*deprecated[[:space:]]*$`, r.readRef()}, pathspec(dirs)...)
 	out, err := r.gitStrict(args...)
 	if noResult(err) {
 		return res, nil
@@ -237,7 +237,7 @@ func (r *Repo) CatLimit(paths []string, max int64) (contents map[string][]byte, 
 func (r *Repo) refPaths(paths []string) []string {
 	names := make([]string, len(paths))
 	for i, p := range paths {
-		names[i] = r.trackingRef() + ":" + p
+		names[i] = r.readRef() + ":" + p
 	}
 	return names
 }
@@ -356,7 +356,7 @@ func (r *Repo) Updated(dirs []string) (map[string]time.Time, error) {
 	if head == "" {
 		return res, nil
 	}
-	args := append([]string{"log", "--format=%x00%cI", "--name-only", r.trackingRef()}, pathspec(dirs)...)
+	args := append([]string{"log", "--format=%x00%cI", "--name-only", r.readRef()}, pathspec(dirs)...)
 	out, err := r.Git(args...)
 	if err != nil {
 		return nil, err

@@ -64,7 +64,7 @@ func (r *Repo) Commit(changes []Change, msg string, au Author) (*Result, error) 
 		if err := r.Fetch(); err != nil {
 			return nil, err
 		}
-		head, err := r.Head()
+		head, err := r.trackingHead()
 		if err != nil {
 			return nil, err
 		}
@@ -252,7 +252,7 @@ func (r *Repo) remoteMoved(head, pout string, perr error) bool {
 	if r.Fetch() != nil {
 		return false
 	}
-	cur, err := r.Head()
+	cur, err := r.trackingHead()
 	return err == nil && cur != head
 }
 

@@ -267,6 +267,36 @@ func isolateGit(t *testing.T) {
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 }
 
+// TestPathForms checks that a leading "/" or "./" and a trailing "/" in a path
+// argument make no difference, and that a path outside the wiki is rejected.
+func TestPathForms(t *testing.T) {
+	cfg := setup(t)
+	var g struct{ Path string }
+	for _, p := range []string{"/global/push.md", "./global/push.md", "global//push.md"} {
+		code, out, errs := runCLI(t, cfg, "", "get", "--json", p)
+		if code != 0 {
+			t.Fatalf("get %s: code=%d %s", p, code, errs)
+		}
+		if mustUnmarshal(t, out, &g); g.Path != "global/push.md" {
+			t.Errorf("get %s: %s", p, out)
+		}
+	}
+	if code, out, _ := runCLI(t, cfg, "", "dirs", "--json", "/projects/"); code != 0 || !strings.Contains(out, `"dir":"projects/app/"`) {
+		t.Errorf("dirs /projects/: code=%d out=%s", code, out)
+	}
+	if code, _, errs := runCLI(t, cfg, "---\nsummary: s\n---\n# s\n", "put", "/global/slash.md"); code != 0 {
+		t.Fatalf("put /global/slash.md: code=%d %s", code, errs)
+	}
+	if code, _, _ := runCLI(t, cfg, "", "get", "global/slash.md"); code != 0 {
+		t.Error("put with a leading / must write global/slash.md")
+	}
+	for _, args := range [][]string{{"get", "../global/push.md"}, {"rm", "/../x.md"}, {"lint", "global/../../x.md"}, {"dirs", ".."}, {"mv", "global/push.md", "../push.md"}} {
+		if code, _, errs := runCLI(t, cfg, "", args...); code != ExitInvalid || !strings.Contains(errs, "outside the wiki") {
+			t.Errorf("%v: code=%d errs=%q", args, code, errs)
+		}
+	}
+}
+
 // TestPutIntoEmptyRepository checks that the first put into a repository
 // without any branch creates the branch, and that reads work before and after.
 func TestPutIntoEmptyRepository(t *testing.T) {
@@ -758,10 +788,8 @@ func TestDirs(t *testing.T) {
 	if code, out, _ := runCLI(t, cfg, "", "dirs", "--json", "none"); code != 0 || !strings.Contains(out, `"items":[]`) {
 		t.Errorf("dirs none: code=%d out=%s", code, out)
 	}
-	for _, arg := range []string{"../x", "/abs", "global/index.md"} {
-		if code, _, errs := runCLI(t, cfg, "", "dirs", arg); code != ExitUsage {
-			t.Errorf("dirs %s: code=%d errs=%q", arg, code, errs)
-		}
+	if code, _, errs := runCLI(t, cfg, "", "dirs", "global/index.md"); code != ExitUsage {
+		t.Errorf("dirs of a page: code=%d errs=%q", code, errs)
 	}
 	code, out, _ = runCLI(t, cfg, "", "dirs")
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")

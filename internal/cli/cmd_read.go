@@ -14,6 +14,7 @@ import (
 
 	"github.com/roamer7038/wikictl/internal/page"
 	"github.com/roamer7038/wikictl/internal/repo"
+	"github.com/roamer7038/wikictl/internal/wiki"
 )
 
 type hit struct {
@@ -107,25 +108,20 @@ func (a *app) cmdSearch(c *command, words []string) error {
 }
 
 type getOut struct {
-	Path        string         `json:"path"`
-	SHA         string         `json:"sha"`
-	Frontmatter map[string]any `json:"frontmatter"`
-	Title       string         `json:"title"`
-	Body        string         `json:"body"`
-	Links       []linkOut      `json:"links"`
-	Backlinks   []backlinkOut  `json:"backlinks"`
-	Updated     string         `json:"updated"`
+	Path        string          `json:"path"`
+	SHA         string          `json:"sha"`
+	Frontmatter map[string]any  `json:"frontmatter"`
+	Title       string          `json:"title"`
+	Body        string          `json:"body"`
+	Links       []linkOut       `json:"links"`
+	Backlinks   []wiki.Backlink `json:"backlinks"`
+	Updated     string          `json:"updated"`
 }
 
 type linkOut struct {
 	Type   string `json:"type"`
 	Target string `json:"target"`
 	Note   string `json:"note"`
-}
-
-type backlinkOut struct {
-	Path string `json:"path"`
-	Type string `json:"type"`
 }
 
 func (a *app) cmdGet(c *command, args []string) error {
@@ -150,7 +146,7 @@ func (a *app) cmdGet(c *command, args []string) error {
 	for _, l := range pg.Links {
 		links = append(links, linkOut{l.Type, l.Target, l.Note})
 	}
-	backlinks, err := a.backlinks(p)
+	backlinks, err := wiki.Backlinks(a.repo, p)
 	if err != nil {
 		return &gitError{err}
 	}
@@ -179,44 +175,6 @@ func (a *app) cmdGet(c *command, args []string) error {
 		}
 	})
 	return nil
-}
-
-// backlinks greps the whole wiki for the file name of target to collect candidate
-// pages, then parses each candidate and keeps those whose links resolve to
-// target. Typed links win over body mentions.
-func (a *app) backlinks(target string) ([]backlinkOut, error) {
-	name := strings.TrimSuffix(path.Base(target), ".md")
-	cands, err := a.repo.Grep([]string{name + ".md"}, true, nil)
-	if err != nil {
-		return nil, err
-	}
-	pages, err := a.readPages(cands)
-	if err != nil {
-		return nil, err
-	}
-	out := []backlinkOut{}
-	for _, cp := range cands {
-		if cp == target {
-			continue
-		}
-		pg := pages.parse(cp)
-		typed := false
-		for _, l := range pg.Links {
-			if !l.IsURL && l.Target == target {
-				out = append(out, backlinkOut{cp, l.Type})
-				typed = true
-			}
-		}
-		if !typed {
-			for _, m := range pg.Mentions {
-				if m.Target == target {
-					out = append(out, backlinkOut{cp, "mentions"})
-					break
-				}
-			}
-		}
-	}
-	return out, nil
 }
 
 // pageSet is the files read by readPages.
@@ -357,11 +315,7 @@ type dirItem struct {
 // index.md files, so the cost does not grow with the number of pages read.
 func (a *app) cmdDirs(c *command, args []string) error {
 	for _, d := range args {
-		p := path.Clean(d)
-		if path.IsAbs(p) || p == ".." || strings.HasPrefix(p, "../") {
-			return &usageError{c, "directory outside the wiki: " + d}
-		}
-		if strings.HasSuffix(p, ".md") {
+		if strings.HasSuffix(d, ".md") {
 			return &usageError{c, "not a directory: " + d}
 		}
 	}
