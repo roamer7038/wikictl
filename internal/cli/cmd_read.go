@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -349,60 +348,6 @@ func (s pageSet) containsFolded(r *repo.Repo, p string, words []string) ([]bool,
 	return found, err
 }
 
-type lsItem struct {
-	Path    string `json:"path"`
-	Summary string `json:"summary"`
-	Title   string `json:"title"`
-	Type    string `json:"type"`
-	Updated string `json:"updated"`
-}
-
-func lsFlags(a *app, fs *pflag.FlagSet) {
-	fs.StringVar(&a.typ, "type", "", "only pages with this `type` in the frontmatter")
-	fs.StringVar(&a.tag, "tag", "", "only pages tagged `tag`")
-	fs.BoolVar(&a.all, "all", false, "include pages with status: deprecated")
-}
-
-func (a *app) cmdLs(c *command, args []string) error {
-	paths, err := a.repo.List(nil)
-	if err != nil {
-		return &gitError{err}
-	}
-	if !a.all {
-		dep, err := wiki.Deprecated(a.repo)
-		if err != nil {
-			return &gitError{err}
-		}
-		paths = filterOut(paths, dep)
-	}
-	pages, err := a.readPages(paths)
-	if err != nil {
-		return &gitError{err}
-	}
-	updated, err := a.repo.Updated(nil)
-	if err != nil {
-		return &gitError{err}
-	}
-	items := []lsItem{}
-	for _, p := range paths {
-		pg := pages.parse(p)
-		t, _ := pg.Frontmatter["type"].(string)
-		if a.typ != "" && t != a.typ {
-			continue
-		}
-		if a.tag != "" && !hasTag(pg.Frontmatter, a.tag) {
-			continue
-		}
-		items = append(items, lsItem{p, pg.Summary, pg.Title, t, fmtTime(updated[p])})
-	}
-	a.emit(map[string]any{"items": items}, func(w io.Writer) {
-		for _, it := range items {
-			fmt.Fprintf(w, "%s\t%s\n", it.Path, escapeControl(summaryOrTitle(it.Summary, it.Title)))
-		}
-	})
-	return nil
-}
-
 // cmdContext prints the configuration the other commands use, with the origin
 // remote that profile selection compared against match.remotes.
 func (a *app) cmdContext(c *command, args []string) error {
@@ -425,71 +370,6 @@ func summaryOrTitle(summary, title string) string {
 		return summary
 	}
 	return title
-}
-
-type dirItem struct {
-	Dir     string `json:"dir"`
-	Pages   int    `json:"pages"`
-	Summary string `json:"summary"`
-}
-
-// cmdDirs groups one listing of the tree by directory and reads only the
-// index.md files, so the cost does not grow with the number of pages read.
-func (a *app) cmdDirs(c *command, args []string) error {
-	for _, d := range args {
-		if strings.HasSuffix(d, ".md") {
-			return &usageError{c, "not a directory: " + d}
-		}
-	}
-	paths, err := a.repo.List(args)
-	if err != nil {
-		return &gitError{err}
-	}
-	counts := countPages(paths)
-	dirs := make([]string, 0, len(counts))
-	indexes := make([]string, 0, len(counts))
-	for d := range counts {
-		dirs = append(dirs, d)
-		indexes = append(indexes, d+"index.md")
-	}
-	sort.Strings(dirs)
-	pages, err := a.readPages(indexes)
-	if err != nil {
-		return &gitError{err}
-	}
-	items := []dirItem{}
-	for _, d := range dirs {
-		it := dirItem{Dir: d, Pages: counts[d]}
-		if pages.exists(d + "index.md") {
-			it.Summary = pages.parse(d + "index.md").Summary
-		}
-		items = append(items, it)
-	}
-	a.emit(map[string]any{"items": items}, func(w io.Writer) {
-		dw, nw := 0, 0
-		for _, it := range items {
-			dw = max(dw, len(it.Dir))
-			nw = max(nw, len(strconv.Itoa(it.Pages)))
-		}
-		for _, it := range items {
-			s := escapeControl(it.Summary)
-			if !pages.exists(it.Dir + "index.md") {
-				s = "(no index)"
-			}
-			fmt.Fprintf(w, "%-*s  %*d  %s\n", dw, it.Dir, nw, it.Pages, s)
-		}
-	})
-	return nil
-}
-
-// countPages returns the number of pages directly in each directory,
-// keyed by the directory path with a trailing slash.
-func countPages(paths []string) map[string]int {
-	counts := map[string]int{}
-	for _, p := range paths {
-		counts[path.Dir(p)+"/"]++
-	}
-	return counts
 }
 
 func hasTag(fm map[string]any, tag string) bool {

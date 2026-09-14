@@ -95,9 +95,8 @@ Body. Link to other pages with relative paths: [index](index.md).
 - cites: https://example.com/spec | what this source supports
 ```
 
-- Frontmatter keys that wikictl interprets: `summary` (or `description`), `type`, `tags`, `aliases` and `status: deprecated`, which hides the page from `search` and `ls`.
+- Frontmatter keys that wikictl interprets: `summary` (or `description`), `type`, `tags`, `aliases` and `status: deprecated`, which hides the page from `search`, `ls` and `tree`.
 - Write links to pages as `[text](path)`, so that `mv` can rewrite them.
-- Give each directory an `index.md` whose `summary` states what the directory holds, and link the other pages to it with `- part_of: [index](index.md)`. `wikictl dirs` shows these summaries, and `wikictl get <dir>/index.md` lists the pages as backlinks.
 - Names made of lowercase ASCII letters, digits and hyphens are recommended.
 
 `wikictl help lint` describes the format rules in detail.
@@ -110,12 +109,12 @@ Body. Link to other pages with relative paths: [index](index.md).
 | `cat <path>...` | Print files as stored |
 | `stat <path>...` | Show the sha, last update and attributes of files |
 | `links <path>` | List the links in a page and to it |
-| `ls` | List pages |
+| `ls [<path>...]` | List the entries of directories |
 | `put <path> < content` | Create or replace a page from standard input |
 | `mv <path> <newpath>` | Move or rename a page or a directory, rewriting links |
 | `rm <path>` | Delete a page |
 | `lint [<path>...]` | Report pages that violate the wiki format |
-| `dirs [<dir>...]` | List the directories of the wiki with their page counts |
+| `tree [<dir>...]` | Show directories as a tree |
 | `context` | Show the resolved configuration |
 | `help [<command>]` | Show help for a command |
 | `version` | Print the version |

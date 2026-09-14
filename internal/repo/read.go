@@ -67,6 +67,27 @@ func (r *Repo) List(dirs []string) ([]string, error) {
 	return stripRef(r, out), nil
 }
 
+// Files returns the paths of all files under dirs, or of the whole tree when
+// dirs is nil, pages or not. Directories that do not exist are ignored.
+func (r *Repo) Files(dirs []string) ([]string, error) {
+	head, err := r.Head()
+	if err != nil || head == "" {
+		return nil, err
+	}
+	args := append([]string{"ls-tree", "-r", "-z", "--name-only", r.readRef()}, pathspec(dirs)...)
+	out, err := r.Git(args...)
+	if err != nil {
+		return nil, err
+	}
+	var res []string
+	for p := range strings.SplitSeq(out, "\x00") {
+		if p != "" {
+			res = append(res, p)
+		}
+	}
+	return res, nil
+}
+
 // Fold maps every rune of s to the smallest rune of its simple Unicode case
 // folding orbit, so that strings.Contains(Fold(s), Fold(word)) matches word
 // in s ignoring case, non-ASCII letters included.

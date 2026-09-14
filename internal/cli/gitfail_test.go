@@ -82,18 +82,19 @@ func TestGitFailure(t *testing.T) {
 		{"stat/cat", gitFault{match: " cat-file --batch "}, "", []string{"stat", "global/push.md"}, ExitGit},
 		{"links/backlinks grep", gitFault{match: " grep -E -l "}, "", []string{"links", "global/index.md"}, ExitGit},
 		{"links/backlinks cat", gitFault{match: " cat-file --batch ", skip: 1}, "", []string{"links", "global/index.md"}, ExitGit},
+		{"ls/files", gitFault{match: " ls-tree -r -z "}, "", []string{"ls"}, ExitGit},
 		{"ls/deprecated", gitFault{match: " grep -l -E "}, "", []string{"ls"}, ExitGit},
-		{"ls/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"ls"}, ExitGit},
-		{"ls/cat", gitFault{match: " cat-file --batch "}, "", []string{"ls"}, ExitGit},
-		{"ls/updated", gitFault{match: " log --format="}, "", []string{"ls"}, ExitGit},
+		{"ls/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"ls", "-al", "global"}, ExitGit},
+		{"ls/cat", gitFault{match: " cat-file --batch "}, "", []string{"ls", "-al", "global"}, ExitGit},
+		{"ls/updated", gitFault{match: " log --format="}, "", []string{"ls", "-l"}, ExitGit},
 		{"search/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"search", "lease"}, ExitGit},
 		{"stat/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"stat", "global/push.md"}, ExitGit},
 		{"links/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"links", "global/push.md"}, ExitGit},
-		{"dirs/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"dirs"}, ExitGit},
+		{"tree/files", gitFault{match: " ls-tree -r -z "}, "", []string{"tree"}, ExitGit},
 		{"lint/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"lint", "global/push.md"}, ExitGit},
 		{"lint/cat", gitFault{match: " cat-file --batch "}, "", []string{"lint", "global/push.md"}, ExitGit},
 		{"lint/link targets", gitFault{match: " cat-file --batch-check ", skip: 1}, "", []string{"lint", "global/push.md"}, ExitGit},
-		{"dirs/head", gitFault{match: head}, "", []string{"dirs"}, ExitGit},
+		{"tree/head", gitFault{match: head}, "", []string{"tree"}, ExitGit},
 		{"rm/cat", gitFault{match: " cat-file --batch "}, "", []string{"rm", "global/push.md"}, ExitGit},
 		{"mv/cat", gitFault{match: " cat-file --batch "}, "", []string{"mv", "global/push.md", "global/push2.md"}, ExitGit},
 		{"mv/destination directory", gitFault{match: " -- projects/app2 "}, "", []string{"mv", "projects/app/", "projects/app2/"}, ExitGit},
@@ -331,7 +332,7 @@ func TestLargeBlobNotRead(t *testing.T) {
 	log := recordBatchInput(t)
 
 	var ls struct{ Items []lsItem }
-	code, out, errs := runCLI(t, cfg, "", "--json", "ls")
+	code, out, errs := runCLI(t, cfg, "", "--json", "ls", "global")
 	mustUnmarshal(t, out, &ls)
 	if code != ExitOK || !slices.ContainsFunc(ls.Items, func(it lsItem) bool {
 		return it.Path == "global/huge.md" && it.Title == "huge" && it.Summary == "" && it.Type == ""

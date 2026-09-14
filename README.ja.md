@@ -95,9 +95,8 @@ type: concept
 - cites: https://example.com/spec | この出典が裏付ける内容
 ```
 
-- wikictl が解釈するフロントマターのキーは、`summary`（または `description`）、`type`、`tags`、`aliases`、`status: deprecated`（`search` と `ls` に表示しない）
+- wikictl が解釈するフロントマターのキーは、`summary`（または `description`）、`type`、`tags`、`aliases`、`status: deprecated`（`search`・`ls`・`tree` に表示しない）
 - ページへのリンクは、`mv` が書き換えられるように `[text](path)` の形式で書く
-- 各ディレクトリに `index.md` を置いて `summary` にディレクトリの内容を書き、他のページから `- part_of: [index](index.md)` でリンクする。`wikictl dirs` がその summary を表示し、`wikictl get <dir>/index.md` がそれらのページをバックリンクとして一覧する
 - 名前には小文字の ASCII 英字、数字、ハイフンを使うことを推奨する
 
 形式の規則の詳細は `wikictl help lint` で確認できます。
@@ -110,12 +109,12 @@ type: concept
 | `cat <path>...` | ファイルを保存されたままの内容で表示する |
 | `stat <path>...` | ファイルの sha、最終更新日時、属性を表示する |
 | `links <path>` | ページからのリンクとページへのリンクを一覧表示する |
-| `ls` | ページを一覧表示する |
+| `ls [<path>...]` | ディレクトリの中身を一覧表示する |
 | `put <path> < content` | 標準入力の内容でページを作成または置換する |
 | `mv <path> <newpath>` | ページまたはディレクトリを移動・名前変更し、リンクを書き換える |
 | `rm <path>` | ページを削除する |
 | `lint [<path>...]` | wiki の形式に違反するページを報告する |
-| `dirs [<dir>...]` | wiki のディレクトリをページ数とともに一覧表示する |
+| `tree [<dir>...]` | ディレクトリを木構造で表示する |
 | `context` | 解決済みの設定を表示する |
 | `help [<command>]` | コマンドのヘルプを表示する |
 | `version` | バージョンを表示する |
