@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -118,14 +119,14 @@ func (r *Repo) buildAndPush(head string, changes []Change, msg string, au Author
 			return nil, false, fmt.Errorf("path %q contains a newline or NUL", c.Path)
 		}
 	}
-	idx, err := os.CreateTemp("", "wikictl-index-*")
+	// The index lives in a new directory inside the mirror, where no other
+	// user or process can create or replace it.
+	idxDir, err := os.MkdirTemp(r.Dir, "wikictl-index-*")
 	if err != nil {
 		return nil, false, err
 	}
-	idx.Close()
-	os.Remove(idx.Name())
-	defer os.Remove(idx.Name())
-	env := []string{"GIT_INDEX_FILE=" + idx.Name(),
+	defer os.RemoveAll(idxDir)
+	env := []string{"GIT_INDEX_FILE=" + filepath.Join(idxDir, "index"),
 		"GIT_AUTHOR_NAME=" + au.Name, "GIT_AUTHOR_EMAIL=" + au.Email,
 		"GIT_COMMITTER_NAME=" + au.Name, "GIT_COMMITTER_EMAIL=" + au.Email}
 	git := func(stdin []byte, args ...string) (string, error) { return r.run(env, stdin, args...) }

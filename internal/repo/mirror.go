@@ -20,6 +20,9 @@ type Repo struct {
 // with "ls-remote --symref" and the result saved.
 func Open(mirrorDir, remote, branch string) (*Repo, error) {
 	r := &Repo{Dir: mirrorDir, Remote: remote}
+	if err := privateDir(filepath.Dir(mirrorDir)); err != nil {
+		return nil, err
+	}
 	if _, err := os.Stat(filepath.Join(mirrorDir, "HEAD")); err != nil {
 		if err := r.create(); err != nil {
 			return nil, err
@@ -72,15 +75,30 @@ func Open(mirrorDir, remote, branch string) (*Repo, error) {
 	return r, nil
 }
 
+// privateDir creates dir with mode 0700, or sets an existing dir to 0700, so
+// that the mirrors and lock files in it cannot be reached by other users
+// whatever the umask and the modes git gives to the files it creates.
+func privateDir(dir string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	fi, err := os.Stat(dir)
+	if err != nil {
+		return err
+	}
+	if fi.Mode().Perm() != 0o700 {
+		return os.Chmod(dir, 0o700)
+	}
+	return nil
+}
+
 // create builds the mirror with "init --bare" and "remote add" while holding
 // a lock on <mirror>.lock, so that concurrent processes initialize it once.
 // The repository is built in a temporary directory next to the mirror and
 // renamed into place, so that no process sees a mirror without its remote.
+// The temporary directory, and therefore the mirror, has mode 0700.
 func (r *Repo) create() error {
 	parent := filepath.Dir(r.Dir)
-	if err := os.MkdirAll(parent, 0o755); err != nil {
-		return err
-	}
 	unlock, err := lockFile(r.Dir + ".lock")
 	if err != nil {
 		return err
@@ -101,7 +119,7 @@ func (r *Repo) create() error {
 		return err
 	}
 	defer os.RemoveAll(tmp)
-	if err := os.Chmod(tmp, 0o755); err != nil {
+	if err := os.Chmod(tmp, 0o700); err != nil {
 		return err
 	}
 	t := &Repo{Dir: tmp}

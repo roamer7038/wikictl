@@ -357,6 +357,8 @@ profiles:
 
 wikictl は、`repo` の値ごとに 1 つの bare ミラーを `$XDG_CACHE_HOME/wikictl/`（`$XDG_CACHE_HOME` が未設定なら `~/.cache/wikictl/`）に置きます。パスは `wikictl context` で確認できます。
 
+ミラーは wiki の複製を持つため、umask にかかわらず所有者だけが読めるようにします。wikictl は `$XDG_CACHE_HOME/wikictl/`（存在しない親ディレクトリを含む）と各ミラーをモード 0700、ロックファイルをモード 0600 で作り、ミラーを開くたびに既存の `$XDG_CACHE_HOME/wikictl/` をモード 0700 にします。git がミラー内に作るファイルは git の決めたモードのままですが、他のユーザーは `$XDG_CACHE_HOME/wikictl/` を通れないため読めません。コミットを作るときの一時 index は、ミラー内に新しく作ったディレクトリに置き、終わったら削除します。
+
 ミラーの名前は、`repo` の最後のパス要素から `.git` を除いたものに、`-` と `repo` の値全体の SHA-256 の先頭 12 桁（16 進数）を続けたものです（例: `wiki-0123456789ab`）。wikictl は、ミラーの `remote.origin.url` が `repo` と一致する場合だけそのミラーを使い、一致しなければ終了コード 5 で終了します（`mirror <path> is for another repository (its remote.origin.url is not the configured repo); delete it and run the command again`）。
 
 wikictl 0.2.x 以前が作ったミラーは、`repo` の値全体の `/`、`:`、`@`、`\` を `_` に置き換えた名前です（例: `_srv_wiki.git`）。これらは使われなくなり、初回の実行時に新しいミラーが作られます（fetch が 1 回余分にかかります。wiki の内容はリモートにあるので失われません）。`$XDG_CACHE_HOME/wikictl/` にある旧ミラーのディレクトリは手動で削除してください。隣に `<名前>.lock` ファイルがあれば、それも削除してかまいません。
