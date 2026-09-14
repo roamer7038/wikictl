@@ -45,14 +45,16 @@ expression unless -E or -F is given, and each matching line is printed as
 "<path>:<line>", or "<path>:<number>:<line>" with -n. With -e, which may be
 given more than once, every argument is a path. Binary files are skipped, and
 pages with status: deprecated are searched too. With -i, the case of letters
-other than ASCII is ignored only together with -F. The command exits with
-code 0 when a line matches and 1 when none does. A path that does not exist is
-reported on standard error, the other paths are still searched, and the
-command exits with code 2. Control characters other than tab are shown as
-\xNN in text output.
+other than ASCII is ignored only together with -F. -E and -F, and -L and
+--all-match, cannot be combined. The command exits with code 0 when anything
+is selected and 1 when nothing is; a pattern that does not compile is a usage
+error. A path that does not exist is reported on standard error, the other
+paths are still searched, and the command exits with code 2, or with 0 when -q
+selected anything. Control characters other than tab are shown as \xNN in
+text output.
 
 Output: items[] {path, line, text}; with -l or -L, items[] {path}; with -c,
-items[] {path, count}.`,
+items[] {path, count}; with -q, nothing.`,
 		flags: grepFlags, check: (*app).checkGrep, run: (*app).cmdGrep},
 	{name: "cat", args: "<path>...", minArgs: 1, maxArgs: -1, paths: true,
 		summary: "Print files as stored",

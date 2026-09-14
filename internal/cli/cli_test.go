@@ -1253,3 +1253,66 @@ func TestRelativeRepo(t *testing.T) {
 		t.Errorf("remote.origin.url = %q, want %q", got, abs)
 	}
 }
+
+// TestGrepGitConfig checks that grep settings in the git configuration change
+// neither the pattern syntax nor the output.
+func TestGrepGitConfig(t *testing.T) {
+	cfg := setup(t)
+	gc := filepath.Join(t.TempDir(), "gitconfig")
+	os.WriteFile(gc, []byte("[grep]\n\tcolumn = true\n\tpatternType = perl\n\tlineNumber = true\n[color]\n\tui = always\n\tgrep = always\n"), 0o600)
+	t.Setenv("GIT_CONFIG_GLOBAL", gc)
+	for args, want := range map[string]string{
+		`-n le\(a\)se projects`: "projects/app/x.md:5:lease\n",
+		"-c lease projects":     "projects/app/x.md:1\n",
+		"-l lease projects":     "projects/app/x.md\n",
+	} {
+		if code, out, errs := runCLI(t, cfg, "", append([]string{"grep"}, strings.Fields(args)...)...); code != 0 || out != want {
+			t.Errorf("grep %s: code=%d out=%q errs=%q", args, code, out, errs)
+		}
+	}
+}
+
+// TestGrepPathWithNewline checks a file pushed from a clone with a newline in
+// its name.
+func TestGrepPathWithNewline(t *testing.T) {
+	cfg := setup(t)
+	work := filepath.Join(filepath.Dir(cfg), "work")
+	os.WriteFile(filepath.Join(work, "global", "n\nl.md"), []byte("lease\n"), 0o644)
+	mustRun(t, work, "git", "add", "-A")
+	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "newline")
+	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
+	for args, want := range map[string]string{
+		"-n lease global": "global/n\\x0al.md:1:lease\nglobal/push.md:7:use force-with-lease. [index](index.md)\n",
+		"-c lease global": "global/n\\x0al.md:1\nglobal/push.md:1\n",
+	} {
+		if code, out, errs := runCLI(t, cfg, "", append([]string{"grep"}, strings.Fields(args)...)...); code != 0 || out != want {
+			t.Errorf("grep %s: code=%d out=%q errs=%q", args, code, out, errs)
+		}
+	}
+	var res struct{ Items []struct{ Path string } }
+	_, out, _ := runCLI(t, cfg, "", "grep", "--json", "lease", "global")
+	if mustUnmarshal(t, out, &res); len(res.Items) != 2 || res.Items[0].Path != "global/n\nl.md" {
+		t.Errorf("grep --json: %s", out)
+	}
+}
+
+func TestGrepQuietAndErrors(t *testing.T) {
+	cfg := setup(t)
+	for _, c := range []struct {
+		args []string
+		code int
+		errs string
+	}{
+		{[]string{"grep", "-q", "--json", "lease"}, ExitOK, ""},
+		{[]string{"grep", "-q", "-L", "zzz", "global"}, ExitOK, ""},
+		{[]string{"grep", "-q", "lease", "none", "global"}, ExitOK, "none: no such file or directory"},
+		{[]string{"grep", "-E", "-F", "x"}, ExitUsage, "-E and -F cannot be combined"},
+		{[]string{"grep", "-L", "--all-match", "-e", "a", "-e", "b"}, ExitUsage, "-L and --all-match cannot be combined"},
+		{[]string{"grep", "[", "global"}, ExitUsage, "invalid pattern: '['"},
+	} {
+		code, out, errs := runCLI(t, cfg, "", c.args...)
+		if code != c.code || out != "" || !strings.Contains(errs, c.errs) {
+			t.Errorf("%v: code=%d out=%q errs=%q", c.args, code, out, errs)
+		}
+	}
+}
