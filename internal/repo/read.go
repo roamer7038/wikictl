@@ -164,19 +164,114 @@ func (r *Repo) Cat(paths []string) (map[string][]byte, error) {
 // a change built from the contents can use the sha as its Base.
 func (r *Repo) CatSHA(paths []string) (map[string][]byte, map[string]string, error) {
 	res, shas := map[string][]byte{}, map[string]string{}
-	if len(paths) == 0 {
-		return res, shas, nil
-	}
-	var in bytes.Buffer
-	for _, p := range paths {
-		in.WriteString(r.trackingRef() + ":" + p + "\n")
-	}
-	out, err := r.GitIn(in.Bytes(), "cat-file", "--batch")
+	ents, err := r.catFile(r.refPaths(paths), true)
 	if err != nil {
 		return nil, nil, err
 	}
-	rd := bufio.NewReader(strings.NewReader(out))
+	for i, p := range paths {
+		if e := ents[i]; e.typ == "blob" {
+			res[p] = e.content
+			shas[p] = e.SHA
+		}
+	}
+	return res, shas, nil
+}
+
+// Object is the sha and size of a blob.
+type Object struct {
+	SHA  string
+	Size int64
+}
+
+// Stat returns the sha and size of every path that is a file at the tracking
+// ref, using one "cat-file --batch-check" call, which reads no contents.
+// Paths that do not exist or are not files are absent from the result.
+func (r *Repo) Stat(paths []string) (map[string]Object, error) {
+	res := map[string]Object{}
+	ents, err := r.catFile(r.refPaths(paths), false)
+	if err != nil {
+		return nil, err
+	}
+	for i, p := range paths {
+		if e := ents[i]; e.typ == "blob" {
+			res[p] = e.Object
+		}
+	}
+	return res, nil
+}
+
+// CatLimit is Cat that reads only the blobs of at most max bytes. It finds
+// the sizes with Stat first; the files over max are returned in large, and
+// their contents are not read.
+func (r *Repo) CatLimit(paths []string, max int64) (contents map[string][]byte, large map[string]Object, err error) {
+	objs, err := r.Stat(paths)
+	if err != nil {
+		return nil, nil, err
+	}
+	contents, large = map[string][]byte{}, map[string]Object{}
+	var small, shas []string
 	for _, p := range paths {
+		o, ok := objs[p]
+		switch {
+		case !ok:
+		case o.Size > max:
+			large[p] = o
+		default:
+			small = append(small, p)
+			shas = append(shas, o.SHA)
+		}
+	}
+	ents, err := r.catFile(shas, true)
+	if err != nil {
+		return nil, nil, err
+	}
+	for i, p := range small {
+		if e := ents[i]; e.typ == "blob" {
+			contents[p] = e.content
+		}
+	}
+	return contents, large, nil
+}
+
+// refPaths turns paths into object names at the tracking ref.
+func (r *Repo) refPaths(paths []string) []string {
+	names := make([]string, len(paths))
+	for i, p := range paths {
+		names[i] = r.trackingRef() + ":" + p
+	}
+	return names
+}
+
+// catEntry is the answer of cat-file for one object name. typ is empty when
+// the object is missing.
+type catEntry struct {
+	Object
+	typ     string
+	content []byte
+}
+
+// catFile looks up names with one "cat-file --batch" call, or with
+// "cat-file --batch-check" when withContent is false, and returns one entry
+// per name.
+func (r *Repo) catFile(names []string, withContent bool) ([]catEntry, error) {
+	res := make([]catEntry, len(names))
+	if len(names) == 0 {
+		return res, nil
+	}
+	mode := "--batch-check"
+	if withContent {
+		mode = "--batch"
+	}
+	var in bytes.Buffer
+	for _, n := range names {
+		in.WriteString(n + "\n")
+	}
+	out, err := r.GitIn(in.Bytes(), "cat-file", mode)
+	if err != nil {
+		return nil, err
+	}
+	rd := bufio.NewReader(strings.NewReader(out))
+	for i := range names {
 		hdr, err := rd.ReadString('\n')
 		if err != nil {
 			break
@@ -185,18 +280,69 @@ func (r *Repo) CatSHA(paths []string) (map[string][]byte, map[string]string, err
 		if len(f) < 3 {
 			continue // "<object> missing"
 		}
-		n, _ := strconv.Atoi(f[2])
-		buf := make([]byte, n)
-		if _, err := io.ReadFull(rd, buf); err != nil {
-			return nil, nil, err
+		n, _ := strconv.ParseInt(f[2], 10, 64)
+		e := catEntry{Object: Object{SHA: f[0], Size: n}, typ: f[1]}
+		if withContent {
+			e.content = make([]byte, n)
+			if _, err := io.ReadFull(rd, e.content); err != nil {
+				return nil, err
+			}
+			rd.ReadByte()
 		}
-		rd.ReadByte()
-		if f[1] == "blob" {
-			res[p] = buf
-			shas[p] = f[0]
+		res[i] = e
+	}
+	return res, nil
+}
+
+// ContainsFolded reports, for each word, whether the text read from rd
+// contains it as strings.Contains(Fold(text), Fold(word)) does. It reads the
+// text in chunks, so that a large blob is not held in memory.
+func ContainsFolded(rd io.Reader, words []string) ([]bool, error) {
+	folded := make([]string, len(words))
+	keep := 0
+	for i, w := range words {
+		folded[i] = Fold(w)
+		keep = max(keep, len(folded[i]))
+	}
+	found := make([]bool, len(words))
+	buf := make([]byte, 64<<10)
+	var pending []byte // bytes of a rune that the next chunk completes
+	tail := ""         // the end of the folded text so far, for matches across chunks
+	for {
+		n, err := rd.Read(buf)
+		data := append(pending, buf[:n]...)
+		end := err != nil
+		cut := len(data)
+		if !end {
+			cut = completeRunes(data)
+		}
+		text := tail + Fold(string(data[:cut]))
+		for i, w := range folded {
+			found[i] = found[i] || strings.Contains(text, w)
+		}
+		pending = append([]byte(nil), data[cut:]...)
+		tail = text[max(0, len(text)-keep):]
+		if err == io.EOF {
+			return found, nil
+		}
+		if err != nil {
+			return nil, err
 		}
 	}
-	return res, shas, nil
+}
+
+// completeRunes returns the length of the longest prefix of b that does not
+// end in the middle of a UTF-8 encoded rune.
+func completeRunes(b []byte) int {
+	for i := len(b) - 1; i >= 0 && i >= len(b)-utf8.UTFMax; i-- {
+		if utf8.RuneStart(b[i]) {
+			if !utf8.FullRune(b[i:]) {
+				return i
+			}
+			break
+		}
+	}
+	return len(b)
 }
 
 // Updated returns the last commit time of every file under dirs, from one
