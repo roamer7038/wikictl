@@ -12,7 +12,6 @@ import (
 
 	"github.com/spf13/pflag"
 
-	ctx "github.com/roamer7038/wikictl/internal/context"
 	"github.com/roamer7038/wikictl/internal/page"
 	"github.com/roamer7038/wikictl/internal/repo"
 )
@@ -53,18 +52,18 @@ func searchFlags(a *app, fs *pflag.FlagSet) {
 }
 
 func (a *app) cmdSearch(c *command, words []string) error {
-	paths, err := a.repo.Grep(words, !a.any, a.dirs)
+	paths, err := a.repo.Grep(words, !a.any, nil)
 	if err != nil {
 		return &gitError{err}
 	}
 	if !a.all {
-		dep, err := a.repo.GrepDeprecated(a.dirs)
+		dep, err := a.repo.GrepDeprecated(nil)
 		if err != nil {
 			return &gitError{err}
 		}
 		paths = filterOut(paths, dep)
 	}
-	updated, err := a.repo.Updated(a.dirs)
+	updated, err := a.repo.Updated(nil)
 	if err != nil {
 		return &gitError{err}
 	}
@@ -285,12 +284,12 @@ func lsFlags(a *app, fs *pflag.FlagSet) {
 }
 
 func (a *app) cmdLs(c *command, args []string) error {
-	paths, err := a.repo.List(a.dirs)
+	paths, err := a.repo.List(nil)
 	if err != nil {
 		return &gitError{err}
 	}
 	if !a.all {
-		dep, err := a.repo.GrepDeprecated(a.dirs)
+		dep, err := a.repo.GrepDeprecated(nil)
 		if err != nil {
 			return &gitError{err}
 		}
@@ -300,7 +299,7 @@ func (a *app) cmdLs(c *command, args []string) error {
 	if err != nil {
 		return &gitError{err}
 	}
-	updated, err := a.repo.Updated(a.dirs)
+	updated, err := a.repo.Updated(nil)
 	if err != nil {
 		return &gitError{err}
 	}
@@ -324,44 +323,17 @@ func (a *app) cmdLs(c *command, args []string) error {
 	return nil
 }
 
-// cmdContext prints the values other commands derive from the environment:
-// machine and project are the resolved names used for machines/<name>/ and
-// projects/<name>/, not the raw hostname and remote URL.
+// cmdContext prints the configuration the other commands use, with the origin
+// remote that profile selection compared against match.remotes.
 func (a *app) cmdContext(c *command, args []string) error {
-	host, _ := osHostname()
-	machine := a.cfg.Machine
-	if machine == "" {
-		machine = ctx.MachineName(host)
-	}
-	remote := a.remote
-	project := ""
-	if remote != "" {
-		project = ctx.ProjectName(remote)
-		if m, ok := a.cfg.Projects[project]; ok && m != "" {
-			project = m
-		}
-	}
 	au, _ := a.author()
-	paths, err := a.repo.List(a.dirs)
-	if err != nil {
-		return &gitError{err}
-	}
-	pages := map[string]int{}
-	for _, d := range a.dirs {
-		pages[d] = countPagesUnder(paths, d)
-	}
 	out := map[string]any{"config": a.cfg.Path, "profile": a.cfg.Profile, "profile_source": a.cfg.ProfileSource,
 		"repo": repo.RedactURL(a.cfg.Repo), "mirror": a.repo.Dir, "branch": a.repo.Branch, "author": au.Name,
-		"machine": machine, "project": project, "remote": repo.RedactURL(remote), "dirs": a.dirs, "pages": pages}
+		"remote": repo.RedactURL(a.remote)}
 	a.emit(out, func(w io.Writer) {
-		for _, k := range []string{"config", "profile", "profile_source", "repo", "mirror", "branch", "author", "machine", "project", "remote"} {
+		for _, k := range []string{"config", "profile", "profile_source", "repo", "mirror", "branch", "author", "remote"} {
 			fmt.Fprintf(w, "%s: %v\n", k, out[k])
 		}
-		ds := make([]string, len(a.dirs))
-		for i, d := range a.dirs {
-			ds[i] = fmt.Sprintf("%s (%s)", d, plural(pages[d], "page"))
-		}
-		fmt.Fprintf(w, "dirs: %s\n", strings.Join(ds, ", "))
 	})
 	return nil
 }
@@ -442,29 +414,6 @@ func countPages(paths []string) map[string]int {
 		counts[path.Dir(p)+"/"]++
 	}
 	return counts
-}
-
-// countPagesUnder returns the number of paths at any depth below dir;
-// "." counts every path.
-func countPagesUnder(paths []string, dir string) int {
-	d := path.Clean(dir)
-	if d == "." {
-		return len(paths)
-	}
-	n := 0
-	for _, p := range paths {
-		if strings.HasPrefix(p, d+"/") {
-			n++
-		}
-	}
-	return n
-}
-
-func plural(n int, unit string) string {
-	if n == 1 {
-		return "1 " + unit
-	}
-	return fmt.Sprintf("%d %ss", n, unit)
 }
 
 func hasTag(fm map[string]any, tag string) bool {

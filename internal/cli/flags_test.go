@@ -52,7 +52,7 @@ func TestBareWordsAreNotGlobalFlags(t *testing.T) {
 func TestFlagsAfterArguments(t *testing.T) {
 	cfg := setup(t)
 	var res struct{ Items []struct{ Path string } }
-	code, out, errs := runCLI(t, cfg, "", "search", "lease", "--dirs", "global,projects/app", "--json", "-n", "1")
+	code, out, errs := runCLI(t, cfg, "", "search", "lease", "--json", "-n", "1")
 	if code != 0 {
 		t.Fatalf("search with flags after the word: code=%d %s", code, errs)
 	}
@@ -69,7 +69,7 @@ func TestFlagsAfterArguments(t *testing.T) {
 	}
 	// "--any" after "--" is a search word that no page contains.
 	res.Items = nil
-	code, out, errs = runCLI(t, cfg, "", "search", "--json", "--dirs", "global", "--", "lease", "--any")
+	code, out, errs = runCLI(t, cfg, "", "search", "--json", "--", "lease", "--any")
 	if code != 0 {
 		t.Fatalf("search -- lease --any: code=%d %s", code, errs)
 	}

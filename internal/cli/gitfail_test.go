@@ -71,27 +71,26 @@ func TestGitFailure(t *testing.T) {
 		args  []string
 		code  int
 	}{
-		{"search/head", gitFault{match: head}, "", []string{"search", "--dirs", "global", "lease"}, ExitGit},
-		{"search/grep without stderr", gitFault{match: " grep -E -l ", quiet: true}, "", []string{"search", "--dirs", "global", "lease"}, ExitGit},
-		{"search/deprecated", gitFault{match: " grep -l -E "}, "", []string{"search", "--dirs", "global,machines/h1", "lease"}, ExitGit},
-		{"search/updated", gitFault{match: " log --format="}, "", []string{"search", "--dirs", "global", "lease"}, ExitGit},
+		{"search/head", gitFault{match: head}, "", []string{"search", "lease"}, ExitGit},
+		{"search/grep without stderr", gitFault{match: " grep -E -l ", quiet: true}, "", []string{"search", "lease"}, ExitGit},
+		{"search/deprecated", gitFault{match: " grep -l -E "}, "", []string{"search", "lease"}, ExitGit},
+		{"search/updated", gitFault{match: " log --format="}, "", []string{"search", "lease"}, ExitGit},
 		{"get/head", gitFault{match: head}, "", []string{"get", "global/push.md"}, ExitGit},
 		{"get/sha", gitFault{match: " ls-tree -z "}, "", []string{"get", "global/push.md"}, ExitGit},
 		{"get/backlinks grep", gitFault{match: " grep -E -l "}, "", []string{"get", "global/index.md"}, ExitGit},
 		{"get/backlinks cat", gitFault{match: " cat-file --batch ", skip: 1}, "", []string{"get", "global/index.md"}, ExitGit},
 		{"get/updated", gitFault{match: " log --format="}, "", []string{"get", "global/push.md"}, ExitGit},
-		{"ls/deprecated", gitFault{match: " grep -l -E "}, "", []string{"ls", "--dirs", "global"}, ExitGit},
-		{"ls/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"ls", "--dirs", "global"}, ExitGit},
-		{"ls/cat", gitFault{match: " cat-file --batch "}, "", []string{"ls", "--dirs", "global"}, ExitGit},
-		{"ls/updated", gitFault{match: " log --format="}, "", []string{"ls", "--dirs", "global"}, ExitGit},
-		{"search/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"search", "--dirs", "global", "lease"}, ExitGit},
+		{"ls/deprecated", gitFault{match: " grep -l -E "}, "", []string{"ls"}, ExitGit},
+		{"ls/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"ls"}, ExitGit},
+		{"ls/cat", gitFault{match: " cat-file --batch "}, "", []string{"ls"}, ExitGit},
+		{"ls/updated", gitFault{match: " log --format="}, "", []string{"ls"}, ExitGit},
+		{"search/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"search", "lease"}, ExitGit},
 		{"get/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"get", "global/push.md"}, ExitGit},
 		{"dirs/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"dirs"}, ExitGit},
 		{"lint/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"lint", "global/push.md"}, ExitGit},
 		{"lint/cat", gitFault{match: " cat-file --batch "}, "", []string{"lint", "global/push.md"}, ExitGit},
 		{"lint/link targets", gitFault{match: " cat-file --batch-check ", skip: 1}, "", []string{"lint", "global/push.md"}, ExitGit},
 		{"dirs/head", gitFault{match: head}, "", []string{"dirs"}, ExitGit},
-		{"context/head", gitFault{match: head}, "", []string{"context"}, ExitGit},
 		{"rm/cat", gitFault{match: " cat-file --batch "}, "", []string{"rm", "global/push.md"}, ExitGit},
 		{"mv/cat", gitFault{match: " cat-file --batch "}, "", []string{"mv", "global/push.md", "global/push2.md"}, ExitGit},
 		{"mv/destination directory", gitFault{match: " -- projects/app2 "}, "", []string{"mv", "projects/app/", "projects/app2/"}, ExitGit},
@@ -238,9 +237,9 @@ func TestUnreadableObject(t *testing.T) {
 func TestGitStderrNoise(t *testing.T) {
 	cfg := setup(t)
 	reads := [][]string{
-		{"search", "--dirs", "global", "lease"},
-		{"search", "--dirs", "global", "zzz-none"},
-		{"ls", "--dirs", "global"},
+		{"search", "lease"},
+		{"search", "zzz-none"},
+		{"ls"},
 		{"get", "global/push.md"},
 	}
 	check := func(t *testing.T, name string) {
@@ -326,7 +325,7 @@ func TestLargeBlobNotRead(t *testing.T) {
 	log := recordBatchInput(t)
 
 	var ls struct{ Items []lsItem }
-	code, out, errs := runCLI(t, cfg, "", "--json", "ls", "--dirs", "global")
+	code, out, errs := runCLI(t, cfg, "", "--json", "ls")
 	mustUnmarshal(t, out, &ls)
 	if code != ExitOK || !slices.ContainsFunc(ls.Items, func(it lsItem) bool {
 		return it.Path == "global/huge.md" && it.Title == "huge" && it.Summary == "" && it.Type == ""
@@ -334,7 +333,7 @@ func TestLargeBlobNotRead(t *testing.T) {
 		t.Errorf("ls: code=%d out=%q errs=%q", code, out, errs)
 	}
 	var search struct{ Items []hit }
-	code, out, errs = runCLI(t, cfg, "", "--json", "search", "--any", "--dirs", "global", "äpfel", "zzz-none", "lorem")
+	code, out, errs = runCLI(t, cfg, "", "--json", "search", "--any", "äpfel", "zzz-none", "lorem")
 	mustUnmarshal(t, out, &search)
 	if code != ExitOK || len(search.Items) != 1 || search.Items[0].Path != "global/huge.md" || search.Items[0].Title != "huge" ||
 		!slices.Equal(search.Items[0].Matched, []string{"äpfel", "lorem"}) {
@@ -360,7 +359,7 @@ func TestLargeBlobNotRead(t *testing.T) {
 	}
 
 	injectGitFault(t, gitFault{match: " cat-file blob "})
-	if code, out, errs := runCLI(t, cfg, "", "--json", "search", "--dirs", "global", "lorem"); code != ExitGit {
+	if code, out, errs := runCLI(t, cfg, "", "--json", "search", "lorem"); code != ExitGit {
 		t.Errorf("search with a failing read of the large page: code=%d out=%q errs=%q", code, out, errs)
 	}
 }

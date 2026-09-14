@@ -23,9 +23,6 @@ type Config struct {
 		Name  string `yaml:"name"`
 		Email string `yaml:"email"`
 	} `yaml:"author"` // commit author; falls back to git config user.*
-	Machine  string            `yaml:"machine"`  // name for machines/<name>/; defaults to the hostname up to the first dot
-	Dirs     []string          `yaml:"dirs"`     // fixed search directories instead of the defaults
-	Projects map[string]string `yaml:"projects"` // remote name -> directory name under projects/
 
 	DefaultProfile string              `yaml:"default_profile"` // profile used when no other rule selects one
 	Profiles       map[string]*Profile `yaml:"profiles"`        // named overrides of the top-level keys
@@ -44,10 +41,7 @@ type Profile struct {
 		Name  string `yaml:"name"`
 		Email string `yaml:"email"`
 	} `yaml:"author"`
-	Machine  string            `yaml:"machine"`
-	Dirs     []string          `yaml:"dirs"`     // replaces the top-level list
-	Projects map[string]string `yaml:"projects"` // replaces the top-level map
-	Match    Match             `yaml:"match"`
+	Match Match `yaml:"match"`
 }
 
 // Match selects a profile automatically from the current directory.
@@ -189,15 +183,6 @@ func (c *Config) apply(pr *Profile) {
 	}
 	if pr.Author.Email != "" {
 		c.Author.Email = pr.Author.Email
-	}
-	if pr.Machine != "" {
-		c.Machine = pr.Machine
-	}
-	if len(pr.Dirs) > 0 {
-		c.Dirs = pr.Dirs
-	}
-	if len(pr.Projects) > 0 {
-		c.Projects = pr.Projects
 	}
 }
 

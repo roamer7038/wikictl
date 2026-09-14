@@ -18,7 +18,6 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/roamer7038/wikictl/internal/config"
-	ctx "github.com/roamer7038/wikictl/internal/context"
 	"github.com/roamer7038/wikictl/internal/repo"
 )
 
@@ -76,7 +75,7 @@ Output: {path, sha, frontmatter, title, body, links[], backlinks[], updated}.`,
 		run: (*app).cmdGet},
 	{name: "ls", maxArgs: 0,
 		summary: "List pages",
-		detail: `List the pages under the search directories with their summary and type.
+		detail: `List the pages of the wiki with their summary and type.
 Pages with a line "status: deprecated" (unquoted, anywhere in the file) are
 skipped unless --all is given. --tag matches tags written as a YAML list. Text
 output shows the summary of each page, or its title (first heading, else the
@@ -162,9 +161,9 @@ Output: {path, commit}.`,
 	{name: "lint", args: "[<path>...]", maxArgs: -1,
 		summary: "Report pages that violate the wiki format",
 		detail: `Check pages for missing_summary, frontmatter_invalid, links_syntax, broken_link,
-page_too_large and the file name rules. Without arguments every page under the
-search directories is checked; "wikictl --dirs . lint" checks the whole wiki.
-Exits with code 4 when violations are found. Each finding is printed as
+page_too_large and the file name rules. Without arguments every page of the
+wiki is checked. Exits with code 4 when violations are found. Each finding is
+printed as
 "<path>:<line>: <code>: <message>"; line 0 means the whole file.
 
 missing_summary: no summary or description, or no frontmatter.
@@ -219,8 +218,7 @@ Output: items[] {path, line, code, message}.`,
 		detail: `List every directory that directly contains at least one page, with the
 number of pages directly in it (nested directories are listed on their own)
 and the summary of its index.md, or "(no index)" when it has none. Deprecated
-pages are counted. The whole wiki is listed regardless of the search
-directories, so --dirs has no effect; arguments restrict the output to the
+pages are counted. Arguments restrict the output to the
 directories at or below each <dir>, which must be a directory path inside the
 wiki, not a page path. Control characters other than tab in the summary are
 shown as \xNN in text output.
@@ -228,16 +226,10 @@ shown as \xNN in text output.
 Output: items[] {dir, pages, summary}; summary is "" without an index.md.`,
 		run: (*app).cmdDirs},
 	{name: "context", maxArgs: 0,
-		summary: "Show the resolved configuration and search directories with their page counts",
+		summary: "Show the resolved configuration",
 		detail: `Show the config file, the selected profile and how it was selected (flag,
 env, match, default or none), the wiki repository, mirror directory, branch,
-author, the machine and project names (as used for machines/<name>/ and
-projects/<name>/), the origin remote of the current directory, and the search
-directories that other commands use by default: up to four of global/,
-personal/, projects/<name>/ and machines/<name>/. Each is shown with the
-number of pages at any depth under it ("." counts the whole wiki); 0 means the
-directory has no page yet. Unlike dirs, which counts only the pages directly in
-each directory, pages in subdirectories are included.
+author, and the origin remote of the current directory.
 
 The branch is branch in the config file, else the branch saved in the mirror,
 else the remote HEAD, else main. The saved branch is kept, so a change of the
@@ -256,18 +248,16 @@ The user information (user:token@) of an HTTPS or other URL in repo and
 remote is shown as ***@; an SSH user name without a password, such as git@, is
 shown as it is.
 
-Output: {config, profile, profile_source, repo, mirror, branch, author, machine, project, remote, dirs, pages}.`,
+Output: {config, profile, profile_source, repo, mirror, branch, author, remote}.`,
 		run: (*app).cmdContext},
 }
 
 type app struct {
 	cfg     *config.Config
 	repo    *repo.Repo
-	dirs    []string
 	remote  string // origin URL of the current directory; "" when there is none
 	cfgPath string
 	profile string
-	dirsArg string
 	json    bool
 	noFetch bool
 	version bool
@@ -285,15 +275,12 @@ type app struct {
 	msg  string
 }
 
-var osHostname = os.Hostname
-
 // globalFlags registers the flags accepted before or after the command name.
 // Their defaults are the current values, so that registering them again for
 // the command arguments keeps the values given before the command name.
 func (a *app) globalFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&a.cfgPath, "config", a.cfgPath, "read the configuration from `path` instead of $WIKICTL_CONFIG or $XDG_CONFIG_HOME/wikictl/config.yaml (~/.config/wikictl/config.yaml)")
 	fs.StringVar(&a.profile, "profile", a.profile, "use the profile `name` from the config file instead of $WIKICTL_PROFILE, match or default_profile")
-	fs.StringVar(&a.dirsArg, "dirs", a.dirsArg, "search only the comma-separated `dirs` instead of the defaults; . is the whole wiki")
 	fs.BoolVar(&a.json, "json", a.json, "print JSON")
 	fs.BoolVar(&a.noFetch, "no-fetch", a.noFetch, "do not fetch from the remote before reading; writes still fetch before committing")
 	fs.BoolVar(&a.version, "version", a.version, "print the version and exit")
@@ -419,8 +406,7 @@ func jsonRequested(fs *pflag.FlagSet, args []string) bool {
 	return on
 }
 
-// setup loads the configuration with its profile, opens the mirror and
-// resolves the search directories.
+// setup loads the configuration with its profile and opens the mirror.
 func (a *app) setup() error {
 	a.remote = cwdRemote()
 	dir, _ := os.Getwd()
@@ -431,12 +417,6 @@ func (a *app) setup() error {
 	a.cfg = cfg
 	if err := a.openRepo(); err != nil {
 		return &gitError{err}
-	}
-	if a.dirsArg != "" {
-		a.dirs = strings.Split(a.dirsArg, ",")
-	} else {
-		host, _ := osHostname()
-		a.dirs = ctx.DefaultDirs(cfg, a.remote, host)
 	}
 	return nil
 }

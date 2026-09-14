@@ -11,9 +11,9 @@ func TestLoad(t *testing.T) {
 	t.Setenv("WIKICTL_PROFILE", "")
 	d := t.TempDir()
 	p := filepath.Join(d, "c.yaml")
-	os.WriteFile(p, []byte("repo: https://h/r.git\nauthor: {name: n, email: e}\nmachine: m1\n"), 0o600)
+	os.WriteFile(p, []byte("repo: https://h/r.git\nauthor: {name: n, email: e}\n"), 0o600)
 	c, err := Load(p, Selector{})
-	if err != nil || c.Repo != "https://h/r.git" || c.Author.Name != "n" || c.Machine != "m1" || c.Path != p || c.ProfileSource != SourceNone {
+	if err != nil || c.Repo != "https://h/r.git" || c.Author.Name != "n" || c.Path != p || c.ProfileSource != SourceNone {
 		t.Fatalf("%+v %v", c, err)
 	}
 	t.Setenv("WIKICTL_CONFIG", p)
@@ -32,15 +32,12 @@ func TestLoad(t *testing.T) {
 const profilesYAML = `repo: git@github.com:me/wiki.git
 branch: trunk
 author: {name: agent, email: me@home}
-dirs: [global]
-projects: {a: b}
 default_profile: personal
 profiles:
   personal: {}
   work:
     repo: https://git.example.com/team/wiki.git
     author: {email: me@work}
-    projects: {x: y}
     match:
       remotes: ["git.example.com/team/*"]
       paths: ["%s"]
@@ -71,9 +68,8 @@ func TestProfileSelection(t *testing.T) {
 		t.Fatalf("paths: %+v %v", c, err)
 	}
 	// Merge: repo replaces and drops the inherited branch, author merges per
-	// field, projects replaces, dirs is inherited.
-	if c.Repo != "https://git.example.com/team/wiki.git" || c.Branch != "" || c.Author.Name != "agent" || c.Author.Email != "me@work" ||
-		len(c.Projects) != 1 || c.Projects["x"] != "y" || len(c.Dirs) != 1 {
+	// field.
+	if c.Repo != "https://git.example.com/team/wiki.git" || c.Branch != "" || c.Author.Name != "agent" || c.Author.Email != "me@work" {
 		t.Errorf("merge: %+v", c)
 	}
 

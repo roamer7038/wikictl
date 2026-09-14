@@ -33,13 +33,13 @@ func TestJSONContract(t *testing.T) {
 		code  int
 		keys  []string
 	}{
-		{"search", "", "", []string{"search", "--dirs", "global,projects/app", "lease"}, ExitOK,
+		{"search", "", "", []string{"search", "lease"}, ExitOK,
 			[]string{"items", "items[].matched", "items[].path", "items[].summary", "items[].title", "items[].updated"}},
 		{"search/usage", "", "", []string{"search"}, ExitUsage, errKeys},
-		{"ls", "", "", []string{"ls", "--dirs", "global"}, ExitOK,
+		{"ls", "", "", []string{"ls"}, ExitOK,
 			[]string{"items", "items[].path", "items[].summary", "items[].title", "items[].type", "items[].updated"}},
 		{"context", "", "", []string{"context"}, ExitOK,
-			[]string{"author", "branch", "config", "dirs", "machine", "mirror", "pages", "profile", "profile_source", "project", "remote", "repo"}},
+			[]string{"author", "branch", "config", "mirror", "profile", "profile_source", "remote", "repo"}},
 		{"dirs", "", "", []string{"dirs"}, ExitOK, []string{"items", "items[].dir", "items[].pages", "items[].summary"}},
 		{"put", "", newPage, []string{"put", "global/new.md"}, ExitOK, []string{"commit", "path", "sha"}},
 		{"put/conflict", "", newPage, []string{"put", "global/new.md"}, ExitConflict,
@@ -49,7 +49,7 @@ func TestJSONContract(t *testing.T) {
 			[]string{"backlinks", "backlinks[].path", "backlinks[].type", "body", "frontmatter", "links",
 				"links[].note", "links[].target", "links[].type", "path", "sha", "title", "updated"}},
 		{"get/not_found", "", "", []string{"get", "global/none.md"}, ExitError, errKeys},
-		{"lint", "", "", []string{"lint", "--dirs", "global"}, ExitInvalid,
+		{"lint", "", "", []string{"lint"}, ExitInvalid,
 			[]string{"items", "items[].code", "items[].line", "items[].message", "items[].path"}},
 		{"mv", "", "", []string{"mv", "global/new.md", "global/new2.md"}, ExitOK, []string{"commit", "path", "rewritten"}},
 		{"mv/dir", "", "", []string{"mv", "projects/app/", "projects/app2/"}, ExitOK, []string{"commit", "moved", "path", "rewritten"}},
@@ -79,8 +79,8 @@ func TestJSONContract(t *testing.T) {
 }
 
 // opaqueKeys are objects whose keys are data rather than part of the output
-// format: the page's frontmatter and the page counts per directory.
-var opaqueKeys = map[string]bool{"frontmatter": true, "pages": true}
+// format: the page's frontmatter.
+var opaqueKeys = map[string]bool{"frontmatter": true}
 
 // jsonKeys returns the sorted key paths of a JSON document, such as
 // "items[].path". Elements of an array share the path "<key>[]".
