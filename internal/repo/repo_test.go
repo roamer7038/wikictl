@@ -409,3 +409,18 @@ func TestGrepFoldsNonASCII(t *testing.T) {
 		}
 	}
 }
+
+func TestReportsError(t *testing.T) {
+	for stderr, want := range map[string]bool{
+		"": false,
+		"warning: unable to access '/home/u/.config/git/attributes': Permission denied\n": false,
+		"11:47:25.934953 git.c:463               trace: built-in: git grep -l -e x\n":     false,
+		"error: 'main:g/b.md': unable to read debddc32c7a32af3cc2c787797d0d282bcf18d07\n": true,
+		"warning: something\nfatal: bad object main\n":                                    true,
+		"hint: the error: prefix inside a line is not an error\n":                         false,
+	} {
+		if got := reportsError(stderr); got != want {
+			t.Errorf("reportsError(%q) = %v, want %v", stderr, got, want)
+		}
+	}
+}

@@ -221,3 +221,43 @@ func TestUnreadableObject(t *testing.T) {
 		})
 	}
 }
+
+// TestGitStderrNoise checks that output on stderr that is not an error, such
+// as the trace GIT_TRACE enables or a warning about an unreadable attributes
+// file, does not turn a successful read into exit code 5.
+func TestGitStderrNoise(t *testing.T) {
+	cfg := setup(t)
+	reads := [][]string{
+		{"search", "--dirs", "global", "lease"},
+		{"search", "--dirs", "global", "zzz-none"},
+		{"ls", "--dirs", "global"},
+		{"get", "global/push.md"},
+	}
+	check := func(name string) {
+		t.Helper()
+		for _, args := range reads {
+			if code, out, errs := runCLI(t, cfg, "", append([]string{"--json"}, args...)...); code != ExitOK {
+				t.Errorf("%s: %v: code=%d out=%q errs=%.300q", name, args, code, out, errs)
+			}
+		}
+	}
+	t.Run("trace", func(t *testing.T) {
+		t.Setenv("GIT_TRACE", "1")
+		check("GIT_TRACE=1")
+	})
+	t.Run("warning", func(t *testing.T) {
+		if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+			t.Skip("needs a file the user cannot read")
+		}
+		conf := t.TempDir()
+		attr := filepath.Join(conf, "git", "attributes")
+		if err := os.MkdirAll(filepath.Dir(attr), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(attr, []byte("* text\n"), 0o000); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("XDG_CONFIG_HOME", conf)
+		check("unreadable attributes")
+	})
+}
