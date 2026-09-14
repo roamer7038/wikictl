@@ -111,7 +111,7 @@ func TestProfileErrors(t *testing.T) {
 	if _, err := Load(p, Selector{Dir: d}); err == nil || !strings.Contains(err.Error(), "a, b") {
 		t.Errorf("several matches must error: %v", err)
 	}
-	if c, err := Load(p, Selector{Dir: d, Profile: "b"}); err != nil || c.Repo != "r2" {
+	if c, err := Load(p, Selector{Dir: d, Profile: "b"}); err != nil || c.Repo != filepath.Join(d, "r2") {
 		t.Errorf("--profile resolves several matches: %+v %v", c, err)
 	}
 	if _, err := Load(p, Selector{Dir: t.TempDir()}); err == nil || !strings.Contains(err.Error(), "no profile is selected") {
@@ -219,5 +219,51 @@ func TestNormalizeRemote(t *testing.T) {
 		if got := NormalizeRemote(in); got != want {
 			t.Errorf("%s: %s", in, got)
 		}
+	}
+}
+
+// A local relative repo, at the top level or in a profile, is resolved
+// against the directory of the config file, also when the config file is
+// given by a relative path. URLs, the scp-like form, absolute paths and paths
+// starting with ~ are kept as written.
+func TestRelativeRepo(t *testing.T) {
+	t.Setenv("WIKICTL_PROFILE", "")
+	d := t.TempDir()
+	sub := filepath.Join(d, "conf")
+	os.MkdirAll(sub, 0o755)
+	p := filepath.Join(sub, "c.yaml")
+	abs := filepath.Join(d, "abs.git")
+	for repo, want := range map[string]string{
+		"./remote.git":                filepath.Join(sub, "remote.git"),
+		"remote.git":                  filepath.Join(sub, "remote.git"),
+		"../wiki/remote.git":          filepath.Join(d, "wiki", "remote.git"),
+		abs:                           abs,
+		"~/wiki.git":                  "~/wiki.git",
+		"https://h/r.git":             "https://h/r.git",
+		"file:///srv/r.git":           "file:///srv/r.git",
+		"ssh://git@h:2222/x/y.git":    "ssh://git@h:2222/x/y.git",
+		"git@github.com:you/wiki.git": "git@github.com:you/wiki.git",
+		"host:wiki.git":               "host:wiki.git",
+	} {
+		os.WriteFile(p, []byte("repo: "+repo+"\n"), 0o600)
+		c, err := Load(p, Selector{})
+		if err != nil || c.Repo != want {
+			t.Errorf("repo %s: got %q, want %q (%v)", repo, c.Repo, want, err)
+		}
+	}
+
+	os.WriteFile(p, []byte("repo: https://h/r.git\nprofiles:\n  local: {repo: ./local.git}\n"), 0o600)
+	c, err := Load(p, Selector{Profile: "local"})
+	if err != nil || c.Repo != filepath.Join(sub, "local.git") {
+		t.Errorf("profile repo: %+v %v", c, err)
+	}
+
+	t.Chdir(d)
+	if c, err := Load(filepath.Join("conf", "c.yaml"), Selector{Profile: "local"}); err != nil || c.Repo != filepath.Join(sub, "local.git") {
+		t.Errorf("relative --config: %+v %v", c, err)
+	}
+	t.Setenv("WIKICTL_CONFIG", filepath.Join("conf", "c.yaml"))
+	if c, err := Load("", Selector{Profile: "local"}); err != nil || c.Repo != filepath.Join(sub, "local.git") {
+		t.Errorf("relative WIKICTL_CONFIG: %+v %v", c, err)
 	}
 }

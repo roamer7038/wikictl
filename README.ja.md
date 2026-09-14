@@ -130,7 +130,7 @@ wikictl は、`--config <path>`、`$WIKICTL_CONFIG`、`$XDG_CONFIG_HOME/wikictl/
 
 | キー | 必須 | 意味 |
 |---|---|---|
-| `repo` | 必須 | wiki リポジトリの URL またはパス。プロファイル側で設定してもよい |
+| `repo` | 必須 | wiki リポジトリの URL またはパス。ローカルのパスは設定ファイルのあるディレクトリからの相対パスでもよい。プロファイル側で設定してもよい |
 | `branch` | 任意 | 使うブランチ。省略時はミラーに保存したブランチ、なければリモートの HEAD、なければ `main` で、保存したブランチに固定される（`wikictl help context` を参照） |
 | `author.name`, `author.email` | 任意 | コミットの author。それぞれ `git config user.name`、`user.email` にフォールバックする |
 | `machine` | 任意 | `machines/<name>/` の `<name>` |
