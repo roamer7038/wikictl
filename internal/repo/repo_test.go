@@ -82,6 +82,26 @@ func TestSnapshot(t *testing.T) {
 	}
 }
 
+// TestSnapshotOfEmptyBranch checks that after Snapshot of a remote without the
+// branch, reads find no page even when a later fetch creates the branch.
+func TestSnapshotOfEmptyBranch(t *testing.T) {
+	remote := newRemote(t, false)
+	r := openFetched(t, remote)
+	if err := r.Snapshot(); err != nil {
+		t.Fatal(err)
+	}
+	seedRemote(t, remote, map[string]string{"global/new.md": "# n\n"})
+	if err := r.Fetch(); err != nil {
+		t.Fatal(err)
+	}
+	if c, err := r.Cat([]string{"global/new.md"}); err != nil || len(c) != 0 {
+		t.Errorf("Cat after fetch: %v %v", c, err)
+	}
+	if s, err := r.Stat([]string{"global/new.md"}); err != nil || len(s) != 0 {
+		t.Errorf("Stat after fetch: %v %v", s, err)
+	}
+}
+
 func openFetched(t *testing.T, remote string) *Repo {
 	t.Helper()
 	r, err := Open(filepath.Join(t.TempDir(), "m"), remote, "")

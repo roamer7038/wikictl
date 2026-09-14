@@ -295,6 +295,9 @@ func TestPathForms(t *testing.T) {
 			t.Errorf("%v: code=%d errs=%q", args, code, errs)
 		}
 	}
+	if code, out, errs := runCLI(t, cfg, "", "get", "global/push.md\nglobal/index.md"); code != ExitInvalid || out != "" || !strings.Contains(errs, "bad_path") {
+		t.Errorf("get with a newline in the path: code=%d out=%q errs=%q", code, out, errs)
+	}
 }
 
 // TestPutIntoEmptyRepository checks that the first put into a repository
