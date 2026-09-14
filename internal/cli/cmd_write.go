@@ -12,61 +12,23 @@ import (
 	"github.com/roamer7038/wikictl/internal/repo"
 )
 
-type conflictOut struct {
-	Error   string `json:"error"`
-	Reason  string `json:"reason"`
-	Path    string `json:"path"`
-	SHA     string `json:"sha"`
-	Content string `json:"content"`
-	Message string `json:"message"`
-}
-
-// commit writes changes as one commit and reports conflicts and git failures.
-// rerun names the command to run again on a conflict; it is empty for put,
-// whose conflicts are resolved by reapplying the change.
-// The second result is the exit code; it is ExitOK when the first result is set.
-func (a *app) commit(changes []repo.Change, msg, rerun string) (*repo.Result, int) {
+// commit writes changes as one commit. A conflict is returned as a
+// conflictError. rerun names the command to run again on a conflict; it is
+// empty for put, whose conflicts are resolved by reapplying the change.
+func (a *app) commit(changes []repo.Change, msg, rerun string) (*repo.Result, error) {
 	au, err := a.author()
 	if err != nil {
-		return nil, a.fail(ExitUsage, "usage", err.Error())
+		return nil, &usageError{msg: err.Error()}
 	}
 	res, err := a.repo.Commit(changes, msg, au)
 	if err != nil {
 		var cf *repo.Conflict
 		if errors.As(err, &cf) {
-			if a.json {
-				a.emit(conflictOut{"conflict", cf.Reason, cf.Path, cf.SHA, string(cf.Content), conflictMessage(cf, rerun)}, nil)
-			} else {
-				fmt.Fprintf(a.stderr, "wikictl: conflict (%s): %s sha=%s\n", cf.Reason, cf.Path, cf.SHA)
-				a.stdout.Write(cf.Content)
-			}
-			return nil, ExitConflict
+			return nil, &conflictError{cf, rerun}
 		}
-		return nil, a.fail(ExitGit, "git", err.Error())
+		return nil, &gitError{err}
 	}
-	return res, ExitOK
-}
-
-// conflictMessage returns the "message" of a conflict for its reason.
-func conflictMessage(cf *repo.Conflict, rerun string) string {
-	if rerun != "" {
-		switch {
-		case cf.Reason == "exists":
-			return "the page was created since it was read; re-read the wiki and run " + rerun + " again with another path"
-		case cf.SHA == "":
-			return "the page was deleted since it was read; re-read the wiki and run " + rerun + " again"
-		default:
-			return "the page changed since it was read; re-read the wiki and run " + rerun + " again"
-		}
-	}
-	switch {
-	case cf.Reason == "exists":
-		return "the page already exists; pass its sha with --base to replace it, or choose another path"
-	case cf.SHA == "":
-		return "the page was deleted since it was read"
-	default:
-		return "the page changed since it was read; re-read the current content and reapply the change"
-	}
+	return res, nil
 }
 
 type putOpts struct {
@@ -86,23 +48,23 @@ func msgFlag(fs *flag.FlagSet) *string {
 	return fs.String("m", "", "commit `message`")
 }
 
-func (a *app) cmdPut(c *command, args []string) int {
+func (a *app) cmdPut(c *command, args []string) error {
 	fs := newFlagSet(c.name)
 	o := putFlags(fs)
-	rest, code, ok := a.parseFlags(c, fs, args)
-	if !ok {
-		return code
+	rest, err := parseFlags(c, fs, args)
+	if err != nil {
+		return err
 	}
 	p := rest[0]
 	content, err := io.ReadAll(a.stdin)
 	if err != nil {
-		return a.fail(ExitError, "error", err.Error())
+		return err
 	}
 	pg := page.Parse(p, content)
 	for _, is := range pg.Issues {
 		switch is.Code {
 		case "bad_path", "frontmatter_invalid", "page_too_large":
-			return a.fail(ExitInvalid, "invalid", is.Code+": "+is.Message)
+			return &invalidError{is.Code + ": " + is.Message}
 		default:
 			a.warn(is)
 		}
@@ -117,13 +79,13 @@ func (a *app) cmdPut(c *command, args []string) int {
 		msg = "wikictl: put " + p
 	}
 	base := o.base
-	res, code := a.commit([]repo.Change{{Path: p, Content: content, Base: &base}}, msg, "")
-	if code != ExitOK {
-		return code
+	res, err := a.commit([]repo.Change{{Path: p, Content: content, Base: &base}}, msg, "")
+	if err != nil {
+		return err
 	}
 	out := map[string]string{"path": p, "sha": res.SHAs[p], "commit": res.Commit}
 	a.emit(out, func(w io.Writer) { fmt.Fprintf(w, "%s\t%s\t%s\n", p, res.SHAs[p], res.Commit) })
-	return ExitOK
+	return nil
 }
 
 // warn prints a non-blocking issue on stderr.
@@ -131,39 +93,39 @@ func (a *app) warn(is page.Issue) {
 	fmt.Fprintf(a.stderr, "wikictl: warning: %s:%d: %s: %s\n", is.Path, is.Line, is.Code, escapeControl(is.Message))
 }
 
-func (a *app) cmdRm(c *command, args []string) int {
+func (a *app) cmdRm(c *command, args []string) error {
 	fs := newFlagSet(c.name)
 	msg := msgFlag(fs)
-	rest, code, ok := a.parseFlags(c, fs, args)
-	if !ok {
-		return code
+	rest, err := parseFlags(c, fs, args)
+	if err != nil {
+		return err
 	}
 	p := rest[0]
 	if err := page.CheckPath(p); err != nil {
-		return a.fail(ExitInvalid, "invalid", "bad_path: "+err.Error())
+		return &invalidError{"bad_path: " + err.Error()}
 	}
 	contents, shas, _ := a.repo.CatSHA([]string{p})
 	if contents[p] == nil {
-		return a.fail(ExitError, "error", "page not found: "+p)
+		return &notFoundError{p}
 	}
 	if *msg == "" {
 		*msg = "wikictl: rm " + p
 	}
 	base := shas[p]
-	res, code := a.commit([]repo.Change{{Path: p, Delete: true, Base: &base}}, *msg, "rm")
-	if code != ExitOK {
-		return code
+	res, err := a.commit([]repo.Change{{Path: p, Delete: true, Base: &base}}, *msg, "rm")
+	if err != nil {
+		return err
 	}
 	a.emit(map[string]string{"path": p, "commit": res.Commit}, func(w io.Writer) { fmt.Fprintf(w, "%s\t%s\n", p, res.Commit) })
-	return ExitOK
+	return nil
 }
 
-func (a *app) cmdMv(c *command, args []string) int {
+func (a *app) cmdMv(c *command, args []string) error {
 	fs := newFlagSet(c.name)
 	msg := msgFlag(fs)
-	rest, code, ok := a.parseFlags(c, fs, args)
-	if !ok {
-		return code
+	rest, err := parseFlags(c, fs, args)
+	if err != nil {
+		return err
 	}
 	from, to := rest[0], rest[1]
 	fromDir, toDir := strings.HasSuffix(from, "/"), strings.HasSuffix(to, "/")
@@ -171,30 +133,30 @@ func (a *app) cmdMv(c *command, args []string) int {
 		return a.mvDir(strings.TrimSuffix(from, "/"), strings.TrimSuffix(to, "/"), *msg)
 	}
 	if fromDir || toDir {
-		return a.usageError(c, "to move a directory, end both arguments with /")
+		return &usageError{c, "to move a directory, end both arguments with /"}
 	}
 	if err := page.CheckPath(from); err != nil {
-		return a.fail(ExitInvalid, "invalid", "bad_path: "+err.Error())
+		return &invalidError{"bad_path: " + err.Error()}
 	}
 	for _, is := range page.PathIssues(to) {
 		if is.Code == "bad_path" {
-			return a.fail(ExitInvalid, "invalid", is.Code+": "+is.Message)
+			return &invalidError{is.Code + ": " + is.Message}
 		}
 		a.warn(is)
 	}
 	contents, err := a.repo.Cat([]string{from, to})
 	if err != nil {
-		return a.fail(ExitGit, "git", err.Error())
+		return &gitError{err}
 	}
 	if _, ok := contents[from]; !ok {
-		return a.fail(ExitError, "error", "page not found: "+from)
+		return &notFoundError{from}
 	}
 	if _, exists := contents[to]; exists {
-		return a.fail(ExitError, "error", "page already exists: "+to)
+		return errors.New("page already exists: " + to)
 	}
 	changes, err := a.relocate(map[string]string{from: to})
 	if err != nil {
-		return a.fail(ExitGit, "git", err.Error())
+		return &gitError{err}
 	}
 	// Record the old file name in aliases when it changes.
 	oldName := strings.TrimSuffix(path.Base(from), ".md")
@@ -208,25 +170,25 @@ func (a *app) cmdMv(c *command, args []string) int {
 	if *msg == "" {
 		*msg = "wikictl: mv " + from + " " + to
 	}
-	res, code := a.commit(changes, *msg, "mv")
-	if code != ExitOK {
-		return code
+	res, err := a.commit(changes, *msg, "mv")
+	if err != nil {
+		return err
 	}
 	a.emit(map[string]any{"path": to, "commit": res.Commit, "rewritten": len(changes) - 2},
 		func(w io.Writer) { fmt.Fprintf(w, "%s -> %s\t%s\n", from, to, res.Commit) })
-	return ExitOK
+	return nil
 }
 
 // mvDir moves every page under from to the same relative position under to.
-func (a *app) mvDir(from, to, msg string) int {
+func (a *app) mvDir(from, to, msg string) error {
 	for _, seg := range strings.Split(from, "/") {
 		if seg == "" || seg == "." || seg == ".." {
-			return a.fail(ExitInvalid, "invalid", fmt.Sprintf("bad_path: %q is not a directory of the wiki", from+"/"))
+			return &invalidError{fmt.Sprintf("bad_path: %q is not a directory of the wiki", from+"/")}
 		}
 	}
 	for _, seg := range strings.Split(to, "/") {
 		if err := page.CheckName(seg); err != nil {
-			return a.fail(ExitInvalid, "invalid", "bad_path: "+err.Error())
+			return &invalidError{"bad_path: " + err.Error()}
 		}
 		if !page.Recommended(seg) {
 			a.warn(page.Issue{Path: to + "/", Code: "name_style", Message: fmt.Sprintf("name %q: lowercase ASCII letters, digits and hyphens are recommended", seg)})
@@ -234,7 +196,7 @@ func (a *app) mvDir(from, to, msg string) int {
 	}
 	listed, err := a.repo.List([]string{from})
 	if err != nil {
-		return a.fail(ExitGit, "git", err.Error())
+		return &gitError{err}
 	}
 	// List also matches from itself when from is a file.
 	var src []string
@@ -244,33 +206,33 @@ func (a *app) mvDir(from, to, msg string) int {
 		}
 	}
 	if len(src) == 0 {
-		return a.fail(ExitError, "error", "no pages under "+from+"/")
+		return errors.New("no pages under " + from + "/")
 	}
 	if dst, _ := a.repo.List([]string{to}); len(dst) > 0 {
-		return a.fail(ExitError, "error", "pages already exist under "+to+"/")
+		return errors.New("pages already exist under " + to + "/")
 	}
 	mapping := map[string]string{}
 	for _, p := range src {
 		np := to + strings.TrimPrefix(p, from)
 		if err := page.CheckPath(np); err != nil {
-			return a.fail(ExitInvalid, "invalid", "bad_path: "+np+": "+err.Error())
+			return &invalidError{"bad_path: " + np + ": " + err.Error()}
 		}
 		mapping[p] = np
 	}
 	changes, err := a.relocate(mapping)
 	if err != nil {
-		return a.fail(ExitGit, "git", err.Error())
+		return &gitError{err}
 	}
 	if msg == "" {
 		msg = "wikictl: mv " + from + "/ " + to + "/"
 	}
-	res, code := a.commit(changes, msg, "mv")
-	if code != ExitOK {
-		return code
+	res, err := a.commit(changes, msg, "mv")
+	if err != nil {
+		return err
 	}
 	a.emit(map[string]any{"path": to + "/", "commit": res.Commit, "moved": len(src), "rewritten": len(changes) - 2*len(src)},
 		func(w io.Writer) { fmt.Fprintf(w, "%s/ -> %s/ (%d pages)\t%s\n", from, to, len(src), res.Commit) })
-	return ExitOK
+	return nil
 }
 
 // relocate walks every page of the wiki and builds one change set for
@@ -314,19 +276,19 @@ global/ for everything, personal/ for one user, projects/<name>/ and
 machines/<name>/ for the rest.
 `
 
-func (a *app) cmdInit(c *command, args []string) int {
+func (a *app) cmdInit(c *command, args []string) error {
 	if head, _ := a.repo.Head(); head != "" {
-		return a.fail(ExitError, "error", "branch "+a.repo.Branch+" already exists on the remote; init only works on an empty repository")
+		return errors.New("branch " + a.repo.Branch + " already exists on the remote; init only works on an empty repository")
 	}
 	empty := ""
 	changes := []repo.Change{
 		{Path: "README.md", Content: []byte(initReadme), Base: &empty},
 		{Path: "global/index.md", Content: []byte("---\nsummary: Entry point for knowledge that does not depend on any project, machine or user\n---\n# global\n"), Base: &empty},
 	}
-	res, code := a.commit(changes, "wikictl: init", "")
-	if code != ExitOK {
-		return code
+	res, err := a.commit(changes, "wikictl: init", "")
+	if err != nil {
+		return err
 	}
 	a.emit(map[string]string{"commit": res.Commit}, func(w io.Writer) { fmt.Fprintf(w, "initialized: %s\n", res.Commit) })
-	return ExitOK
+	return nil
 }

@@ -56,16 +56,16 @@ func searchFlags(fs *flag.FlagSet) *searchOpts {
 	return o
 }
 
-func (a *app) cmdSearch(c *command, args []string) int {
+func (a *app) cmdSearch(c *command, args []string) error {
 	fs := newFlagSet(c.name)
 	o := searchFlags(fs)
-	words, code, ok := a.parseFlags(c, fs, args)
-	if !ok {
-		return code
+	words, err := parseFlags(c, fs, args)
+	if err != nil {
+		return err
 	}
 	paths, err := a.repo.Grep(words, !o.any, a.dirs)
 	if err != nil {
-		return a.fail(ExitGit, "git", err.Error())
+		return &gitError{err}
 	}
 	if !o.all {
 		dep, _ := a.repo.GrepDeprecated(a.dirs)
@@ -74,7 +74,7 @@ func (a *app) cmdSearch(c *command, args []string) int {
 	updated, _ := a.repo.Updated(a.dirs)
 	contents, err := a.repo.Cat(paths)
 	if err != nil {
-		return a.fail(ExitGit, "git", err.Error())
+		return &gitError{err}
 	}
 	hits := []hit{}
 	for _, p := range paths {
@@ -105,7 +105,7 @@ func (a *app) cmdSearch(c *command, args []string) int {
 			fmt.Fprintf(w, "%s\t%s\n", h.Path, escapeControl(summaryOrTitle(h.Summary, h.Title)))
 		}
 	})
-	return ExitOK
+	return nil
 }
 
 type getOut struct {
@@ -130,15 +130,15 @@ type backlinkOut struct {
 	Type string `json:"type"`
 }
 
-func (a *app) cmdGet(c *command, args []string) int {
+func (a *app) cmdGet(c *command, args []string) error {
 	p := args[0]
 	contents, err := a.repo.Cat([]string{p})
 	if err != nil {
-		return a.fail(ExitGit, "git", err.Error())
+		return &gitError{err}
 	}
 	content, ok := contents[p]
 	if !ok {
-		return a.fail(ExitError, "error", "page not found: "+p)
+		return &notFoundError{p}
 	}
 	head, _ := a.repo.Head()
 	sha, _ := a.repo.BlobSHA(head, p)
@@ -169,7 +169,7 @@ func (a *app) cmdGet(c *command, args []string) int {
 			}
 		}
 	})
-	return ExitOK
+	return nil
 }
 
 // backlinks greps the whole wiki for the file name of target to collect candidate
@@ -225,15 +225,15 @@ func lsFlags(fs *flag.FlagSet) *lsOpts {
 	return o
 }
 
-func (a *app) cmdLs(c *command, args []string) int {
+func (a *app) cmdLs(c *command, args []string) error {
 	fs := newFlagSet(c.name)
 	o := lsFlags(fs)
-	if _, code, ok := a.parseFlags(c, fs, args); !ok {
-		return code
+	if _, err := parseFlags(c, fs, args); err != nil {
+		return err
 	}
 	paths, err := a.repo.List(a.dirs)
 	if err != nil {
-		return a.fail(ExitGit, "git", err.Error())
+		return &gitError{err}
 	}
 	if !o.all {
 		dep, _ := a.repo.GrepDeprecated(a.dirs)
@@ -258,13 +258,13 @@ func (a *app) cmdLs(c *command, args []string) int {
 			fmt.Fprintf(w, "%s\t%s\n", it.Path, escapeControl(summaryOrTitle(it.Summary, it.Title)))
 		}
 	})
-	return ExitOK
+	return nil
 }
 
 // cmdContext prints the values other commands derive from the environment:
 // machine and project are the resolved names used for machines/<name>/ and
 // projects/<name>/, not the raw hostname and remote URL.
-func (a *app) cmdContext(c *command, args []string) int {
+func (a *app) cmdContext(c *command, args []string) error {
 	host, _ := osHostname()
 	machine := a.cfg.Machine
 	if machine == "" {
@@ -281,7 +281,7 @@ func (a *app) cmdContext(c *command, args []string) int {
 	au, _ := a.author()
 	paths, err := a.repo.List(a.dirs)
 	if err != nil {
-		return a.fail(ExitGit, "git", err.Error())
+		return &gitError{err}
 	}
 	pages := map[string]int{}
 	for _, d := range a.dirs {
@@ -300,7 +300,7 @@ func (a *app) cmdContext(c *command, args []string) int {
 		}
 		fmt.Fprintf(w, "dirs: %s\n", strings.Join(ds, ", "))
 	})
-	return ExitOK
+	return nil
 }
 
 // summaryOrTitle returns the summary, or the title when the page has none,
@@ -320,19 +320,19 @@ type dirItem struct {
 
 // cmdDirs groups one listing of the tree by directory and reads only the
 // index.md files, so the cost does not grow with the number of pages read.
-func (a *app) cmdDirs(c *command, args []string) int {
+func (a *app) cmdDirs(c *command, args []string) error {
 	for _, d := range args {
 		p := path.Clean(d)
 		if path.IsAbs(p) || p == ".." || strings.HasPrefix(p, "../") {
-			return a.usageError(c, "directory outside the wiki: "+d)
+			return &usageError{c, "directory outside the wiki: " + d}
 		}
 		if strings.HasSuffix(p, ".md") {
-			return a.usageError(c, "not a directory: "+d)
+			return &usageError{c, "not a directory: " + d}
 		}
 	}
 	paths, err := a.repo.List(args)
 	if err != nil {
-		return a.fail(ExitGit, "git", err.Error())
+		return &gitError{err}
 	}
 	counts := countPages(paths)
 	dirs := make([]string, 0, len(counts))
@@ -344,7 +344,7 @@ func (a *app) cmdDirs(c *command, args []string) int {
 	sort.Strings(dirs)
 	contents, err := a.repo.Cat(indexes)
 	if err != nil {
-		return a.fail(ExitGit, "git", err.Error())
+		return &gitError{err}
 	}
 	items := []dirItem{}
 	for _, d := range dirs {
@@ -368,7 +368,7 @@ func (a *app) cmdDirs(c *command, args []string) int {
 			fmt.Fprintf(w, "%-*s  %*d  %s\n", dw, it.Dir, nw, it.Pages, s)
 		}
 	})
-	return ExitOK
+	return nil
 }
 
 // countPages returns the number of pages directly in each directory,

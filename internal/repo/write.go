@@ -190,14 +190,14 @@ func (r *Repo) buildAndPush(head string, changes []Change, msg string, au Author
 	pout, perr := r.Git("push", "--porcelain", "origin", commit+":refs/heads/"+r.Branch,
 		"--force-with-lease=refs/heads/"+r.Branch+":"+lease)
 	switch pushStatus(pout) {
-	case "ok":
+	case pushOK:
 		if head != "" {
 			r.Git("update-ref", r.trackingRef(), commit, head)
 		} else {
 			r.Git("update-ref", r.trackingRef(), commit)
 		}
 		return &Result{Commit: commit, SHAs: shas}, false, nil
-	case "stale":
+	case pushStale:
 		return nil, true, fmt.Errorf("push rejected: the remote branch moved")
 	default:
 		retry := r.remoteMoved(head, pout, perr)
@@ -229,23 +229,31 @@ func (r *Repo) remoteMoved(head, pout string, perr error) bool {
 	return cur != head
 }
 
-// pushStatus classifies the refspec line of "push --porcelain" output as
-// "ok", "stale" (lease failed), "rejected" or "none" (no refspec line, e.g.
-// a connection or authentication failure).
-func pushStatus(out string) string {
+// pushResult is the outcome of a push as reported by pushStatus.
+type pushResult int
+
+const (
+	pushNone     pushResult = iota // no refspec line, e.g. a connection or authentication failure
+	pushOK                         // the ref was updated or already up to date
+	pushStale                      // the lease failed
+	pushRejected                   // rejected for another reason
+)
+
+// pushStatus classifies the refspec line of "push --porcelain" output.
+func pushStatus(out string) pushResult {
 	for _, l := range strings.Split(out, "\n") {
 		if len(l) < 2 || l[1] != '\t' {
 			continue
 		}
 		switch l[0] {
 		case ' ', '+', '-', '*', '=':
-			return "ok"
+			return pushOK
 		case '!':
 			if strings.Contains(l, "stale info") {
-				return "stale"
+				return pushStale
 			}
-			return "rejected"
+			return pushRejected
 		}
 	}
-	return "none"
+	return pushNone
 }
