@@ -42,12 +42,14 @@ func noResult(err error) bool {
 }
 
 // reportsError reports whether git's stderr contains an error message. With
-// LC_ALL=C git starts those lines with "error: " or "fatal: ". Other output on
-// stderr, such as "warning: " lines or the trace that GIT_TRACE enables, does
-// not make a command fail.
+// LC_ALL=C git starts those lines with "error: " or "fatal: ". A ref whose
+// content is not an object name is reported only as a warning ("rev-parse
+// --verify -q" then exits with 1 as for a missing ref), so that warning counts
+// as an error too. Other output on stderr, such as other "warning: " lines or
+// the trace that GIT_TRACE enables, does not make a command fail.
 func reportsError(stderr string) bool {
 	for line := range strings.SplitSeq(stderr, "\n") {
-		if strings.HasPrefix(line, "error: ") || strings.HasPrefix(line, "fatal: ") {
+		if strings.HasPrefix(line, "error: ") || strings.HasPrefix(line, "fatal: ") || strings.HasPrefix(line, "warning: ignoring broken ref ") {
 			return true
 		}
 	}
