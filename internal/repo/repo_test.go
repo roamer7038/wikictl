@@ -212,6 +212,20 @@ func TestReadGitFailure(t *testing.T) {
 	}
 }
 
+// TestCheckMissing checks the paths that are not errors: an absent path, a
+// directory and a blob that can be read.
+func TestCheckMissing(t *testing.T) {
+	remote := newRemote(t, true)
+	r := openFetched(t, remote)
+	if err := r.CheckMissing([]string{"global/none.md", "none/x.md", "global", "global/index.md"}); err != nil {
+		t.Error(err)
+	}
+	empty := openFetched(t, newRemote(t, false))
+	if err := empty.CheckMissing([]string{"global/index.md"}); err != nil {
+		t.Error(err)
+	}
+}
+
 func TestRead(t *testing.T) {
 	remote := newRemote(t, true)
 	seedRemote(t, remote, map[string]string{

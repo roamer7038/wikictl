@@ -83,12 +83,23 @@ func (r *Repo) Git(args ...string) (string, error) { return r.run(nil, nil, args
 // GitIn runs git in the mirror with stdin and returns its stdout.
 func (r *Repo) GitIn(stdin []byte, args ...string) (string, error) { return r.run(nil, stdin, args...) }
 
-// run executes git in the mirror. core.quotePath is turned off so that
+// gitStrict is Git that also fails when git writes on stderr. git grep
+// reports an object it cannot read on stderr and still exits with 0 when
+// another file matches.
+func (r *Repo) gitStrict(args ...string) (string, error) { return r.runGit(true, nil, nil, args...) }
+
+// run executes git in the mirror; see runGit.
+func (r *Repo) run(extraEnv []string, stdin []byte, args ...string) (string, error) {
+	return r.runGit(false, extraEnv, stdin, args...)
+}
+
+// runGit executes git in the mirror. With strict, output on stderr is a
+// failure even at exit status 0. core.quotePath is turned off so that
 // ls-tree, grep and log print non-ASCII paths verbatim instead of quoting
 // them. --literal-pathspecs makes directory names containing '*', '?' or
 // '[' match only themselves instead of acting as wildcards. --git-dir=.
 // keeps git from searching parent directories for a repository.
-func (r *Repo) run(extraEnv []string, stdin []byte, args ...string) (string, error) {
+func (r *Repo) runGit(strict bool, extraEnv []string, stdin []byte, args ...string) (string, error) {
 	c := exec.Command("git", append([]string{"--git-dir=.", "--literal-pathspecs", "-c", "core.quotePath=false"}, args...)...)
 	c.Dir = r.Dir
 	c.Env = append(baseEnv(), extraEnv...)
@@ -99,6 +110,9 @@ func (r *Repo) run(extraEnv []string, stdin []byte, args ...string) (string, err
 	c.Stdout, c.Stderr = &out, &errb
 	if err := c.Run(); err != nil {
 		return out.String(), &GitError{Args: args, Stderr: errb.String(), Err: err}
+	}
+	if strict && strings.TrimSpace(errb.String()) != "" {
+		return out.String(), &GitError{Args: args, Stderr: errb.String(), Err: errors.New("exit status 0 with errors")}
 	}
 	return out.String(), nil
 }

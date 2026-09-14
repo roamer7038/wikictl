@@ -112,7 +112,7 @@ func (a *app) cmdRm(c *command, args []string) error {
 		return &gitError{err}
 	}
 	if contents[p] == nil {
-		return &notFoundError{p}
+		return a.notFound(p)
 	}
 	if *msg == "" {
 		*msg = "wikictl: rm " + p
@@ -155,10 +155,13 @@ func (a *app) cmdMv(c *command, args []string) error {
 		return &gitError{err}
 	}
 	if _, ok := contents[from]; !ok {
-		return &notFoundError{from}
+		return a.notFound(from)
 	}
 	if _, exists := contents[to]; exists {
 		return errors.New("page already exists: " + to)
+	}
+	if err := a.repo.CheckMissing([]string{to}); err != nil {
+		return &gitError{err}
 	}
 	changes, err := a.relocate(map[string]string{from: to})
 	if err != nil {

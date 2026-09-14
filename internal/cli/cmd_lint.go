@@ -30,7 +30,7 @@ func (a *app) cmdLint(c *command, args []string) error {
 	}
 	for _, p := range args {
 		if contents[p] == nil {
-			return &notFoundError{p}
+			return a.notFound(p)
 		}
 	}
 	items := []page.Issue{}

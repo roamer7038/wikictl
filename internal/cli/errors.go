@@ -37,6 +37,15 @@ type notFoundError struct{ path string }
 
 func (e *notFoundError) Error() string { return "page not found: " + e.path }
 
+// notFound returns notFoundError for a page that Cat did not return, or
+// gitError when the page may exist but git cannot read it.
+func (a *app) notFound(p string) error {
+	if err := a.repo.CheckMissing([]string{p}); err != nil {
+		return &gitError{err}
+	}
+	return &notFoundError{p}
+}
+
 // invalidError is a page or path that violates the wiki format. The message
 // starts with the issue code, such as "bad_path: ".
 type invalidError struct{ msg string }

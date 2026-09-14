@@ -76,7 +76,7 @@ func TestGitFailure(t *testing.T) {
 		{"search/deprecated", gitFault{match: " grep -l -E "}, "", []string{"search", "--dirs", "global,machines/h1", "lease"}, ExitGit},
 		{"search/updated", gitFault{match: " log --format="}, "", []string{"search", "--dirs", "global", "lease"}, ExitGit},
 		{"get/head", gitFault{match: head}, "", []string{"get", "global/push.md"}, ExitGit},
-		{"get/sha", gitFault{match: ":global/push.md "}, "", []string{"get", "global/push.md"}, ExitGit},
+		{"get/sha", gitFault{match: " ls-tree -z "}, "", []string{"get", "global/push.md"}, ExitGit},
 		{"get/backlinks grep", gitFault{match: " grep -E -l "}, "", []string{"get", "global/index.md"}, ExitGit},
 		{"get/backlinks cat", gitFault{match: " cat-file --batch ", skip: 1}, "", []string{"get", "global/index.md"}, ExitGit},
 		{"get/updated", gitFault{match: " log --format="}, "", []string{"get", "global/push.md"}, ExitGit},
@@ -91,7 +91,7 @@ func TestGitFailure(t *testing.T) {
 		{"mv/destination directory", gitFault{match: " -- projects/app2 "}, "", []string{"mv", "projects/app/", "projects/app2/"}, ExitGit},
 		{"put/link targets", gitFault{match: " cat-file --batch "}, newPage, []string{"put", "global/new.md"}, ExitGit},
 		{"put/head", gitFault{match: head}, newPage, []string{"put", "global/new.md"}, ExitGit},
-		{"put/sha", gitFault{match: ":global/push.md "}, newPage, []string{"put", "global/push.md"}, ExitGit},
+		{"put/sha", gitFault{match: " ls-tree -z "}, newPage, []string{"put", "global/push.md"}, ExitGit},
 		{"put/conflict content", gitFault{match: " cat-file -p "}, newPage, []string{"put", "global/push.md"}, ExitGit},
 		// push itself moves the tracking ref to the pushed commit, so a failed
 		// update-ref leaves nothing to report.
@@ -119,11 +119,11 @@ func TestGitFailure(t *testing.T) {
 	}
 }
 
-// TestSearchUnreadableObject removes the blob of a page from the mirror. git
-// grep then exits with status 1, as it does for no match, and reports on
-// stderr that it cannot read the object.
-func TestSearchUnreadableObject(t *testing.T) {
-	cfg := setup(t)
+// looseMirror creates the mirror of cfg and unpacks its packs into loose
+// objects, so that a test can delete single objects. It returns the path of
+// the mirror.
+func looseMirror(t *testing.T, cfg string) string {
+	t.Helper()
 	if code, _, errs := runCLI(t, cfg, "", "ls"); code != ExitOK {
 		t.Fatalf("ls: code=%d %s", code, errs)
 	}
@@ -143,18 +143,81 @@ func TestSearchUnreadableObject(t *testing.T) {
 			t.Fatalf("unpack-objects: %v\n%s", err, out)
 		}
 	}
-	out, err := exec.Command("git", "--git-dir="+mirror, "rev-parse", "refs/remotes/origin/main:global/push.md").Output()
+	return mirror
+}
+
+// mirrorObject returns the sha of path at the tracking ref of mirror.
+func mirrorObject(t *testing.T, mirror, path string) string {
+	t.Helper()
+	out, err := exec.Command("git", "--git-dir="+mirror, "rev-parse", "refs/remotes/origin/main:"+path).Output()
 	if err != nil {
 		t.Fatal(err)
 	}
-	sha := strings.TrimSpace(string(out))
-	if err := os.Remove(filepath.Join(mirror, "objects", sha[:2], sha[2:])); err != nil {
-		t.Fatal(err)
+	return strings.TrimSpace(string(out))
+}
+
+// TestUnreadableObject deletes an object from the mirror, or points the
+// tracking ref at a commit that does not exist. git then reports the object
+// on stderr while grep may still exit with 0, cat-file --batch reports it as
+// "missing" like an absent page, and "rev-parse <commit>:<path>" exits with 1
+// like an absent path. Every command must exit with 5 instead of printing a
+// partial result, "page not found" or a conflict.
+func TestUnreadableObject(t *testing.T) {
+	newPage := "---\nsummary: new\n---\n# New\n"
+	cases := []struct {
+		name      string
+		remove    string // path whose object is deleted
+		brokenRef bool
+		stdin     string
+		args      []string
+	}{
+		// machines/h1/y.md, projects/app/x.md and global/push.md match.
+		{"search/grep with another match", "global/push.md", false, "", []string{"--no-fetch", "search", "lease"}},
+		{"ls/deprecated with another match", "global/push.md", false, "", []string{"--no-fetch", "ls"}},
+		{"get/backlinks with another match", "projects/app/x.md", false, "", []string{"--no-fetch", "get", "global/index.md"}},
+		{"get/target blob", "global/push.md", false, "", []string{"--no-fetch", "get", "global/push.md"}},
+		{"get/target tree", "global", false, "", []string{"--no-fetch", "get", "global/push.md"}},
+		{"get/broken ref", "", true, "", []string{"--no-fetch", "get", "global/push.md"}},
+		{"lint/target blob", "global/push.md", false, "", []string{"--no-fetch", "lint", "global/push.md"}},
+		{"rm/target blob", "global/push.md", false, "", []string{"rm", "global/push.md"}},
+		{"mv/source blob", "global/push.md", false, "", []string{"mv", "global/push.md", "global/push2.md"}},
+		{"mv/destination blob", "global/push.md", false, "", []string{"mv", "global/index.md", "global/push.md"}},
+		{"put/base with tree", "global", false, newPage, []string{"put", "--base", "BASE", "global/push.md"}},
+		{"put/existence with tree", "global", false, newPage, []string{"put", "global/push.md"}},
 	}
-	code, stdout, _ := runCLI(t, cfg, "", "--json", "--no-fetch", "search", "--dirs", "global", "lease")
-	var e errorOut
-	mustUnmarshal(t, stdout, &e)
-	if code != ExitGit || e.Error != "git" || !strings.Contains(e.Message, "unable to read") {
-		t.Errorf("code=%d stdout=%s", code, stdout)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			cfg := setup(t)
+			mirror := looseMirror(t, cfg)
+			base := mirrorObject(t, mirror, "global/push.md")
+			if c.remove != "" {
+				sha := mirrorObject(t, mirror, c.remove)
+				if err := os.Remove(filepath.Join(mirror, "objects", sha[:2], sha[2:])); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if c.brokenRef {
+				ref := filepath.Join(mirror, "refs", "remotes", "origin", "main")
+				if err := os.WriteFile(ref, []byte("1234567890123456789012345678901234567890\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			args := slices.Clone(c.args)
+			for i, a := range args {
+				if a == "BASE" {
+					args[i] = base
+				}
+			}
+			code, out, errs := runCLI(t, cfg, c.stdin, append([]string{"--json"}, args...)...)
+			if code != ExitGit {
+				t.Fatalf("exit code %d, want %d\nstdout: %s\nstderr: %s", code, ExitGit, out, errs)
+			}
+			var e errorOut
+			mustUnmarshal(t, out, &e)
+			keys, _ := jsonKeys(out)
+			if e.Error != "git" || !slices.Equal(keys, []string{"error", "message"}) {
+				t.Errorf("stdout: %s", out)
+			}
+		})
 	}
 }

@@ -144,7 +144,7 @@ func (a *app) cmdGet(c *command, args []string) error {
 	}
 	content, ok := contents[p]
 	if !ok {
-		return &notFoundError{p}
+		return a.notFound(p)
 	}
 	head, err := a.repo.Head()
 	if err != nil {
