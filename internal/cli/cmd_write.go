@@ -38,7 +38,7 @@ type putOpts struct {
 
 func putFlags(fs *flag.FlagSet) *putOpts {
 	o := &putOpts{}
-	fs.StringVar(&o.base, "base", "", "blob `sha` of the existing page as printed by get; omit for a new page")
+	fs.StringVar(&o.base, "base", "", "blob `sha` of the existing page, printed by get")
 	fs.StringVar(&o.msg, "m", "", "commit `message`")
 	return o
 }

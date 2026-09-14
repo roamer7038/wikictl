@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // runNoConfig invokes Main with a config path that does not exist, so that
@@ -97,6 +98,21 @@ func TestHelpDescribesNameRules(t *testing.T) {
 		_, out, _ := runNoConfig(t, "help", c)
 		if strings.Contains(out, "slug") || !strings.Contains(out, "file name") {
 			t.Errorf("help %s must describe the file name rules: %q", c, out)
+		}
+	}
+}
+
+func TestHelpFitsIn80Columns(t *testing.T) {
+	outs := [][]string{{"help"}, {"help", "help"}, {"help", "version"}}
+	for _, c := range commands {
+		outs = append(outs, []string{"help", c.name})
+	}
+	for _, args := range outs {
+		_, out, _ := runNoConfig(t, args...)
+		for _, line := range strings.Split(out, "\n") {
+			if n := utf8.RuneCountInString(line); n > 80 {
+				t.Errorf("%v: line of %d columns: %q", args, n, line)
+			}
 		}
 	}
 }

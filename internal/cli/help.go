@@ -27,28 +27,21 @@ func Version() string {
 	return "dev"
 }
 
-const description = `wikictl reads and writes a Markdown wiki in a Git repository using only
-git: no daemon, no index, no working tree. Pages are found with git grep and
-written as commits pushed with --force-with-lease.`
+const description = `wikictl reads and writes a Markdown wiki in a Git repository with git only.`
 
 const outputHelp = `Output:
-  Text goes to standard output; with --json every command except help prints
-  one JSON object, whose fields "wikictl help <command>" lists. Warnings go to
-  standard error as "wikictl: warning: <path>:<line>: <code>: <message>".
-  Errors go to standard error as "wikictl: <message>", or with --json to
-  standard output as {"error": "<kind>", "message": "..."}, where <kind> is
-  error, usage, conflict, invalid or git. In text output, control characters
-  other than tab in summaries, titles, lint messages, warnings and the links
-  shown by get are printed as \xNN; JSON output and the body shown by get are
-  not changed.
+  Text goes to standard output. With --json every command except help prints
+  one JSON object, whose fields "wikictl help <command>" lists. Errors go to
+  standard error as "wikictl: <message>", or with --json to standard output
+  as {"error": "<kind>", "message": "..."}, where <kind> is error, usage,
+  conflict, invalid or git. Warnings go to standard error as
+  "wikictl: warning: <path>:<line>: <code>: <message>". Text output shows
+  control characters other than tab as \xNN, except in the body shown by get.
 `
 
 const mirrorHelp = `Mirror:
-  wikictl keeps a bare mirror of the wiki under $XDG_CACHE_HOME/wikictl
-  (~/.cache/wikictl), shown by "wikictl context". If a mirror breaks, delete
-  it; the next command creates it again. git in the mirror runs without the
-  variables listed by "git rev-parse --local-env-vars" and GIT_NAMESPACE, so
-  settings given with "git -c" do not apply; put them in a git config file.
+  The mirror under $XDG_CACHE_HOME/wikictl (~/.cache/wikictl) can be deleted
+  at any time. Settings given with "git -c" do not apply; use a git config file.
 `
 
 // printUsage writes the top-level help.
@@ -77,9 +70,8 @@ func printUsage(w io.Writer) {
 	fmt.Fprint(w, outputHelp)
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Exit codes:")
-	fmt.Fprintln(w, "  0 success   1 error   2 usage or configuration   3 conflict   4 invalid page   5 git failure")
-	fmt.Fprintln(w, "  A git failure while reading the wiki also exits with 5 and prints no partial result;")
-	fmt.Fprintln(w, "  so does a page that exists but cannot be read, instead of \"page not found\".")
+	fmt.Fprintln(w, "  0 success   1 error   2 usage or configuration   3 conflict")
+	fmt.Fprintln(w, "  4 invalid page   5 git failure, with no partial result")
 	fmt.Fprintln(w)
 	fmt.Fprint(w, mirrorHelp)
 	fmt.Fprintln(w)
