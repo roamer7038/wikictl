@@ -39,7 +39,7 @@ Install the latest release into `~/.local/bin`:
 
     curl -fsSL https://raw.githubusercontent.com/roamer7038/wikictl/main/install.sh | sh
 
-The script picks the binary for your OS and architecture and verifies its checksum. Set `WIKICTL_VERSION` to install a specific tag, such as `v0.2.0`, and `WIKICTL_INSTALL_DIR` to change the directory. Or build from source:
+The script picks the binary for your OS and architecture. Set `WIKICTL_VERSION` to install a specific tag, such as `v0.2.0`, and `WIKICTL_INSTALL_DIR` to change the directory. Or build from source:
 
     go install github.com/roamer7038/wikictl/cmd/wikictl@latest
 

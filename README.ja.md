@@ -39,7 +39,7 @@ flowchart LR
 
     curl -fsSL https://raw.githubusercontent.com/roamer7038/wikictl/main/install.sh | sh
 
-スクリプトは OS とアーキテクチャに合うバイナリを選び、チェックサムを検証します。特定のバージョンをインストールするには `WIKICTL_VERSION`（例：`v0.2.0`）を、インストール先を変えるには `WIKICTL_INSTALL_DIR` を設定します。ソースからビルドすることもできます。
+スクリプトは OS とアーキテクチャに合うバイナリを選びます。特定のバージョンをインストールするには `WIKICTL_VERSION`（例：`v0.2.0`）を、インストール先を変えるには `WIKICTL_INSTALL_DIR` を設定します。ソースからビルドすることもできます。
 
     go install github.com/roamer7038/wikictl/cmd/wikictl@latest
 
