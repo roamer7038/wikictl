@@ -101,7 +101,6 @@ func TestGitFailure(t *testing.T) {
 		// push itself moves the tracking ref to the pushed commit, so a failed
 		// update-ref leaves nothing to report.
 		{"put/update-ref", gitFault{match: " update-ref "}, newPage, []string{"put", "global/new.md"}, ExitOK},
-		{"init/head", gitFault{match: head}, "", []string{"init"}, ExitGit},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

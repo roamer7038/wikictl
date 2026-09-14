@@ -152,7 +152,7 @@ func TestSearchLimit(t *testing.T) {
 	}
 }
 
-func TestPutRmInit(t *testing.T) {
+func TestPutRm(t *testing.T) {
 	cfg := setup(t)
 	code, out, _ := runCLI(t, cfg, "---\nsummary: new page\n---\n# n\n", "put", "--json", "global/new.md")
 	var res struct{ Path, Sha, Commit string }
@@ -267,22 +267,28 @@ func isolateGit(t *testing.T) {
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 }
 
-func TestInit(t *testing.T) {
+// TestPutIntoEmptyRepository checks that the first put into a repository
+// without any branch creates the branch, and that reads work before and after.
+func TestPutIntoEmptyRepository(t *testing.T) {
 	isolateGit(t)
+	t.Setenv("WIKICTL_PROFILE", "")
 	d := t.TempDir()
 	remote := filepath.Join(d, "r.git")
 	mustRun(t, "", "git", "init", "-q", "--bare", "-b", "main", remote)
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(d, "cache"))
 	cfg := filepath.Join(d, "c.yaml")
-	os.WriteFile(cfg, []byte("repo: "+remote+"\nbranch: main\nauthor: {name: a, email: a@a}\n"), 0o600)
-	if code, _, errs := runCLI(t, cfg, "", "init"); code != 0 {
-		t.Fatalf("init code=%d %s", code, errs)
+	os.WriteFile(cfg, []byte("repo: "+remote+"\nauthor: {name: a, email: a@a}\n"), 0o600)
+	if code, out, errs := runCLI(t, cfg, "", "ls", "--json"); code != 0 || out != `{"items":[]}`+"\n" {
+		t.Fatalf("ls before the first put: code=%d out=%q %s", code, out, errs)
 	}
-	if code, _, _ := runCLI(t, cfg, "", "get", "global/index.md"); code != 0 {
-		t.Error("index.md missing")
+	if code, _, errs := runCLI(t, cfg, "---\nsummary: a\n---\n# a\n", "put", "global/a.md"); code != 0 {
+		t.Fatalf("first put: code=%d %s", code, errs)
 	}
-	if code, _, _ := runCLI(t, cfg, "", "init"); code != 1 {
-		t.Error("second init must fail with 1")
+	if got := gitOut(t, "--git-dir", remote, "ls-tree", "-r", "--name-only", "main"); got != "global/a.md" {
+		t.Errorf("tree of main: %q", got)
+	}
+	if code, _, _ := runCLI(t, cfg, "", "get", "global/a.md"); code != 0 {
+		t.Error("get after the first put failed")
 	}
 }
 
@@ -1178,9 +1184,6 @@ func TestRelativeRepo(t *testing.T) {
 	os.MkdirAll(elsewhere, 0o755)
 	t.Chdir(elsewhere)
 
-	if code, _, errs := runCLI(t, cfg, "", "init"); code != 0 {
-		t.Fatalf("init: code=%d %s", code, errs)
-	}
 	if code, _, errs := runCLI(t, cfg, "---\nsummary: s\n---\n# s\nrelative-word\n", "put", "global/rel.md"); code != 0 {
 		t.Fatalf("put: code=%d %s", code, errs)
 	}

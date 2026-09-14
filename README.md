@@ -55,11 +55,10 @@ Binaries for Linux and macOS (x86_64 and arm64) are on the [releases page](https
          name: claude-code@laptop
          email: claude-code@laptop.invalid
 
-3. Check the configuration, create the initial pages, then write and read a page:
+3. Check the configuration, then write and read a page. The first `put` creates the branch in the empty repository:
 
        wikictl context
-       wikictl init
-       printf -- '---\nsummary: A push with --force-with-lease is rejected unless the remote ref still has the expected sha\n---\n# What does --force-with-lease guarantee?\n\nBody.\n\n## Links\n- part_of: [index](index.md)\n' \
+       printf -- '---\nsummary: A push with --force-with-lease is rejected unless the remote ref still has the expected sha\n---\n# What does --force-with-lease guarantee?\n\nBody.\n' \
          | wikictl put global/git-force-with-lease.md
        wikictl search lease
        wikictl get global/git-force-with-lease.md
@@ -107,7 +106,6 @@ Body. Link to other pages with relative paths: [index](index.md).
 
 | Command | Purpose |
 |---|---|
-| `init` | Create the initial pages in an empty repository |
 | `search <word>...` | Find pages containing the given words |
 | `get <path>` | Show a page with its sha, links and backlinks |
 | `ls` | List pages |
