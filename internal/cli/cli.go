@@ -312,7 +312,11 @@ func (a *app) run(args []string) error {
 		return exitStatus(ExitUsage)
 	}
 	name, cargs := rest[0], rest[1:]
-	cargs, common := splitCommon(cargs)
+	cmdFlags := newFlagSet(name)
+	if c := lookup(name); c != nil && c.flags != nil {
+		c.flags(cmdFlags)
+	}
+	cargs, common := splitCommon(cargs, cmdFlags)
 	if err := fs.Parse(common); err != nil {
 		return &usageError{msg: err.Error()}
 	}
@@ -381,12 +385,21 @@ func (a *app) setup() error {
 
 // splitCommon separates the global flags (--json, --dirs, --config,
 // --profile, --no-fetch, --version) from the command arguments so that they
-// may follow the command name. Everything after "--" belongs to the command.
-func splitCommon(args []string) (rest, common []string) {
+// may follow the command name. Only arguments starting with "-" are global
+// flags. Until the first positional argument, the value of a command flag in
+// cmd (such as the message of "-m message") belongs to the command, as
+// flag.FlagSet.Parse takes it. Everything after "--" belongs to the command.
+func splitCommon(args []string, cmd *flag.FlagSet) (rest, common []string) {
+	positional := false
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if a == "--" {
 			return append(rest, args[i:]...), common
+		}
+		if len(a) < 2 || a[0] != '-' {
+			positional = true
+			rest = append(rest, a)
+			continue
 		}
 		name := strings.TrimLeft(a, "-")
 		switch {
@@ -397,11 +410,28 @@ func splitCommon(args []string) (rest, common []string) {
 		case (name == "dirs" || name == "config" || name == "profile") && i+1 < len(args):
 			common = append(common, a, args[i+1])
 			i++
+		case !positional && takesValue(cmd, name) && i+1 < len(args):
+			rest = append(rest, a, args[i+1])
+			i++
 		default:
 			rest = append(rest, a)
 		}
 	}
 	return rest, common
+}
+
+// takesValue reports whether name, a flag without "=value", is a non-boolean
+// flag of cmd and so takes the next argument as its value.
+func takesValue(cmd *flag.FlagSet, name string) bool {
+	if cmd == nil || strings.Contains(name, "=") {
+		return false
+	}
+	f := cmd.Lookup(name)
+	if f == nil {
+		return false
+	}
+	b, ok := f.Value.(interface{ IsBoolFlag() bool })
+	return !ok || !b.IsBoolFlag()
 }
 
 // openRepo opens the mirror under $XDG_CACHE_HOME/wikictl (or
