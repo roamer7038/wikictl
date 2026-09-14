@@ -115,6 +115,21 @@ func TestParseDescriptionFallback(t *testing.T) {
 	}
 }
 
+func TestParseLinksNotLast(t *testing.T) {
+	p := Parse("global/l.md", []byte("---\nsummary: s\n---\n# t\n\n## Links\n- part_of: [i](index.md)\n\n### later\n"))
+	if len(p.Issues) != 1 || p.Issues[0].Code != "links_syntax" || p.Issues[0].Line != 6 || len(p.Links) != 0 {
+		t.Errorf("issues=%+v links=%+v", p.Issues, p.Links)
+	}
+	p = Parse("global/l.md", []byte("---\nsummary: s\n---\n# t\n## Links\n## Links\n- part_of: [i](index.md)\n"))
+	if len(p.Issues) != 1 || p.Issues[0].Code != "links_syntax" || p.Issues[0].Line != 5 || len(p.Links) != 1 {
+		t.Errorf("earlier Links heading: issues=%+v links=%+v", p.Issues, p.Links)
+	}
+	p = Parse("global/l.md", []byte("---\nsummary: s\n---\n# t\n```\n## Links\n```\n## Links\n- part_of: [i](index.md)\n"))
+	if len(p.Issues) != 0 || len(p.Links) != 1 {
+		t.Errorf("fenced Links heading: issues=%+v links=%+v", p.Issues, p.Links)
+	}
+}
+
 func TestParseLimits(t *testing.T) {
 	big := "---\nsummary: s\n---\n# t\n" + strings.Repeat("a", MaxPageSize)
 	p := Parse("global/big.md", []byte(big))

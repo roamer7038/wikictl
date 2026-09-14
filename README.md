@@ -133,7 +133,7 @@ Body. Link to other pages with relative paths: [index](index.md).
 
 Frontmatter:
 
-- `summary` is recommended, not required. A page without `summary` is still written by `put`, with a `missing_summary` warning; `lint` reports `missing_summary`; and `search` and `ls` show the title (the first heading, else the file name) instead. A page without frontmatter is treated the same way.
+- `summary` is recommended, not required. A page without `summary` is still written by `put`, with a `missing_summary` warning; `lint` reports `missing_summary`; and `search` and `ls` show the title instead. The title is the text of the first heading, else the file name; a closing sequence of `#` is removed only when a space or a tab precedes it, so `# C#` has the title `C#`. A page without frontmatter is treated the same way.
 - `description` is read as a synonym of `summary`; `summary` wins when it is a non-empty string.
 - The keys wikictl interprets are `type` (`ls --type`), `tags` written as a YAML list (`ls --tag`), `aliases` (`mv` adds the old file name to it) and `status`. Any other key, such as `review_after`, may be written and is not interpreted.
 - A line `status: deprecated` (unquoted) anywhere in the file hides the page from `search` and `ls` unless `--all` is given.
@@ -147,13 +147,14 @@ Size limits:
 Links:
 
 - A link to a page is a relative path ending in `.md`, optionally with a `#fragment`. Absolute paths and paths that leave the wiki are not page links.
-- A `## Links` heading starts the Links section only when it is the last heading of the page. If another heading follows it, the lines are read as body and their relations are ignored without a warning.
+- A `## Links` heading starts the Links section only when it is the last heading of the page. If another heading follows it, the lines are read as body, their relations are ignored, and `lint` reports the heading as `links_syntax`.
 - Each line of the section is `- <type>: <target> | <note>`, where `<target>` is a relative path or a URL and `| <note>` is optional.
 - A line with only a target, `- <target>`, is a `see_also` relation; an untyped URL target must be of the form `<scheme>://...`.
 - The bullet may be `-`, `*` or `+` and may be indented.
 - Links in the body, of the form `[text](path)`, are also read: `get` lists them in the target's backlinks as `mentions`, and `lint` reports them when their target is missing.
 - Write page targets as `[text](path)`. `mv` rewrites only links of that form; a bare path such as `- part_of: index.md` or `- index.md` is left unchanged and becomes a broken link when its target moves.
 - Code fences are never interpreted: a `## Links` heading inside a fence does not start the section. Links inside fences, and inside code spans in the body, are not read as body links (`mv` still rewrites links inside code spans).
+- Code fences follow CommonMark. A fence opens with a line of three or more backticks or tildes indented by up to three spaces (after backticks, the rest of the line must not contain a backtick), and closes only with a line of the same character, at least as many times, followed by nothing but spaces and tabs. A line such as ```` ```bash ```` inside a fence therefore does not close it. A fence that is never closed runs to the end of the page.
 
 File and directory names:
 
@@ -213,7 +214,7 @@ Details of each command:
 - `search` matches the words as fixed strings, ignoring case (non-ASCII letters included), anywhere in the file, frontmatter included. Results are ordered by last update, newest first; with `--any`, pages matching more words come first.
 - `get` prints the parsed page, not the file as stored. As text, it shows the body without the frontmatter and the Links section, the links and the backlinks from other pages; the frontmatter is included only with `--json`.
 - `put` takes the whole page, frontmatter included, on standard input. Invalid frontmatter, a page over the size limits (`frontmatter_invalid`, `page_too_large`) or a bad path is rejected with exit code 4; other problems (`missing_summary`, `broken_link`, `links_syntax`, `name_style`) are printed as warnings and the page is written. When the content equals the current page, no commit is created and `commit` is the current commit.
-- `mv` rewrites, in the same commit, the links from other pages to the moved page (for the directory form, to the pages under it) and the relative links inside the moved page whose destination changes with the move. Other links are left as written, so pages unrelated to the move are not part of the commit, and `rewritten` counts only the other pages whose links were rewritten. Only the path of a rewritten link changes: a leading `./`, angle brackets, a query, a fragment and a title are kept. Links inside code spans and code fences are not rewritten. The body of a rewritten page gets LF line endings, and a BOM is removed. When the file name changes, the old file name (without `.md`) is added to `aliases` unless it is already listed. The alias is added only when the page has frontmatter that is empty or a block-style YAML mapping, and `aliases` is absent, a sequence (block or flow style) or null (`aliases:`, `aliases: ~` or `aliases: null`). Otherwise, for example when `aliases` is a string or the page has no frontmatter, the page is moved without adding the alias and no warning is printed. `mv` fails with exit code 1 if the destination exists; the directory form fails if any page exists under `<newdir>/`.
+- `mv` rewrites, in the same commit, the links from other pages to the moved page (for the directory form, to the pages under it) and the relative links inside the moved page whose destination changes with the move. Other links are left as written, so pages unrelated to the move are not part of the commit, and `rewritten` counts only the other pages whose links were rewritten. Only the path of a rewritten link changes: a leading `./`, angle brackets, a query, a fragment and a title are kept. Links inside code spans and code fences are not rewritten. A rewritten page keeps its BOM, and every line of it, frontmatter and delimiter lines included, gets the line ending (CRLF or LF) of its first line. When the file name changes, the old file name (without `.md`) is added to `aliases` unless it is already listed. The alias is added only when the page has frontmatter that is empty or a block-style YAML mapping, and `aliases` is absent, a sequence (block or flow style) or null (`aliases:`, `aliases: ~` or `aliases: null`). Otherwise, for example when `aliases` is a string or the page has no frontmatter, the page is moved without adding the alias and no warning is printed. `mv` fails with exit code 1 if the destination exists; the directory form fails if any page exists under `<newdir>/`.
 - `rm` leaves the pages that link to the deleted page unchanged; `lint` reports those links as `broken_link`. `rm` deletes only pages: a path that breaks the file name rules, such as `README.md` at the wiki root, is rejected with exit code 4. To delete such a file, clone the wiki repository and use git directly.
 - `lint` checks the given pages, or every page under the search directories; `wikictl --dirs . lint` checks the whole wiki. `case_collision` is always checked against the whole wiki.
 - `dirs` lists every directory that directly contains a page, with the number of pages directly in it (deprecated pages included) and the `summary` of its `index.md`, or `(no index)`. It ignores the search directories; `wikictl dirs projects` restricts the list to the directories under `projects/`.
@@ -350,7 +351,7 @@ With `--json`:
 | `frontmatter_invalid` | The frontmatter is not valid YAML, or is over the size or nesting limit | rejected |
 | `page_too_large` | The page is larger than 1 MiB | rejected |
 | `missing_summary` | No `summary` or `description`, or no frontmatter | warning |
-| `links_syntax` | A line in the Links section is not a valid link line | warning |
+| `links_syntax` | A line in the Links section is not a valid link line, or a `## Links` heading is followed by another heading | warning |
 | `broken_link` | A link points to a file that does not exist in the wiki repository | warning |
 | `name_style` | A name is not made of lowercase ASCII letters, digits and hyphens, or starts with a hyphen | warning |
 | `case_collision` | Names in one directory differ only by case | not checked |
