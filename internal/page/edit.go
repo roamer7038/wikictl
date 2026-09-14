@@ -17,8 +17,54 @@ import (
 // are. The content is returned unchanged when the alias is already present,
 // when there is no frontmatter, or when the frontmatter is not a mapping whose
 // aliases value is a sequence, null, or absent. Frontmatter over the limits
-// of ParseFrontmatter is also left unchanged.
+// of ParseFrontmatter is also left unchanged. The result keeps the line ending
+// and the BOM of content, as described for Relocate.
 func AddAlias(content []byte, alias string) []byte {
+	f, lf := splitFormat(content)
+	out := addAlias(lf, alias)
+	if bytes.Equal(out, lf) {
+		return content
+	}
+	return f.apply(out)
+}
+
+// utf8BOM is the byte order mark that may start a page.
+const utf8BOM = "\xef\xbb\xbf"
+
+// lineFormat is the line ending and the BOM of a page.
+type lineFormat struct {
+	bom  bool
+	crlf bool
+}
+
+// splitFormat returns the format of content and content without the BOM and
+// with CRLF line endings replaced by LF. The line ending of the first line
+// decides the format.
+func splitFormat(content []byte) (lineFormat, []byte) {
+	var f lineFormat
+	if bytes.HasPrefix(content, []byte(utf8BOM)) {
+		f.bom = true
+		content = content[len(utf8BOM):]
+	}
+	if i := bytes.IndexByte(content, '\n'); i > 0 && content[i-1] == '\r' {
+		f.crlf = true
+	}
+	return f, bytes.ReplaceAll(content, []byte("\r\n"), []byte("\n"))
+}
+
+// apply converts content with LF line endings and no BOM to format f.
+func (f lineFormat) apply(content []byte) []byte {
+	if f.crlf {
+		content = bytes.ReplaceAll(content, []byte("\n"), []byte("\r\n"))
+	}
+	if f.bom {
+		content = append([]byte(utf8BOM), content...)
+	}
+	return content
+}
+
+// addAlias is AddAlias for content with LF line endings and no BOM.
+func addAlias(content []byte, alias string) []byte {
 	fm, rest, _, ok := SplitFrontmatter(content)
 	if !ok || checkFrontmatter(fm) != nil {
 		return content
@@ -238,7 +284,18 @@ func RelDest(fromPage, toPath string) string {
 // they are correct when the page lives at toPage. When mapper maps a link
 // target to a new path, the link points to that path instead. Links inside
 // code fences are left alone. The second result is the number of links changed.
+//
+// The result keeps a leading BOM of content, and uses the line ending of the
+// first line of content (CRLF or LF) for every line, including the frontmatter
+// and its delimiter lines.
 func Relocate(content []byte, fromPage, toPage string, mapper func(target string) (string, bool)) ([]byte, int) {
+	f, lf := splitFormat(content)
+	out, n := relocate(lf, fromPage, toPage, mapper)
+	return f.apply(out), n
+}
+
+// relocate is Relocate for content with LF line endings and no BOM.
+func relocate(content []byte, fromPage, toPage string, mapper func(target string) (string, bool)) ([]byte, int) {
 	return rewrite(content, fromPage, func(dest, target string) (string, bool) {
 		if mapper != nil {
 			if nt, ok := mapper(target); ok {

@@ -164,6 +164,44 @@ func TestRelocateWithMapper(t *testing.T) {
 	}
 }
 
+func TestRelocateKeepsLineEndingsAndBOM(t *testing.T) {
+	for _, tc := range []struct{ name, in, want string }{
+		{"CRLF with BOM",
+			"\xef\xbb\xbf---\r\nsummary: s\r\n---\r\n# t\r\n[a](a.md)\r\n```\r\n[b](b.md)\r\n```\r\n",
+			"\xef\xbb\xbf---\r\nsummary: s\r\n---\r\n# t\r\n[a](../x/a.md)\r\n```\r\n[b](b.md)\r\n```\r\n"},
+		{"CRLF without frontmatter", "# t\r\n[a](a.md)",
+			"# t\r\n[a](../x/a.md)\r\n"},
+		{"LF with BOM", "\xef\xbb\xbf---\nsummary: s\n---\n[a](a.md)\n",
+			"\xef\xbb\xbf---\nsummary: s\n---\n[a](../x/a.md)\n"},
+		{"mixed takes the first line ending", "---\r\nsummary: s\n---\r\n[a](a.md)\n",
+			"---\r\nsummary: s\r\n---\r\n[a](../x/a.md)\r\n"},
+	} {
+		out, n := Relocate([]byte(tc.in), "x/p.md", "y/p.md", nil)
+		if n != 1 || string(out) != tc.want {
+			t.Errorf("%s: n=%d %q", tc.name, n, out)
+		}
+	}
+}
+
+func TestAddAliasKeepsLineEndingsAndBOM(t *testing.T) {
+	for _, tc := range []struct{ name, in, want string }{
+		{"block sequence", "\xef\xbb\xbf---\r\nsummary: a\r\naliases:\r\n  - old\r\n---\r\n# t\r\n",
+			"\xef\xbb\xbf---\r\nsummary: a\r\naliases:\r\n  - old\r\n  - x\r\n---\r\n# t\r\n"},
+		{"absent", "---\r\nsummary: a\r\n---\r\n# t\r\n",
+			"---\r\nsummary: a\r\naliases:\r\n  - x\r\n---\r\n# t\r\n"},
+		{"null", "---\r\naliases:\r\n---\r\n",
+			"---\r\naliases:\r\n  - x\r\n---\r\n"},
+		{"flow sequence", "\xef\xbb\xbf---\r\naliases: [a]\r\n---\r\n",
+			"\xef\xbb\xbf---\r\naliases: [a, x]\r\n---\r\n"},
+		{"duplicate", "\xef\xbb\xbf---\r\naliases: [x]\r\n---\r\n",
+			"\xef\xbb\xbf---\r\naliases: [x]\r\n---\r\n"},
+	} {
+		if got := string(AddAlias([]byte(tc.in), "x")); got != tc.want {
+			t.Errorf("%s: %q", tc.name, got)
+		}
+	}
+}
+
 func TestAddAliasDeepFrontmatter(t *testing.T) {
 	in := "---\nx: " + strings.Repeat("[", 30000) + strings.Repeat("]", 30000) + "\n---\n# t\n"
 	if got := string(AddAlias([]byte(in), "old")); got != in {

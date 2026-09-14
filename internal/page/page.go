@@ -55,6 +55,9 @@ func Parse(p string, content []byte) *Page {
 	}
 	lines := ScanLines(rest, n+1)
 	ls := LinksStart(lines)
+	for _, i := range LinksNotLast(lines, ls) {
+		pg.Issues = append(pg.Issues, Issue{Path: p, Line: lines[i].N, Code: "links_syntax", Message: `"## Links" is not the last heading, so the lines after it are not read as links`})
+	}
 	if t, ok := Title(lines, ls); ok {
 		pg.Title = t
 	} else {

@@ -100,6 +100,8 @@ no frontmatter, no alias is added and no warning is printed. When both
 arguments end with a slash, every page under <dir>/ is moved to <newdir>/
 instead; file names do not change, so no alias is added. A path or new path
 that breaks the file name rules (see "help lint") is rejected with exit code 4.
+A rewritten page keeps its BOM, and all its lines get the line ending (CRLF or
+LF) of its first line.
 
 Only links of the form [text](path) are rewritten. A bare path in a Links line,
 such as "- part_of: index.md" or "- index.md", is left unchanged and becomes
@@ -142,7 +144,9 @@ reported as case_collision, against the whole wiki.
 
 A Links line is "- <type>: <target> | <note>", or "- <target>" for an untyped
 see_also relation (an untyped URL must be "<scheme>://..."); the bullet may
-be "-", "*" or "+" and may be indented.
+be "-", "*" or "+" and may be indented. The "## Links" heading must be the last
+heading of the page; one followed by another heading is reported as
+links_syntax.
 
 Control characters other than tab in a message are shown as \xNN in text
 output.

@@ -392,6 +392,40 @@ func TestMvAndLint(t *testing.T) {
 	}
 }
 
+// TestMvKeepsLineEndings checks that the pages mv rewrites keep their CRLF
+// line endings and BOM.
+func TestMvKeepsLineEndings(t *testing.T) {
+	cfg := setup(t)
+	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
+	if code, _, errs := runCLI(t, cfg, "\xef\xbb\xbf---\r\nsummary: c\r\n---\r\n# c\r\n[i](index.md)\r\n", "put", "global/crlf.md"); code != 0 {
+		t.Fatalf("put: %s", errs)
+	}
+	if code, _, errs := runCLI(t, cfg, "---\r\nsummary: r\r\n---\r\n# r\r\n[c](crlf.md)\r\n", "put", "global/ref.md"); code != 0 {
+		t.Fatalf("put: %s", errs)
+	}
+	if code, _, errs := runCLI(t, cfg, "", "mv", "global/crlf.md", "projects/app/crlf2.md"); code != 0 {
+		t.Fatalf("mv: %s", errs)
+	}
+	for p, want := range map[string]string{
+		"projects/app/crlf2.md": "\xef\xbb\xbf---\r\nsummary: c\r\naliases:\r\n  - crlf\r\n---\r\n# c\r\n[i](../../global/index.md)",
+		"global/ref.md":         "---\r\nsummary: r\r\n---\r\n# r\r\n[c](../projects/app/crlf2.md)",
+	} {
+		if got := gitOut(t, "--git-dir", remote, "show", "main:"+p); got != want {
+			t.Errorf("%s: %q", p, got)
+		}
+	}
+}
+
+// TestLintLinksNotLast checks that lint reports a Links heading that is
+// followed by another heading.
+func TestLintLinksNotLast(t *testing.T) {
+	cfg := setup(t)
+	runCLI(t, cfg, "---\nsummary: l\n---\n# l\n\n## Links\n- part_of: [i](index.md)\n\n## later\n", "put", "global/l.md")
+	if code, out, _ := runCLI(t, cfg, "", "lint", "global/l.md"); code != 4 || out != "global/l.md:6: links_syntax: \"## Links\" is not the last heading, so the lines after it are not read as links\n" {
+		t.Errorf("code=%d out=%q", code, out)
+	}
+}
+
 // TestLinkExistence checks that put and lint agree on which link targets exist:
 // any file in the tree counts, and a directory does not.
 func TestLinkExistence(t *testing.T) {
