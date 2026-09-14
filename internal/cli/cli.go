@@ -24,31 +24,36 @@ import (
 // command describes one subcommand.
 type command struct {
 	name    string
-	args    string                          // positional argument synopsis, such as "<path>"
-	minArgs int                             // minimum number of positional arguments
-	maxArgs int                             // maximum number of positional arguments; -1 for unlimited
-	summary string                          // one line for the command list
-	detail  string                          // description shown by "help <command>"
-	flags   func(a *app, fs *pflag.FlagSet) // registers command flags into fields of a; nil when there are none
-	paths   bool                            // the positional arguments are paths in the wiki, cleaned by wiki.Clean
+	args    string                                        // positional argument synopsis, such as "<path>"
+	minArgs int                                           // minimum number of positional arguments
+	maxArgs int                                           // maximum number of positional arguments; -1 for unlimited
+	summary string                                        // one line for the command list
+	detail  string                                        // description shown by "help <command>"
+	flags   func(a *app, fs *pflag.FlagSet)               // registers command flags into fields of a; nil when there are none
+	paths   bool                                          // the positional arguments are paths in the wiki, cleaned by wiki.Clean
+	check   func(a *app, c *command, args []string) error // validates the arguments before the configuration is read; nil when there is nothing to check
 	run     func(a *app, c *command, args []string) error
 }
 
 // commands lists the subcommands in the order shown by help.
 var commands = []*command{
-	{name: "search", args: "<word>...", minArgs: 1, maxArgs: -1,
-		summary: "Find pages containing the given words",
-		detail: `Find pages that contain all of the words (fixed strings, ignoring case,
-non-ASCII letters included) anywhere in the file, frontmatter included.
-Pages whose frontmatter has status: deprecated are skipped unless --all is
-given. Results are ordered by last update, newest
-first; with --any, pages matching more words come first. Text output shows
-the summary of each page, or its title (first heading, else the file name)
-when the page has no summary. Control characters other than tab are shown as
+	{name: "grep", args: "<pattern> [<path>...]", maxArgs: -1,
+		summary: "Print the lines that match a pattern",
+		detail: `Search the files under each path, or the whole wiki without paths, for the
+lines that match the pattern, as "grep -r" does: the pattern is a basic regular
+expression unless -E or -F is given, and each matching line is printed as
+"<path>:<line>", or "<path>:<number>:<line>" with -n. With -e, which may be
+given more than once, every argument is a path. Binary files are skipped, and
+pages with status: deprecated are searched too. With -i, the case of letters
+other than ASCII is ignored only together with -F. The command exits with
+code 0 when a line matches and 1 when none does. A path that does not exist is
+reported on standard error, the other paths are still searched, and the
+command exits with code 2. Control characters other than tab are shown as
 \xNN in text output.
 
-Output: items[] {path, summary, title, matched, updated}.`,
-		flags: searchFlags, run: (*app).cmdSearch},
+Output: items[] {path, line, text}; with -l or -L, items[] {path}; with -c,
+items[] {path, count}.`,
+		flags: grepFlags, check: (*app).checkGrep, run: (*app).cmdGrep},
 	{name: "cat", args: "<path>...", minArgs: 1, maxArgs: -1, paths: true,
 		summary: "Print files as stored",
 		detail: `Print each file as stored in the wiki, in the order given. A path that is not
@@ -286,13 +291,24 @@ type app struct {
 	byTime    bool
 	dirsOnly  bool
 	level     positiveInt
-	any       bool
 	all       bool
-	n         positiveInt
 	typ       string
 	tag       string
 	base      string
 	msg       string
+
+	ignoreCase   bool
+	filesWith    bool
+	filesWithout bool
+	countLines   bool
+	lineNumber   bool
+	word         bool
+	invert       bool
+	quiet        bool
+	extended     bool
+	fixed        bool
+	allMatch     bool
+	patterns     []string
 }
 
 // globalFlags registers the flags accepted before or after the command name.
@@ -388,6 +404,11 @@ func (a *app) run(args []string) error {
 	if c.paths {
 		var err error
 		if pos, err = cleanPaths(pos); err != nil {
+			return err
+		}
+	}
+	if c.check != nil {
+		if err := c.check(a, c, pos); err != nil {
 			return err
 		}
 	}

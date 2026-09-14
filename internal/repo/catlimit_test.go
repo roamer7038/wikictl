@@ -1,11 +1,8 @@
 package repo
 
 import (
-	"io"
-	"slices"
 	"strings"
 	"testing"
-	"testing/iotest"
 )
 
 func TestStatAndCatLimit(t *testing.T) {
@@ -39,55 +36,5 @@ func TestStatAndCatLimit(t *testing.T) {
 	}
 	if len(large) != 1 || large["global/big.md"] != st["global/big.md"] {
 		t.Errorf("large=%v", large)
-	}
-}
-
-func TestReadBlob(t *testing.T) {
-	remote := newRemote(t, true)
-	seedRemote(t, remote, map[string]string{"global/a.md": "hello\n"})
-	r := openFetched(t, remote)
-	h, _ := r.Head()
-	sha, _ := r.BlobSHA(h, "global/a.md")
-	var got []byte
-	err := r.ReadBlob(sha, func(rd io.Reader) error {
-		var err error
-		got, err = io.ReadAll(rd)
-		return err
-	})
-	if err != nil || string(got) != "hello\n" {
-		t.Errorf("got=%q err=%v", got, err)
-	}
-	if err := r.ReadBlob(strings.Repeat("0", 40), func(io.Reader) error { return nil }); err == nil {
-		t.Error("reading a missing blob must fail")
-	}
-}
-
-// TestContainsFolded compares ContainsFolded, reading one byte at a time so
-// that every chunk boundary is exercised, with Fold on the whole text.
-func TestContainsFolded(t *testing.T) {
-	texts := []string{
-		"",
-		"Äpfel und ΟΔΟΣ",
-		"abc\xe3\x81",
-		"a\xffb\xe3\x81\x82c",
-		"\x80\x80\x80\x80Kelvin K",
-	}
-	words := []string{"", "äpfel", "οδος", "zzz", "\xe3\x81", "�", "b�", "あc", "kelvin k", "k", "c"}
-	for _, text := range texts {
-		got, err := ContainsFolded(iotest.OneByteReader(strings.NewReader(text)), words)
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := make([]bool, len(words))
-		for i, w := range words {
-			want[i] = strings.Contains(Fold(text), Fold(w))
-		}
-		if !slices.Equal(got, want) {
-			t.Errorf("text %q: got %v, want %v", text, got, want)
-		}
-		got, _ = ContainsFolded(strings.NewReader(text), words)
-		if !slices.Equal(got, want) {
-			t.Errorf("text %q in one chunk: got %v, want %v", text, got, want)
-		}
 	}
 }

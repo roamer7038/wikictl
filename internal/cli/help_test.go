@@ -19,7 +19,7 @@ func runNoConfig(t *testing.T, args ...string) (int, string, string) {
 func TestHelpNeedsNoConfig(t *testing.T) {
 	for _, args := range [][]string{{"help"}, {"--help"}, {"-h"}} {
 		code, out, _ := runNoConfig(t, args...)
-		if code != ExitOK || !strings.Contains(out, "Usage: wikictl") || !strings.Contains(out, "  search ") {
+		if code != ExitOK || !strings.Contains(out, "Usage: wikictl") || !strings.Contains(out, "  grep ") {
 			t.Errorf("%v: code=%d out=%q", args, code, out)
 		}
 	}
@@ -76,9 +76,13 @@ func TestUsageErrorsNeedNoConfig(t *testing.T) {
 	if code != ExitUsage || !strings.Contains(errs, "Usage: wikictl mv") {
 		t.Errorf("mv: code=%d errs=%q", code, errs)
 	}
-	code, _, errs = runNoConfig(t, "search", "-n", "0", "lease")
-	if code != ExitUsage || !strings.Contains(errs, "Usage: wikictl search") {
-		t.Errorf("search -n 0: code=%d errs=%q", code, errs)
+	code, _, errs = runNoConfig(t, "grep", "-i")
+	if code != ExitUsage || !strings.Contains(errs, "missing pattern") || !strings.Contains(errs, "Usage: wikictl grep") {
+		t.Errorf("grep without a pattern: code=%d errs=%q", code, errs)
+	}
+	code, _, errs = runNoConfig(t, "tree", "-L", "0")
+	if code != ExitUsage || !strings.Contains(errs, "Usage: wikictl tree") {
+		t.Errorf("tree -L 0: code=%d errs=%q", code, errs)
 	}
 	code, out, _ := runNoConfig(t, "--json", "cat")
 	if code != ExitUsage || !strings.HasPrefix(out, `{"error":"usage"`) {

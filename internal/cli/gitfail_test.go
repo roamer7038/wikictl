@@ -71,11 +71,9 @@ func TestGitFailure(t *testing.T) {
 		args  []string
 		code  int
 	}{
-		{"search/head", gitFault{match: head}, "", []string{"search", "lease"}, ExitGit},
-		{"search/grep without stderr", gitFault{match: " grep -E -l ", quiet: true}, "", []string{"search", "lease"}, ExitGit},
-		{"search/deprecated", gitFault{match: " grep -l -F "}, "", []string{"search", "lease"}, ExitGit},
-		{"search/cat pages", gitFault{match: " cat-file --batch ", skip: 1}, "", []string{"search", "lease"}, ExitGit},
-		{"search/updated", gitFault{match: " log --format="}, "", []string{"search", "lease"}, ExitGit},
+		{"grep/head", gitFault{match: head}, "", []string{"grep", "lease"}, ExitGit},
+		{"grep/grep without stderr", gitFault{match: " grep -I -z ", quiet: true}, "", []string{"grep", "lease"}, ExitGit},
+		{"grep/paths", gitFault{match: " ls-tree -r -z "}, "", []string{"grep", "lease", "global"}, ExitGit},
 		{"cat/head", gitFault{match: head}, "", []string{"cat", "global/push.md"}, ExitGit},
 		{"cat/cat", gitFault{match: " cat-file --batch "}, "", []string{"cat", "global/push.md"}, ExitGit},
 		{"cat/missing path", gitFault{match: " ls-tree -z "}, "", []string{"cat", "global/none.md"}, ExitGit},
@@ -89,7 +87,6 @@ func TestGitFailure(t *testing.T) {
 		{"ls/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"ls", "-al", "global"}, ExitGit},
 		{"ls/cat", gitFault{match: " cat-file --batch "}, "", []string{"ls", "-al", "global"}, ExitGit},
 		{"ls/updated", gitFault{match: " log --format="}, "", []string{"ls", "-l"}, ExitGit},
-		{"search/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"search", "lease"}, ExitGit},
 		{"stat/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"stat", "global/push.md"}, ExitGit},
 		{"links/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"links", "global/push.md"}, ExitGit},
 		{"tree/files", gitFault{match: " ls-tree -r -z "}, "", []string{"tree"}, ExitGit},
@@ -182,7 +179,7 @@ func TestUnreadableObject(t *testing.T) {
 		args      []string
 	}{
 		// machines/h1/y.md, projects/app/x.md and global/push.md match.
-		{"search/grep with another match", "global/push.md", "", "", []string{"--no-fetch", "search", "lease"}},
+		{"grep/grep with another match", "global/push.md", "", "", []string{"--no-fetch", "grep", "lease"}},
 		{"ls/deprecated with another match", "global/push.md", "", "", []string{"--no-fetch", "ls"}},
 		{"links/backlinks with another match", "projects/app/x.md", "", "", []string{"--no-fetch", "links", "global/index.md"}},
 		{"cat/target blob", "global/push.md", "", "", []string{"--no-fetch", "cat", "global/push.md"}},
@@ -191,7 +188,7 @@ func TestUnreadableObject(t *testing.T) {
 		{"links/target blob", "global/push.md", "", "", []string{"--no-fetch", "links", "global/push.md"}},
 		{"stat/ref to a missing object", "", "1234567890123456789012345678901234567890\n", "", []string{"--no-fetch", "stat", "global/push.md"}},
 		{"cat/ref with garbage", "", "garbage\n", "", []string{"--no-fetch", "cat", "global/push.md"}},
-		{"search/ref with garbage", "", "garbage\n", "", []string{"--no-fetch", "search", "lease"}},
+		{"grep/ref with garbage", "", "garbage\n", "", []string{"--no-fetch", "grep", "lease"}},
 		{"ls/ref with garbage", "", "garbage\n", "", []string{"--no-fetch", "ls"}},
 		{"lint/ref with garbage", "", "garbage\n", "", []string{"--no-fetch", "lint"}},
 		{"lint/target blob", "global/push.md", "", "", []string{"--no-fetch", "lint", "global/push.md"}},
@@ -244,8 +241,8 @@ func TestUnreadableObject(t *testing.T) {
 func TestGitStderrNoise(t *testing.T) {
 	cfg := setup(t)
 	reads := [][]string{
-		{"search", "lease"},
-		{"search", "zzz-none"},
+		{"grep", "lease"},
+		{"grep", "-l", "lease", "global"},
 		{"ls"},
 		{"cat", "global/push.md"},
 		{"stat", "global/push.md"},
@@ -341,12 +338,8 @@ func TestLargeBlobNotRead(t *testing.T) {
 	}) {
 		t.Errorf("ls: code=%d out=%q errs=%q", code, out, errs)
 	}
-	var search struct{ Items []hit }
-	code, out, errs = runCLI(t, cfg, "", "--json", "search", "--any", "äpfel", "zzz-none", "lorem")
-	mustUnmarshal(t, out, &search)
-	if code != ExitOK || len(search.Items) != 1 || search.Items[0].Path != "global/huge.md" || search.Items[0].Title != "huge" ||
-		!slices.Equal(search.Items[0].Matched, []string{"äpfel", "lorem"}) {
-		t.Errorf("search: code=%d out=%q errs=%q", code, out, errs)
+	if code, out, errs := runCLI(t, cfg, "", "grep", "-iFn", "äpfel", "global"); code != ExitOK || out != "global/huge.md:100005:Äpfel\n" {
+		t.Errorf("grep: code=%d out=%q errs=%q", code, out, errs)
 	}
 	var st struct{ Items []statItem }
 	code, out, errs = runCLI(t, cfg, "", "--json", "stat", "global/huge.md")
@@ -369,10 +362,5 @@ func TestLargeBlobNotRead(t *testing.T) {
 	}
 	if in := string(b); strings.Contains(in, "global/huge.md") || strings.Contains(in, sha) {
 		t.Errorf("the content of the large page was read; cat-file --batch input:\n%s", in)
-	}
-
-	injectGitFault(t, gitFault{match: " cat-file blob "})
-	if code, out, errs := runCLI(t, cfg, "", "--json", "search", "lorem"); code != ExitGit {
-		t.Errorf("search with a failing read of the large page: code=%d out=%q errs=%q", code, out, errs)
 	}
 }

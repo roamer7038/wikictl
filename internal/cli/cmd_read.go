@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -15,14 +14,6 @@ import (
 	"github.com/roamer7038/wikictl/internal/repo"
 	"github.com/roamer7038/wikictl/internal/wiki"
 )
-
-type hit struct {
-	Path    string   `json:"path"`
-	Summary string   `json:"summary"`
-	Title   string   `json:"title"`
-	Matched []string `json:"matched"`
-	Updated string   `json:"updated"`
-}
 
 // positiveInt is an int flag value that rejects values below 1, so that the
 // check runs wherever the flags are parsed.
@@ -43,68 +34,6 @@ func (v *positiveInt) Set(s string) error {
 }
 
 func (v *positiveInt) Type() string { return "int" }
-
-func searchFlags(a *app, fs *pflag.FlagSet) {
-	a.n = 20
-	fs.BoolVar(&a.any, "any", false, "match pages containing any of the words instead of all of them")
-	fs.VarP(&a.n, "number", "n", "show at most `N` results; N must be at least 1")
-	fs.BoolVar(&a.all, "all", false, "include pages with status: deprecated")
-}
-
-func (a *app) cmdSearch(c *command, words []string) error {
-	paths, err := a.repo.Grep(words, !a.any, nil)
-	if err != nil {
-		return &gitError{err}
-	}
-	if !a.all {
-		dep, err := wiki.Deprecated(a.repo)
-		if err != nil {
-			return &gitError{err}
-		}
-		paths = filterOut(paths, dep)
-	}
-	updated, err := a.repo.Updated(nil)
-	if err != nil {
-		return &gitError{err}
-	}
-	pages, err := a.readPages(paths)
-	if err != nil {
-		return &gitError{err}
-	}
-	hits := []hit{}
-	for _, p := range paths {
-		pg := pages.parse(p)
-		found, err := pages.containsFolded(a.repo, p, words)
-		if err != nil {
-			return &gitError{err}
-		}
-		matched := []string{}
-		for i, w := range words {
-			if found[i] {
-				matched = append(matched, w)
-			}
-		}
-		hits = append(hits, hit{Path: p, Summary: pg.Summary, Title: pg.Title, Matched: matched, Updated: fmtTime(updated[p])})
-	}
-	sort.SliceStable(hits, func(i, j int) bool {
-		if a.any && len(hits[i].Matched) != len(hits[j].Matched) {
-			return len(hits[i].Matched) > len(hits[j].Matched)
-		}
-		if hits[i].Updated != hits[j].Updated {
-			return hits[i].Updated > hits[j].Updated
-		}
-		return hits[i].Path < hits[j].Path
-	})
-	if n := int(a.n); len(hits) > n {
-		hits = hits[:n]
-	}
-	a.emit(map[string]any{"items": hits}, func(w io.Writer) {
-		for _, h := range hits {
-			fmt.Fprintf(w, "%s\t%s\n", h.Path, escapeControl(summaryOrTitle(h.Summary, h.Title)))
-		}
-	})
-	return nil
-}
 
 type catItem struct {
 	Path    string `json:"path"`
@@ -326,28 +255,6 @@ func (s pageSet) parse(p string) *page.Page {
 	return page.Parse(p, s.contents[p])
 }
 
-// containsFolded reports, for each word, whether the content of p contains
-// it ignoring case as repo.Fold defines. The content of a file over the limit
-// is read as a stream with repo.ContainsFolded.
-func (s pageSet) containsFolded(r *repo.Repo, p string, words []string) ([]bool, error) {
-	o, big := s.large[p]
-	if !big {
-		folded := repo.Fold(string(s.contents[p]))
-		found := make([]bool, len(words))
-		for i, w := range words {
-			found[i] = strings.Contains(folded, repo.Fold(w))
-		}
-		return found, nil
-	}
-	var found []bool
-	err := r.ReadBlob(o.SHA, func(rd io.Reader) error {
-		var err error
-		found, err = repo.ContainsFolded(rd, words)
-		return err
-	})
-	return found, err
-}
-
 // cmdContext prints the configuration the other commands use, with the origin
 // remote that profile selection compared against match.remotes.
 func (a *app) cmdContext(c *command, args []string) error {
@@ -380,16 +287,6 @@ func hasTag(fm map[string]any, tag string) bool {
 		}
 	}
 	return false
-}
-
-func filterOut(paths []string, drop map[string]bool) []string {
-	var out []string
-	for _, p := range paths {
-		if !drop[p] {
-			out = append(out, p)
-		}
-	}
-	return out
 }
 
 func fmtTime(t time.Time) string {

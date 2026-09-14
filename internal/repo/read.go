@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -101,10 +102,10 @@ func foldRune(r rune) rune {
 	return m
 }
 
-// foldPattern turns word into an extended regular expression matching the
+// FoldPattern turns word into an extended regular expression matching the
 // same text as Fold. A rune with other case forms becomes an alternation of
 // all of them, so the match does not depend on the locale git runs in.
-func foldPattern(word string) string {
+func FoldPattern(word string) string {
 	var b strings.Builder
 	for i := 0; i < len(word); {
 		r, size := utf8.DecodeRuneInString(word[i:])
@@ -136,7 +137,7 @@ func (r *Repo) Grep(words []string, all bool, dirs []string) ([]string, error) {
 		args = append(args, "--all-match")
 	}
 	for _, w := range words {
-		args = append(args, "-e", foldPattern(w))
+		args = append(args, "-e", FoldPattern(w))
 	}
 	args = append(args, r.readRef())
 	args = append(args, pathspec(dirs)...)
@@ -148,6 +149,45 @@ func (r *Repo) Grep(words []string, all bool, dirs []string) ([]string, error) {
 		return nil, err
 	}
 	return stripRef(r, out), nil
+}
+
+// GrepRecords runs "git grep -I -z" with flags and the patterns, each given
+// with -e, on the files under dirs at the commit that reads use, and returns
+// one record per entry of the output, its fields split at NUL: a path with -l
+// or -L, a path and a count with -c, and otherwise a path, a line number and
+// the line. No match is not an error.
+func (r *Repo) GrepRecords(flags, patterns, dirs []string) ([][]string, error) {
+	head, err := r.Head()
+	if err != nil || head == "" {
+		return nil, err
+	}
+	args := append([]string{"grep", "-I", "-z"}, flags...)
+	for _, p := range patterns {
+		args = append(args, "-e", p)
+	}
+	args = append(append(args, r.readRef()), pathspec(dirs)...)
+	out, err := r.gitStrict(args...)
+	if noResult(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	sep := "\n"
+	if slices.Contains(flags, "-l") || slices.Contains(flags, "-L") {
+		sep = "\x00"
+	}
+	prefix := r.readRef() + ":"
+	var res [][]string
+	for e := range strings.SplitSeq(out, sep) {
+		if e == "" {
+			continue
+		}
+		f := strings.SplitN(e, "\x00", 3)
+		f[0] = strings.TrimPrefix(f[0], prefix)
+		res = append(res, f)
+	}
+	return res, nil
 }
 
 // GrepDeprecated returns the set of pages under dirs that contain the word
@@ -317,57 +357,6 @@ func (r *Repo) catFile(names []string, withContent bool) ([]catEntry, error) {
 		res[i] = e
 	}
 	return res, nil
-}
-
-// ContainsFolded reports, for each word, whether the text read from rd
-// contains it as strings.Contains(Fold(text), Fold(word)) does. It reads the
-// text in chunks, so that a large blob is not held in memory.
-func ContainsFolded(rd io.Reader, words []string) ([]bool, error) {
-	folded := make([]string, len(words))
-	keep := 0
-	for i, w := range words {
-		folded[i] = Fold(w)
-		keep = max(keep, len(folded[i]))
-	}
-	found := make([]bool, len(words))
-	buf := make([]byte, 64<<10)
-	var pending []byte // bytes of a rune that the next chunk completes
-	tail := ""         // the end of the folded text so far, for matches across chunks
-	for {
-		n, err := rd.Read(buf)
-		data := append(pending, buf[:n]...)
-		end := err != nil
-		cut := len(data)
-		if !end {
-			cut = completeRunes(data)
-		}
-		text := tail + Fold(string(data[:cut]))
-		for i, w := range folded {
-			found[i] = found[i] || strings.Contains(text, w)
-		}
-		pending = append([]byte(nil), data[cut:]...)
-		tail = text[max(0, len(text)-keep):]
-		if err == io.EOF {
-			return found, nil
-		}
-		if err != nil {
-			return nil, err
-		}
-	}
-}
-
-// completeRunes returns the length of the longest prefix of b that does not
-// end in the middle of a UTF-8 encoded rune.
-func completeRunes(b []byte) int {
-	for i := len(b) - 1; i >= 0 && i >= len(b)-utf8.UTFMax; i-- {
-		if utf8.RuneStart(b[i]) {
-			if !utf8.FullRune(b[i:]) {
-				return i
-			}
-			break
-		}
-	}
-	return len(b)
 }
 
 // Updated returns the last commit time of every file under dirs, from one

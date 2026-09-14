@@ -25,9 +25,12 @@ func TestJSONContract(t *testing.T) {
 		code  int
 		keys  []string
 	}{
-		{"search", "", "", []string{"search", "lease"}, ExitOK,
-			[]string{"items", "items[].matched", "items[].path", "items[].summary", "items[].title", "items[].updated"}},
-		{"search/usage", "", "", []string{"search"}, ExitUsage, errKeys},
+		{"grep", "", "", []string{"grep", "lease"}, ExitOK, []string{"items", "items[].line", "items[].path", "items[].text"}},
+		{"grep/files", "", "", []string{"grep", "-l", "lease"}, ExitOK, []string{"items", "items[].path"}},
+		{"grep/count", "", "", []string{"grep", "-c", "lease"}, ExitOK, []string{"items", "items[].count", "items[].path"}},
+		{"grep/none", "", "", []string{"grep", "zzz-none"}, ExitError, []string{"items"}},
+		{"grep/missing", "", "", []string{"grep", "lease", "none"}, ExitUsage, []string{"items"}},
+		{"grep/usage", "", "", []string{"grep"}, ExitUsage, errKeys},
 		{"ls", "", "", []string{"ls", "-R"}, ExitOK,
 			[]string{"items", "items[].kind", "items[].path", "items[].summary", "items[].title", "items[].type", "items[].updated"}},
 		{"context", "", "", []string{"context"}, ExitOK,

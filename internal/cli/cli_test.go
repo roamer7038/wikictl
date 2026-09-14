@@ -66,29 +66,42 @@ func mustUnmarshal(t *testing.T, out string, v any) {
 
 func TestReadCommands(t *testing.T) {
 	cfg := setup(t)
-	code, out, errs := runCLI(t, cfg, "", "search", "--json", "lease")
-	if code != 0 {
-		t.Fatalf("code=%d %s", code, errs)
+	code, out, errs := runCLI(t, cfg, "", "grep", "lease")
+	if code != 0 || out != "global/push.md:use force-with-lease. [index](index.md)\nmachines/h1/y.md:lease\nprojects/app/x.md:lease\n" {
+		t.Errorf("grep: code=%d out=%q errs=%q", code, out, errs)
 	}
 	var res struct {
 		Items []struct {
-			Path, Summary string
-			Matched       []string
+			Path, Text string
+			Line       int
 		}
 	}
+	_, out, _ = runCLI(t, cfg, "", "grep", "--json", "-w", "lease", "projects")
 	mustUnmarshal(t, out, &res)
-	if len(res.Items) != 2 {
-		t.Errorf("%s", out)
+	if len(res.Items) != 1 || res.Items[0].Path != "projects/app/x.md" || res.Items[0].Line != 5 || res.Items[0].Text != "lease" {
+		t.Errorf("grep --json: %s", out)
 	}
-	_, out, _ = runCLI(t, cfg, "", "search", "--json", "--all", "lease")
-	mustUnmarshal(t, out, &res)
-	if len(res.Items) != 3 {
-		t.Errorf("--all: %s", out)
+	for args, want := range map[string]string{
+		"-in LEASE projects":                  "projects/app/x.md:5:lease\n",
+		"-c lease global":                     "global/push.md:1\n",
+		"-L lease global":                     "global/index.md\n",
+		"-v -c lease projects":                "projects/app/x.md:4\n",
+		"-l --all-match -e lease -e summary:": "global/push.md\nmachines/h1/y.md\nprojects/app/x.md\n",
+		"-lE lease|entry global":              "global/index.md\nglobal/push.md\n",
+		"-lF [index] global":                  "global/push.md\n",
+		"-l -e with-lease -e point /global/":  "global/index.md\nglobal/push.md\n",
+		"-q lease":                            "",
+	} {
+		if code, out, errs := runCLI(t, cfg, "", append([]string{"grep"}, strings.Fields(args)...)...); code != 0 || out != want {
+			t.Errorf("grep %s: code=%d out=%q errs=%q", args, code, out, errs)
+		}
 	}
-	_, out, _ = runCLI(t, cfg, "", "search", "--json", "zzz-none")
-	mustUnmarshal(t, out, &res)
-	if !strings.Contains(out, `"items":[]`) {
-		t.Errorf("empty: %s", out)
+	if code, out, _ := runCLI(t, cfg, "", "grep", "-q", "zzz-none"); code != ExitError || out != "" {
+		t.Errorf("grep -q without a match: code=%d out=%q", code, out)
+	}
+	if code, out, errs := runCLI(t, cfg, "", "grep", "lease", "global/none", "projects"); code != ExitUsage ||
+		out != "projects/app/x.md:lease\n" || errs != "wikictl: global/none: no such file or directory\n" {
+		t.Errorf("grep with a missing path: code=%d out=%q errs=%q", code, out, errs)
 	}
 	code, out, _ = runCLI(t, cfg, "", "stat", "--json", "global/push.md")
 	var st struct {
@@ -191,8 +204,9 @@ func TestReadCommands(t *testing.T) {
 	}
 }
 
-// TestDeprecatedStatus checks that search and ls hide a page by the status in
-// its frontmatter, whether quoted or not, and not by a line in its body.
+// TestDeprecatedStatus checks that ls and tree hide a page by the status in
+// its frontmatter, whether quoted or not, and not by a line in its body, and
+// that grep searches every page.
 func TestDeprecatedStatus(t *testing.T) {
 	cfg := setup(t)
 	for p, c := range map[string]string{
@@ -217,26 +231,11 @@ func TestDeprecatedStatus(t *testing.T) {
 			}
 		}
 	}
-	check([]string{"search", "lease"}, []string{"global/howto.md"}, []string{"global/quoted.md", "machines/h1/y.md"})
-	check([]string{"search", "--all", "lease"}, []string{"global/quoted.md", "machines/h1/y.md"}, nil)
+	check([]string{"grep", "-l", "lease"}, []string{"global/howto.md", "global/quoted.md", "machines/h1/y.md"}, nil)
 	check([]string{"ls", "-R"}, []string{"howto.md"}, []string{"quoted.md", "y.md"})
 	check([]string{"ls", "-Ra"}, []string{"quoted.md", "y.md"}, nil)
 	check([]string{"tree"}, []string{"howto.md"}, []string{"quoted.md", "y.md"})
 	check([]string{"tree", "-a"}, []string{"quoted.md", "y.md"}, nil)
-}
-
-func TestSearchLimit(t *testing.T) {
-	cfg := setup(t)
-	for _, n := range []string{"0", "-1"} {
-		code, _, errs := runCLI(t, cfg, "", "search", "-n", n, "lease")
-		if code != ExitUsage || !strings.Contains(errs, "must be at least 1") {
-			t.Errorf("-n %s: code=%d errs=%q", n, code, errs)
-		}
-	}
-	code, out, errs := runCLI(t, cfg, "", "search", "--json", "-n", "1", "lease")
-	if code != ExitOK || strings.Count(out, `"path"`) != 1 {
-		t.Errorf("-n 1: code=%d out=%s errs=%s", code, out, errs)
-	}
 }
 
 func TestPutRm(t *testing.T) {
@@ -781,33 +780,12 @@ func TestOptionalSummary(t *testing.T) {
 		}
 		return m
 	}
-	code, out, errs := runCLI(t, cfg, "", "search", "--json", "lease")
-	if code != 0 {
-		t.Fatalf("code=%d %s", code, errs)
-	}
+	_, out, _ := runCLI(t, cfg, "", "ls", "--json", "global")
 	mustUnmarshal(t, out, &res)
 	got := byPath(res.Items)
-	if it := got["global/nosum.md"]; it.Summary != "" || it.Title != "Heading Title" {
-		t.Errorf("search nosum: %+v", it)
-	}
-	if it := got["global/desc.md"]; it.Summary != "from description" || it.Title != "d" {
-		t.Errorf("search desc: %+v", it)
-	}
 	if it := got["global/nofm.md"]; it.Summary != "" || it.Title != "nofm" {
-		t.Errorf("search nofm: %+v", it)
+		t.Errorf("ls nofm: %+v", it)
 	}
-	if it := got["global/push.md"]; it.Summary != "how to push" || it.Title != "push" {
-		t.Errorf("search push: %+v", it)
-	}
-	_, out, _ = runCLI(t, cfg, "", "search", "lease")
-	for _, want := range []string{"global/nosum.md\tHeading Title\n", "global/desc.md\tfrom description\n", "global/nofm.md\tnofm\n", "global/push.md\thow to push\n"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("search text missing %q in %q", want, out)
-		}
-	}
-	_, out, _ = runCLI(t, cfg, "", "ls", "--json", "global")
-	mustUnmarshal(t, out, &res)
-	got = byPath(res.Items)
 	if it := got["global/nosum.md"]; it.Summary != "" || it.Title != "Heading Title" {
 		t.Errorf("ls nosum: %+v", it)
 	}
@@ -827,7 +805,7 @@ func TestOptionalSummary(t *testing.T) {
 		}
 	}
 	// lint still reports the missing summary.
-	code, out, _ = runCLI(t, cfg, "", "lint", "global/nosum.md", "global/nofm.md", "global/desc.md")
+	code, out, _ := runCLI(t, cfg, "", "lint", "global/nosum.md", "global/nofm.md", "global/desc.md")
 	if code != 4 || strings.Count(out, "missing_summary") != 2 || strings.Contains(out, "desc.md") {
 		t.Errorf("lint: code=%d out=%q", code, out)
 	}
@@ -1187,8 +1165,8 @@ func TestPageLimits(t *testing.T) {
 	if code, out, errs := runCLI(t, cfg, "", "ls", "--json", "global"); code != 0 || !strings.Contains(out, "global/deep.md") || !strings.Contains(out, "global/huge.md") {
 		t.Errorf("ls: code=%d out=%q errs=%q", code, out, errs)
 	}
-	if code, out, errs := runCLI(t, cfg, "", "search", "--json", "summary"); code != 0 || !strings.Contains(out, "global/large.md") {
-		t.Errorf("search: code=%d out=%q errs=%q", code, out, errs)
+	if code, out, errs := runCLI(t, cfg, "", "grep", "--json", "-l", "summary", "global"); code != 0 || !strings.Contains(out, "global/large.md") {
+		t.Errorf("grep: code=%d out=%q errs=%q", code, out, errs)
 	}
 	if code, out, errs := runCLI(t, cfg, "", "stat", "--json", "global/deep.md", "global/huge.md"); code != 0 ||
 		!strings.Contains(out, `"title":"deep","summary":""`) || !strings.Contains(out, `"title":"huge","summary":""`) {
@@ -1210,33 +1188,26 @@ func TestPageLimits(t *testing.T) {
 	}
 }
 
-func TestSearchNonASCIICase(t *testing.T) {
+// TestGrepIgnoreCaseFixed checks that -i with -F ignores the case of letters
+// other than ASCII, whatever the locale git runs in.
+func TestGrepIgnoreCaseFixed(t *testing.T) {
 	cfg := setup(t)
 	for p, c := range map[string]string{
-		"global/both.md": "---\nsummary: both\n---\n# both\nÄpfel ΟΔΟΣ\n",
-		"global/one.md":  "---\nsummary: one\n---\n# one\nÄPFEL\n",
+		"global/both.md": "---\nsummary: both\n---\n# both\nÄpfel ΟΔΟΣ (a.b)\n",
+		"global/one.md":  "---\nsummary: one\n---\n# one\nÄPFEL axb\n",
 	} {
 		if code, _, errs := runCLI(t, cfg, c, "put", p); code != 0 {
 			t.Fatalf("put %s: %s", p, errs)
 		}
 	}
-	var res struct {
-		Items []struct {
-			Path    string
-			Matched []string
+	for args, want := range map[string]string{
+		"-iFl äpfel global":                        "global/both.md\nglobal/one.md\n",
+		"-iFl --all-match -e äpfel -e οδος global": "global/both.md\n",
+		"-iFl (A.B) global":                        "global/both.md\n",
+	} {
+		if code, out, errs := runCLI(t, cfg, "", append([]string{"grep"}, strings.Fields(args)...)...); code != 0 || out != want {
+			t.Errorf("grep %s: code=%d out=%q errs=%q", args, code, out, errs)
 		}
-	}
-	_, out, _ := runCLI(t, cfg, "", "search", "--json", "äpfel", "οδος")
-	mustUnmarshal(t, out, &res)
-	if len(res.Items) != 1 || res.Items[0].Path != "global/both.md" || len(res.Items[0].Matched) != 2 {
-		t.Errorf("search: %s", out)
-	}
-	res.Items = nil
-	_, out, _ = runCLI(t, cfg, "", "search", "--json", "--any", "äpfel", "οδος")
-	mustUnmarshal(t, out, &res)
-	if len(res.Items) != 2 || res.Items[0].Path != "global/both.md" || len(res.Items[0].Matched) != 2 ||
-		res.Items[1].Path != "global/one.md" || len(res.Items[1].Matched) != 1 || res.Items[1].Matched[0] != "äpfel" {
-		t.Errorf("search --any: %s", out)
 	}
 }
 
@@ -1258,14 +1229,14 @@ func TestRelativeRepo(t *testing.T) {
 	if code, _, errs := runCLI(t, cfg, "---\nsummary: s\n---\n# s\nrelative-word\n", "put", "global/rel.md"); code != 0 {
 		t.Fatalf("put: code=%d %s", code, errs)
 	}
-	code, out, errs := runCLI(t, cfg, "", "search", "--json", "relative-word")
+	code, out, errs := runCLI(t, cfg, "", "grep", "--json", "-l", "relative-word")
 	if code != 0 {
-		t.Fatalf("search: code=%d %s", code, errs)
+		t.Fatalf("grep: code=%d %s", code, errs)
 	}
 	var res struct{ Items []struct{ Path string } }
 	mustUnmarshal(t, out, &res)
 	if len(res.Items) != 1 || res.Items[0].Path != "global/rel.md" {
-		t.Errorf("search: %s", out)
+		t.Errorf("grep: %s", out)
 	}
 
 	abs := filepath.Join(d, "wiki", "remote.git")

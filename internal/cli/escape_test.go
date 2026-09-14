@@ -29,31 +29,31 @@ func TestTextOutputEscapesControl(t *testing.T) {
 		t.Fatalf("put: %d %s", code, errs)
 	}
 	escaped := `ok\x1b]52;c;ZWNobyBwd24=\x07\x1b[2K\x0dfake`
-	for _, args := range [][]string{
-		{"ls", "-l", "global"},
-		{"search", "lease"},
-	} {
-		_, out, _ := runCLI(t, cfg, "", args...)
-		if strings.ContainsAny(out, "\x1b\x07\r") || !strings.Contains(out, escaped+"\n") {
-			t.Errorf("%v: %q", args, out)
-		}
-		_, out, _ = runCLI(t, cfg, "", append(args, "--json")...)
-		var res struct {
-			Items []struct{ Path, Summary string }
-		}
-		mustUnmarshal(t, out, &res)
-		found := false
-		for _, it := range res.Items {
-			found = found || (it.Path == "global/ctl.md" && it.Summary == summary)
-		}
-		if !found {
-			t.Errorf("%v --json must keep the summary: %s", args, out)
-		}
+	if _, out, _ := runCLI(t, cfg, "", "ls", "-l", "global"); strings.ContainsAny(out, "\x1b\x07\r") || !strings.Contains(out, escaped+"\n") {
+		t.Errorf("ls -l: %q", out)
+	}
+	_, out, _ := runCLI(t, cfg, "", "ls", "--json", "global")
+	var res struct {
+		Items []struct{ Path, Summary string }
+	}
+	mustUnmarshal(t, out, &res)
+	found := false
+	for _, it := range res.Items {
+		found = found || (it.Path == "global/ctl.md" && it.Summary == summary)
+	}
+	if !found {
+		t.Errorf("ls --json must keep the summary: %s", out)
+	}
+	if _, out, _ := runCLI(t, cfg, "", "grep", "31m", "global"); out != `global/ctl.md:# t\x1b[31m`+"\n" {
+		t.Errorf("grep must escape the line: %q", out)
+	}
+	if _, out, _ := runCLI(t, cfg, "", "grep", "--json", "31m", "global"); !strings.Contains(out, `"text":"# t\u001b[31m"`) {
+		t.Errorf("grep --json must keep the line: %s", out)
 	}
 
 	runCLI(t, cfg, "# only title\x1b[2K\n", "put", "global/notitle.md")
 	runCLI(t, cfg, "---\ntype: \"\\e[2J\"\n---\n# typ\n", "put", "global/typ.md")
-	_, out, _ := runCLI(t, cfg, "", "ls", "-l", "global")
+	_, out, _ = runCLI(t, cfg, "", "ls", "-l", "global")
 	if !strings.Contains(out, "notitle.md  only title\\x1b[2K\n") {
 		t.Errorf("ls title: %q", out)
 	}
