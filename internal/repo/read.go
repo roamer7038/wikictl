@@ -184,7 +184,8 @@ type Object struct {
 }
 
 // Stat returns the sha and size of every path that is a file at the commit
-// that reads use, using one "cat-file --batch-check" call, which reads no contents.
+// that reads use, using one "cat-file --batch-check" call, which reads no
+// contents.
 // Paths that do not exist or are not files are absent from the result.
 func (r *Repo) Stat(paths []string) (map[string]Object, error) {
 	res := map[string]Object{}
