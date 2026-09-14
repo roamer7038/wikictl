@@ -52,6 +52,14 @@ func TestEdit(t *testing.T) {
 	if code, _, errs := runCLI(t, cfg, "", "edit", "global/push.md"); code != ExitUsage || !strings.Contains(errs, "not a terminal") {
 		t.Errorf("edit without a terminal: code=%d errs=%q", code, errs)
 	}
+	if devnull, err := os.Open(os.DevNull); err == nil {
+		var out, errb strings.Builder
+		code := Main([]string{"--config", cfg, "edit", "global/push.md"}, devnull, &out, &errb)
+		devnull.Close()
+		if code != ExitUsage || !strings.Contains(errb.String(), "not a terminal") {
+			t.Errorf("edit < %s: code=%d errs=%q", os.DevNull, code, errb.String())
+		}
+	}
 
 	// An unchanged file and a new file left empty create no commit.
 	editWith(t, "exit 0\n")
@@ -90,6 +98,12 @@ printf -- '---\nsummary: edited\n---\n# push\n' > "$1"
 	}
 	if got := lastCommitMessage(t, cfg); got != "wikictl: edit notes/img/a.png" {
 		t.Errorf("default commit message: %q", got)
+	}
+
+	// A path below a file is rejected before the editor runs.
+	editWith(t, "exit 7\n")
+	if code, _, errs := runCLI(t, cfg, "", "edit", "global/push.md/x.md"); code != ExitError || errs != "wikictl: global/push.md/x.md: global/push.md is a file\n" {
+		t.Errorf("edit below a file: code=%d errs=%q", code, errs)
 	}
 
 	// A failing editor and content that put rejects keep the edited file.

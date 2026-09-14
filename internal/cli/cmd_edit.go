@@ -7,10 +7,13 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path"
 	"strings"
+	"syscall"
 
 	"github.com/spf13/pflag"
+	"golang.org/x/term"
 
 	"github.com/roamer7038/wikictl/internal/page"
 )
@@ -18,11 +21,7 @@ import (
 // isTerminal reports whether r is a terminal. Tests replace it.
 var isTerminal = func(r io.Reader) bool {
 	f, ok := r.(*os.File)
-	if !ok {
-		return false
-	}
-	st, err := f.Stat()
-	return err == nil && st.Mode()&os.ModeCharDevice != 0
+	return ok && term.IsTerminal(int(f.Fd()))
 }
 
 func editFlags(a *app, fs *pflag.FlagSet) {
@@ -49,13 +48,26 @@ func (a *app) cmdEdit(c *command, args []string) error {
 	if err := check(p); err != nil {
 		return &invalidError{"bad_path: " + err.Error()}
 	}
+	var dirs []string
+	for d := path.Dir(p); d != "."; d = path.Dir(d) {
+		dirs = append(dirs, d)
+	}
+	above, err := a.repo.Stat(dirs)
+	if err != nil {
+		return &gitError{err}
+	}
+	for _, d := range dirs {
+		if _, ok := above[d]; ok {
+			return fmt.Errorf("%s: %s is a file", p, d)
+		}
+	}
 	contents, shas, err := a.repo.CatSHA([]string{p})
 	if err != nil {
 		return &gitError{err}
 	}
 	if contents[p] == nil {
-		if _, err := a.missing([]string{p}, func(string) bool { return false }); err != nil {
-			return err
+		if err := a.repo.CheckMissing([]string{p}); err != nil {
+			return &gitError{err}
 		}
 		files, err := a.repo.Files([]string{p})
 		if err != nil {
@@ -65,7 +77,7 @@ func (a *app) cmdEdit(c *command, args []string) error {
 			return fmt.Errorf("%s: is a directory", p)
 		}
 	}
-	tmp, err := os.CreateTemp("", "wikictl-*"+path.Ext(p))
+	tmp, err := os.CreateTemp("", "wikictl-*"+strings.ReplaceAll(path.Ext(p), "*", ""))
 	if err != nil {
 		return err
 	}
@@ -85,7 +97,11 @@ func (a *app) cmdEdit(c *command, args []string) error {
 	editor := cmp.Or(os.Getenv("VISUAL"), os.Getenv("EDITOR"), "vi")
 	run := exec.Command("sh", "-c", editor+` "$@"`, editor, tmp.Name())
 	run.Stdin, run.Stdout, run.Stderr = a.stdin, a.stdout, a.stderr
-	if err := run.Run(); err != nil {
+	// As git does, interrupts are left to the editor while it runs.
+	signal.Ignore(os.Interrupt, syscall.SIGQUIT)
+	err = run.Run()
+	signal.Reset(os.Interrupt, syscall.SIGQUIT)
+	if err != nil {
 		return keep(fmt.Errorf("editor %s: %w", editor, err))
 	}
 	edited, err := os.ReadFile(tmp.Name())
@@ -97,5 +113,6 @@ func (a *app) cmdEdit(c *command, args []string) error {
 			return keep(err)
 		}
 	}
-	return os.Remove(tmp.Name())
+	os.Remove(tmp.Name())
+	return nil
 }

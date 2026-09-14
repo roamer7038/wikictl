@@ -94,7 +94,12 @@ func (a *app) writeFile(p string, content []byte, base, cmd string) error {
 	if msg == "" {
 		msg = "wikictl: " + cmd + " " + p
 	}
-	res, err := a.commit([]repo.Change{{Path: p, Content: content, Base: &base}}, msg, "")
+	// put resolves a conflict by reapplying the change; edit is run again.
+	rerun := ""
+	if cmd != "put" {
+		rerun = cmd
+	}
+	res, err := a.commit([]repo.Change{{Path: p, Content: content, Base: &base}}, msg, rerun)
 	if err != nil {
 		return err
 	}
