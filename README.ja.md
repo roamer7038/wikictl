@@ -4,18 +4,18 @@
 
 wikictl は、Git リポジトリに置いた Markdown の wiki を操作するコマンドラインツールです。AI エージェントと人間が共有する知識ベースを想定しています。エージェントはシェルからページを検索・記録し、人間は同じページを Git ホストの Web UI や、Obsidian などのエディタで開いたクローンで読み書きします。クローンで編集する人は通常どおりコミットして push し、その変更と wikictl の変更はリポジトリ上で合流します。
 
-wikictl はサーバーを起動せず、インデックスも作業ツリーも持ちません。読み取りでは bare ミラーに fetch して `git grep` を使い、書き込みでは git の plumbing コマンドでコミットを作成して `--force-with-lease` で push します。wiki 自体は wikictl に依存しない素の Markdown なので、どのエディタでも扱えます。
+wikictl はサーバーを起動せず、インデックスも作業ツリーも持ちません。wiki 自体は wikictl に依存しない素の Markdown なので、どのエディタでも扱えます。
 
 ```mermaid
 flowchart LR
   agent["AI エージェント / シェル"] -->|wikictl| mirror["bare ミラー<br>~/.cache/wikictl/"]
-  mirror <-->|"fetch / push --force-with-lease"| repo[("wiki リポジトリ")]
+  mirror <-->|"fetch / push"| repo[("wiki リポジトリ")]
   person["人間"] <-->|"Web UI、またはクローンして push"| repo
 ```
 
 ## 前提条件
 
-- Linux または macOS。Windows などその他の OS では、wiki を読み書きするコマンドはすべて終了コード 5 で失敗する
+- Linux または macOS
 - `PATH` 上に `git` があること
 - 対話なしで wiki リポジトリから fetch し、push できること（credential helper、SSH エージェント、ローカルパスならファイルへのアクセス権）。すべてのコマンドは最初に fetch するため、読み取りだけでもこの条件が必要
 - wiki のブランチへ直接 push できること。プルリクエストを必須にするブランチ保護があると、書き込みはすべて失敗する
@@ -43,9 +43,7 @@ flowchart LR
 
     go install github.com/roamer7038/wikictl/cmd/wikictl@latest
 
-Linux と macOS（x86_64、arm64）のバイナリは [Releases ページ](https://github.com/roamer7038/wikictl/releases) にあります。v0.2.0 より後のリリースでは、各バイナリと `checksums.txt` にビルドの出所証明（attestation）を付けています。チェックサムで検出できるのはダウンロードの破損だけです。ファイルがこのリポジトリのリリースワークフローでビルドされたことは、[GitHub CLI](https://cli.github.com/) で確認できます。
-
-    gh attestation verify wikictl_linux_x86_64 -R roamer7038/wikictl
+Linux と macOS（x86_64、arm64）のバイナリは [Releases ページ](https://github.com/roamer7038/wikictl/releases) にあります。
 
 ## クイックスタート
 
@@ -78,7 +76,7 @@ Linux と macOS（x86_64、arm64）のバイナリは [Releases ページ](https
 | `projects/<name>/` | 特定のプロジェクト |
 | `machines/<name>/` | 特定の実行環境 |
 
-`search`、`ls`、`lint` は、既定でこの 4 つのディレクトリを対象にします。`projects/` の `<name>` はカレントディレクトリの `origin` リモートのリポジトリ名、`machines/` の `<name>` はホスト名の最初の `.` までで、どちらも設定で変えられます。`--dirs a,b` または設定の `dirs` で一覧を置き換えられ、`--dirs .` は wiki 全体を対象にします。使われるディレクトリは `wikictl context` で確認できます。
+`search`、`ls`、`lint` は、既定でこの 4 つのディレクトリを対象にします。`projects/` の `<name>` はカレントディレクトリの `origin` リモートのリポジトリ名、`machines/` の `<name>` はホスト名の最初の `.` までで、どちらも小文字にし、設定で変えられます。カレントディレクトリが git リポジトリの外にあるか `origin` リモートが無ければ、`projects/` のディレクトリは使いません。`--dirs a,b` または設定の `dirs` で一覧を置き換えられ、`--dirs .` は wiki 全体を対象にします。使われるディレクトリは `wikictl context` で確認できます。
 
 `personal/` には、エージェントが必要になったときに検索して参照する事実を置きます。すべての会話に適用すべきルールは、`CLAUDE.md` などエージェントに常に読み込まれる指示に書きます。複数人で共有する wiki では全員が同じ `personal/` を検索するため、`personal/` を使わないか、`dirs` を設定してください。
 

@@ -4,18 +4,18 @@
 
 wikictl is a command-line tool for a Markdown wiki kept in a Git repository. It is built for a knowledge base shared between AI agents and people: agents search and write pages from the shell, and people read and edit the same pages in a Git host's web UI or in a clone opened with an editor such as Obsidian. People who edit in a clone commit and push as usual; their changes and wikictl's meet in the repository.
 
-wikictl runs no server, keeps no index and uses no working tree. To read, it fetches into a bare mirror and uses `git grep`; to write, it builds a commit with git plumbing and pushes it with `--force-with-lease`. The wiki does not depend on wikictl: it is plain Markdown that any editor can handle.
+wikictl runs no server, keeps no index and uses no working tree. The wiki does not depend on wikictl: it is plain Markdown that any editor can handle.
 
 ```mermaid
 flowchart LR
   agent["AI agent or shell"] -->|wikictl| mirror["bare mirror<br>~/.cache/wikictl/"]
-  mirror <-->|"fetch / push --force-with-lease"| repo[("wiki repository")]
+  mirror <-->|"fetch / push"| repo[("wiki repository")]
   person["person"] <-->|"web UI, or clone and push"| repo
 ```
 
 ## Requirements
 
-- Linux or macOS. On other operating systems, such as Windows, every command that reads or writes the wiki fails with exit code 5.
+- Linux or macOS.
 - `git` on `PATH`.
 - Fetch and push access to the wiki repository without any prompt (a credential helper, an SSH agent or file access for a local path). Every command fetches first, so this applies to reading as well.
 - Direct pushes to the wiki branch. Branch protection that requires pull requests blocks every write.
@@ -43,9 +43,7 @@ The script picks the binary for your OS and architecture and verifies its checks
 
     go install github.com/roamer7038/wikictl/cmd/wikictl@latest
 
-Binaries for Linux and macOS (x86_64 and arm64) are on the [releases page](https://github.com/roamer7038/wikictl/releases). Releases newer than v0.2.0 attach a build provenance attestation to each binary and to `checksums.txt`. The checksum only detects a corrupted download; to check that a file was built by this repository's release workflow, use the [GitHub CLI](https://cli.github.com/):
-
-    gh attestation verify wikictl_linux_x86_64 -R roamer7038/wikictl
+Binaries for Linux and macOS (x86_64 and arm64) are on the [releases page](https://github.com/roamer7038/wikictl/releases).
 
 ## Quick start
 
@@ -78,7 +76,7 @@ Each top-level directory is a scope that answers "where is this knowledge valid?
 | `projects/<name>/` | one project |
 | `machines/<name>/` | one execution environment |
 
-`search`, `ls` and `lint` look at these four directories by default. `<name>` of `projects/` is the repository name of the `origin` remote of the current directory, and `<name>` of `machines/` is the hostname up to the first `.`; the configuration can change both. `--dirs a,b` or `dirs` in the configuration replaces the list, and `--dirs .` covers the whole wiki. `wikictl context` shows the directories in use.
+`search`, `ls` and `lint` look at these four directories by default. `<name>` of `projects/` is the repository name of the `origin` remote of the current directory, and `<name>` of `machines/` is the hostname up to the first `.`, both in lowercase, and the configuration can change both. When the current directory is outside a git repository or has no `origin` remote, no `projects/` directory is used. `--dirs a,b` or `dirs` in the configuration replaces the list, and `--dirs .` covers the whole wiki. `wikictl context` shows the directories in use.
 
 `personal/` holds facts that an agent looks up when they become relevant; rules for every conversation belong in the agent's standing instructions, such as `CLAUDE.md`. In a wiki shared by several people, everyone searches the same `personal/`, so either do not use it or set `dirs`.
 
