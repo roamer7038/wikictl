@@ -353,6 +353,8 @@ With `--json`:
 
 wikictl keeps one bare mirror per `repo` value under `$XDG_CACHE_HOME/wikictl/` (`~/.cache/wikictl/` when `$XDG_CACHE_HOME` is not set). `wikictl context` shows its path.
 
+The mirrors hold a copy of the wiki, so they are private to the user whatever the umask. wikictl creates `$XDG_CACHE_HOME/wikictl/` (with any missing parent directory) and each mirror with mode 0700 and the lock files with mode 0600, and sets an existing `$XDG_CACHE_HOME/wikictl/` to mode 0700 whenever it opens a mirror. Files that git creates inside a mirror keep git's modes, but other users cannot reach them through `$XDG_CACHE_HOME/wikictl/`. The temporary index used to build a commit is created in a new directory inside the mirror and removed afterwards.
+
 The mirror is named after the last path segment of `repo` without `.git`, followed by `-` and the first 12 hex digits of the SHA-256 of the whole `repo` value, for example `wiki-0123456789ab`. wikictl uses a mirror only when its `remote.origin.url` equals `repo`; otherwise it exits with code 5 (`mirror <path> is for another repository (its remote.origin.url is not the configured repo); delete it and run the command again`).
 
 Mirrors created by wikictl 0.2.x and earlier are named after the whole `repo` value with `/`, `:`, `@` and `\` replaced by `_` (for example `_srv_wiki.git`). wikictl no longer uses them and creates a new mirror on the first run, which costs one extra fetch; the wiki content is on the remote, so nothing is lost. Delete the old mirror directories under `$XDG_CACHE_HOME/wikictl/` by hand, together with any `<name>.lock` file next to them.

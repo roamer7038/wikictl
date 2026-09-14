@@ -10,7 +10,7 @@ import (
 // lockFile takes an exclusive flock on path, creating the file when needed.
 // The returned function releases the lock.
 func lockFile(path string) (func(), error) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, err
 	}
