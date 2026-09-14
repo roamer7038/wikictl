@@ -29,6 +29,10 @@ func (a *app) commit(changes []repo.Change, msg, rerun string) (*repo.Result, er
 		if errors.As(err, &cf) {
 			return nil, &conflictError{cf, rerun}
 		}
+		var pe *repo.PathError
+		if errors.As(err, &pe) {
+			return nil, pe
+		}
 		return nil, &gitError{err}
 	}
 	return res, nil
