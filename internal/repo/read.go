@@ -129,7 +129,9 @@ func (r *Repo) Grep(words []string, all bool, dirs []string) ([]string, error) {
 	return stripRef(r, out), nil
 }
 
-// GrepDeprecated returns the set of pages under dirs whose frontmatter has "status: deprecated".
+// GrepDeprecated returns the set of pages under dirs with a line that starts
+// with "status:" and contains "deprecated": the candidates whose frontmatter
+// wiki.Deprecated reads.
 func (r *Repo) GrepDeprecated(dirs []string) (map[string]bool, error) {
 	res := map[string]bool{}
 	head, err := r.Head()
@@ -139,7 +141,7 @@ func (r *Repo) GrepDeprecated(dirs []string) (map[string]bool, error) {
 	if head == "" {
 		return res, nil
 	}
-	args := append([]string{"grep", "-l", "-E", "-e", `^status:[[:space:]]*deprecated[[:space:]]*$`, r.readRef()}, pathspec(dirs)...)
+	args := append([]string{"grep", "-l", "-E", "-e", `^status:.*deprecated`, r.readRef()}, pathspec(dirs)...)
 	out, err := r.gitStrict(args...)
 	if noResult(err) {
 		return res, nil

@@ -58,7 +58,7 @@ func (a *app) cmdSearch(c *command, words []string) error {
 		return &gitError{err}
 	}
 	if !a.all {
-		dep, err := a.repo.GrepDeprecated(nil)
+		dep, err := wiki.Deprecated(a.repo)
 		if err != nil {
 			return &gitError{err}
 		}
@@ -369,7 +369,7 @@ func (a *app) cmdLs(c *command, args []string) error {
 		return &gitError{err}
 	}
 	if !a.all {
-		dep, err := a.repo.GrepDeprecated(nil)
+		dep, err := wiki.Deprecated(a.repo)
 		if err != nil {
 			return &gitError{err}
 		}

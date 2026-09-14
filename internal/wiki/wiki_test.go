@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -85,6 +87,36 @@ func (f fakeStore) CatLimit(paths []string, max int64) (map[string][]byte, map[s
 		}
 	}
 	return contents, large, nil
+}
+
+var reStatus = regexp.MustCompile(`(?m)^status:.*deprecated`)
+
+func (f fakeStore) GrepDeprecated(dirs []string) (map[string]bool, error) {
+	paths, _ := f.List(dirs)
+	out := map[string]bool{}
+	for _, p := range paths {
+		if reStatus.MatchString(f[p]) {
+			out[p] = true
+		}
+	}
+	return out, nil
+}
+
+func TestDeprecated(t *testing.T) {
+	s := fakeStore{
+		"global/plain.md":  "---\nstatus: deprecated\n---\n# p\n",
+		"global/quoted.md": "---\nsummary: q\nstatus: \"deprecated\"\n---\n# q\n",
+		"global/body.md":   "---\nsummary: b\n---\n# b\n```\nstatus: deprecated\n```\n",
+		"global/other.md":  "---\nstatus: deprecated-soon\n---\n# o\n",
+		"global/big.md":    "---\nstatus: deprecated\n---\n# big\n" + strings.Repeat("x", page.MaxPageSize),
+	}
+	got, err := Deprecated(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string]bool{"global/plain.md": true, "global/quoted.md": true}; !maps.Equal(got, want) {
+		t.Errorf("Deprecated = %v, want %v", got, want)
+	}
 }
 
 func TestClean(t *testing.T) {

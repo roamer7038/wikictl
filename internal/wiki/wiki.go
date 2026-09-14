@@ -29,6 +29,35 @@ type Store interface {
 	// CatLimit returns the contents of the files of at most max bytes, and
 	// the sha and size of the larger ones.
 	CatLimit(paths []string, max int64) (map[string][]byte, map[string]repo.Object, error)
+	// GrepDeprecated returns the pages under dirs that may have status:
+	// deprecated in their frontmatter.
+	GrepDeprecated(dirs []string) (map[string]bool, error)
+}
+
+// Deprecated returns the set of pages whose frontmatter has status:
+// deprecated. The frontmatter of each candidate found by GrepDeprecated
+// decides, so that such a line in the body does not count and a quoted value
+// does.
+func Deprecated(s Store) (map[string]bool, error) {
+	cands, err := s.GrepDeprecated(nil)
+	if err != nil {
+		return nil, err
+	}
+	paths := make([]string, 0, len(cands))
+	for p := range cands {
+		paths = append(paths, p)
+	}
+	contents, large, err := s.CatLimit(paths, page.MaxPageSize)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]bool{}
+	for _, p := range paths {
+		if status, _ := parse(p, contents, large).Frontmatter["status"].(string); status == "deprecated" {
+			out[p] = true
+		}
+	}
+	return out, nil
 }
 
 // ErrOutside is the error of Clean for a path that leaves the wiki.
