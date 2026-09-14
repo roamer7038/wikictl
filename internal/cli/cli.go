@@ -39,7 +39,8 @@ var commands = []*command{
 		detail: `Create README.md and global/index.md, as a single commit, in the repository
 given by repo in the config file or its selected profile. The repository
 itself must already exist; it may be on a Git host, on a server reached over
-SSH, or a local bare repository. Fails with exit code 1 if the branch already
+SSH, or a local bare repository; a relative local path is resolved against
+the directory of the config file. Fails with exit code 1 if the branch already
 exists. The branch is the one shown by "wikictl context"; in an empty
 repository without branch in the config file, it is main.`,
 		run: (*app).cmdInit},

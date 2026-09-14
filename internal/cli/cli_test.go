@@ -1271,3 +1271,49 @@ func TestSearchNonASCIICase(t *testing.T) {
 		t.Errorf("search --any: %s", out)
 	}
 }
+
+// A relative repo in the config file is resolved against the directory of
+// the config file, whatever the current directory is, and the mirror is
+// named after and points to the resolved path.
+func TestRelativeRepo(t *testing.T) {
+	isolateGit(t)
+	t.Setenv("WIKICTL_PROFILE", "")
+	d := t.TempDir()
+	mustRun(t, "", "git", "init", "-q", "--bare", "-b", "main", filepath.Join(d, "wiki", "remote.git"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(d, "cache"))
+	cfg := filepath.Join(d, "wiki", "config.yaml")
+	os.WriteFile(cfg, []byte("repo: ./remote.git\nauthor: {name: a, email: a@a}\nmachine: h1\n"), 0o600)
+	elsewhere := filepath.Join(d, "elsewhere")
+	os.MkdirAll(elsewhere, 0o755)
+	t.Chdir(elsewhere)
+
+	if code, _, errs := runCLI(t, cfg, "", "init"); code != 0 {
+		t.Fatalf("init: code=%d %s", code, errs)
+	}
+	if code, _, errs := runCLI(t, cfg, "---\nsummary: s\n---\n# s\nrelative-word\n", "put", "global/rel.md"); code != 0 {
+		t.Fatalf("put: code=%d %s", code, errs)
+	}
+	code, out, errs := runCLI(t, cfg, "", "search", "--json", "relative-word")
+	if code != 0 {
+		t.Fatalf("search: code=%d %s", code, errs)
+	}
+	var res struct{ Items []struct{ Path string } }
+	mustUnmarshal(t, out, &res)
+	if len(res.Items) != 1 || res.Items[0].Path != "global/rel.md" {
+		t.Errorf("search: %s", out)
+	}
+
+	abs := filepath.Join(d, "wiki", "remote.git")
+	code, out, errs = runCLI(t, cfg, "", "--no-fetch", "context", "--json")
+	if code != 0 {
+		t.Fatalf("context: code=%d %s", code, errs)
+	}
+	var cx struct{ Repo, Mirror string }
+	mustUnmarshal(t, out, &cx)
+	if cx.Repo != abs || filepath.Base(cx.Mirror) != mirrorName(abs) {
+		t.Errorf("context: %s", out)
+	}
+	if got := gitOut(t, "--git-dir", cx.Mirror, "config", "--get", "remote.origin.url"); strings.TrimSpace(got) != abs {
+		t.Errorf("remote.origin.url = %q, want %q", got, abs)
+	}
+}

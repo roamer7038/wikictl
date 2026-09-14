@@ -17,7 +17,7 @@ import (
 
 // Config is the content of config.yaml with the selected profile applied.
 type Config struct {
-	Repo   string `yaml:"repo"`   // URL of the wiki repository
+	Repo   string `yaml:"repo"`   // URL or path of the wiki repository; a relative local path is resolved against the directory of the config file
 	Branch string `yaml:"branch"` // branch to use; detected from the remote when empty
 	Author struct {
 		Name  string `yaml:"name"`
@@ -116,7 +116,27 @@ func Load(explicit string, sel Selector) (*Config, error) {
 		}
 		return nil, fmt.Errorf("config file %s: repo is not set", p)
 	}
+	if isRelativeLocal(c.Repo) {
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			return nil, fmt.Errorf("config file %s: %w", p, err)
+		}
+		c.Repo = filepath.Join(filepath.Dir(abs), c.Repo)
+	}
 	return c, nil
+}
+
+// isRelativeLocal reports whether repo is a relative local path: not
+// absolute, not starting with ~, not a URL with a scheme and not the
+// scp-like form [user@]host:path, where a colon comes before the first slash.
+func isRelativeLocal(repo string) bool {
+	if filepath.IsAbs(repo) || repo == "~" || strings.HasPrefix(repo, "~/") || strings.Contains(repo, "://") {
+		return false
+	}
+	if i := strings.Index(repo, ":"); i > 0 && !strings.ContainsAny(repo[:i], "/"+string(filepath.Separator)) {
+		return false
+	}
+	return true
 }
 
 // selectProfile picks the profile and merges it into the top-level keys.

@@ -130,7 +130,7 @@ wikictl reads the configuration from `--config <path>`, else `$WIKICTL_CONFIG`, 
 
 | Key | Required | Meaning |
 |---|---|---|
-| `repo` | yes | URL or path of the wiki repository; may be set in a profile instead |
+| `repo` | yes | URL or path of the wiki repository; a local path may be relative to the directory of the configuration file; may be set in a profile instead |
 | `branch` | no | Branch to use; defaults to the branch saved in the mirror, else the remote HEAD, else `main`, and the saved branch is kept (see `wikictl help context`) |
 | `author.name`, `author.email` | no | Commit author; each falls back to `git config user.name` or `user.email` |
 | `machine` | no | Name for `machines/<name>/` |
