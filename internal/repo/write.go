@@ -11,7 +11,7 @@ import (
 )
 
 // Change is one file in a commit. Base is the optimistic-lock check used by
-// put: nil skips the check, "" requires that the file does not exist yet, and
+// put, mv and rm: nil skips the check, "" requires that the file does not exist yet, and
 // any other value must equal the current blob sha.
 type Change struct {
 	Path    string

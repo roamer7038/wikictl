@@ -151,9 +151,16 @@ func (r *Repo) GrepDeprecated(dirs []string) (map[string]bool, error) {
 // Cat returns the contents of paths using one "cat-file --batch" call.
 // Paths that do not exist or are not files are absent from the result.
 func (r *Repo) Cat(paths []string) (map[string][]byte, error) {
-	res := map[string][]byte{}
+	res, _, err := r.CatSHA(paths)
+	return res, err
+}
+
+// CatSHA is Cat that also returns the blob sha of every path it read, so that
+// a change built from the contents can use the sha as its Base.
+func (r *Repo) CatSHA(paths []string) (map[string][]byte, map[string]string, error) {
+	res, shas := map[string][]byte{}, map[string]string{}
 	if len(paths) == 0 {
-		return res, nil
+		return res, shas, nil
 	}
 	var in bytes.Buffer
 	for _, p := range paths {
@@ -161,7 +168,7 @@ func (r *Repo) Cat(paths []string) (map[string][]byte, error) {
 	}
 	out, err := r.GitIn(in.Bytes(), "cat-file", "--batch")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	rd := bufio.NewReader(strings.NewReader(out))
 	for _, p := range paths {
@@ -176,14 +183,15 @@ func (r *Repo) Cat(paths []string) (map[string][]byte, error) {
 		n, _ := strconv.Atoi(f[2])
 		buf := make([]byte, n)
 		if _, err := io.ReadFull(rd, buf); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		rd.ReadByte()
 		if f[1] == "blob" {
 			res[p] = buf
+			shas[p] = f[0]
 		}
 	}
-	return res, nil
+	return res, shas, nil
 }
 
 // Updated returns the last commit time of every file under dirs, from one

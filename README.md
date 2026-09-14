@@ -199,7 +199,7 @@ Global flags, accepted before or after the command:
 | `--no-fetch` | Skip the fetch before reading |
 | `--version` | Print the version |
 
-`--no-fetch` does not skip the fetch that a write performs before committing. `mv`, however, builds its changes from the unfetched mirror and can overwrite newer changes, so do not combine it with `--no-fetch`.
+`--no-fetch` does not skip the fetch that a write performs before committing. `mv` and `rm` build their changes from the unfetched mirror, so with `--no-fetch` they report a conflict (exit code 3) when a page they read has changed since the last fetch; run the command again.
 
 Details of each command:
 
@@ -236,7 +236,7 @@ wikictl processes that use the same mirror take a lock on it and write one at a 
 
 `wikictl mv global/old.md global/new.md` moves a page and rewrites every `[text](path)` link to it. `wikictl mv projects/app/ projects/app-v2/` moves a whole directory. Links written as bare paths are not rewritten; run `wikictl --dirs . lint` afterwards to find them in the whole wiki.
 
-`mv` takes no `--base`. A change pushed to a linking page between the time `mv` reads it and the time `mv` pushes is overwritten. `--no-fetch` makes this more likely.
+`mv` and `rm` take no `--base`; they use the blob sha of each page as they read it. If a page they would change or delete (the moved page, a linking page, or the deleted page) changes or is deleted before the commit, or a page is created at the destination, they exit with code 3 and write nothing. The conflict is printed as for `put` (see [Output](#output)), about the first such page. Run the command again; the conflict has already fetched the new content.
 
 `wikictl rm <path>` deletes a page without touching the pages that link to it; `wikictl --dirs . lint` lists the links that are now broken.
 
@@ -313,7 +313,7 @@ Warnings go to standard error in both modes, one per line:
 
 Errors go to standard error as `wikictl: <message>`. With `--json`, they are printed on standard output as `{"error": "<kind>", "message": "..."}`, where `<kind>` is `error`, `usage`, `conflict`, `invalid` or `git`.
 
-When `put` reports a conflict, it also prints the current content of the page. As text, one line goes to standard error and the current content to standard output:
+When `put`, `mv` or `rm` reports a conflict, it also prints the current content of the page. As text, one line goes to standard error and the current content to standard output:
 
     wikictl: conflict (<reason>): <path> sha=<sha>
 
@@ -321,7 +321,7 @@ With `--json`:
 
     {"error": "conflict", "reason": "<reason>", "path": "...", "sha": "...", "content": "...", "message": "..."}
 
-`<reason>` is `exists` when a page written without `--base` already exists, or `changed` when the page no longer has the sha given with `--base`. `sha` and `content` are empty when the page has been deleted. `message` explains the conflict: that the page already exists, that it changed, or that it was deleted.
+`<reason>` is `exists` when a page written without `--base` (or the destination of `mv`) already exists, or `changed` when the page no longer has the sha given with `--base` (or read by `mv` or `rm`). `sha` and `content` are empty when the page has been deleted. `message` explains the conflict: that the page already exists, that it changed, or that it was deleted; for `mv` and `rm`, it says to run the command again.
 
 ### Exit codes
 
