@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -119,29 +118,6 @@ func (r *Repo) command(extraEnv []string, args []string) *exec.Cmd {
 	c.Dir = r.Dir
 	c.Env = append(baseEnv(), extraEnv...)
 	return c
-}
-
-// ReadBlob passes the content of the blob sha to read as a stream from
-// "git cat-file blob", so that a large blob is not held in memory. A failure
-// of git is a GitError; otherwise the error of read is returned.
-func (r *Repo) ReadBlob(sha string, read func(io.Reader) error) error {
-	args := []string{"cat-file", "blob", sha}
-	c := r.command(nil, args)
-	var errb bytes.Buffer
-	c.Stderr = &errb
-	out, err := c.StdoutPipe()
-	if err != nil {
-		return err
-	}
-	if err := c.Start(); err != nil {
-		return &GitError{Args: args, Err: err}
-	}
-	rerr := read(out)
-	io.Copy(io.Discard, out)
-	if err := c.Wait(); err != nil {
-		return &GitError{Args: args, Stderr: errb.String(), Err: err}
-	}
-	return rerr
 }
 
 // runGit executes git in the mirror (see command). With strict, an error

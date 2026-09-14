@@ -60,7 +60,7 @@ Linux と macOS（x86_64、arm64）のバイナリは [Releases ページ](https
        wikictl context
        printf -- '---\nsummary: --force-with-lease 付きの push は、リモートの ref が期待する sha のままでなければ拒否される\n---\n# --force-with-lease は何を保証するか\n\n本文。\n' \
          | wikictl put global/git-force-with-lease.md
-       wikictl search lease
+       wikictl grep lease
        wikictl cat global/git-force-with-lease.md
        wikictl lint
 
@@ -75,7 +75,7 @@ Linux と macOS（x86_64、arm64）のバイナリは [Releases ページ](https
 | `projects/<name>/` | 特定のプロジェクト |
 | `machines/<name>/` | 特定の実行環境 |
 
-`search`、`ls`、`lint` は wiki 全体を対象にします。wikictl がカレントディレクトリから対象のディレクトリを選ぶことはありません。
+パスを取るコマンドは、パスを省略すると wiki 全体を対象にします。wikictl がカレントディレクトリから対象のディレクトリを選ぶことはありません。
 
 `personal/` には、エージェントが必要になったときに検索して参照する事実を置きます。すべての会話に適用すべきルールは、`CLAUDE.md` などエージェントに常に読み込まれる指示に書きます。複数人で共有する wiki では全員が同じ `personal/` を読むため、`personal/` は使わないでください。
 
@@ -95,7 +95,7 @@ type: concept
 - cites: https://example.com/spec | この出典が裏付ける内容
 ```
 
-- wikictl が解釈するフロントマターのキーは、`summary`（または `description`）、`type`、`tags`、`aliases`、`status: deprecated`（`search`・`ls`・`tree` に表示しない）
+- wikictl が解釈するフロントマターのキーは、`summary`（または `description`）、`type`、`tags`、`aliases`、`status: deprecated`（`ls`・`tree` に表示しない）
 - ページへのリンクは、`mv` が書き換えられるように `[text](path)` の形式で書く
 - 名前には小文字の ASCII 英字、数字、ハイフンを使うことを推奨する
 
@@ -105,7 +105,7 @@ type: concept
 
 | コマンド | 説明 |
 |---|---|
-| `search <word>...` | 指定した語を含むページを検索する |
+| `grep <pattern> [<path>...]` | パターンに一致する行を表示する |
 | `cat <path>...` | ファイルを保存されたままの内容で表示する |
 | `stat <path>...` | ファイルの sha、最終更新日時、属性を表示する |
 | `links <path>` | ページからのリンクとページへのリンクを一覧表示する |

@@ -60,7 +60,7 @@ Binaries for Linux and macOS (x86_64 and arm64) are on the [releases page](https
        wikictl context
        printf -- '---\nsummary: A push with --force-with-lease is rejected unless the remote ref still has the expected sha\n---\n# What does --force-with-lease guarantee?\n\nBody.\n' \
          | wikictl put global/git-force-with-lease.md
-       wikictl search lease
+       wikictl grep lease
        wikictl cat global/git-force-with-lease.md
        wikictl lint
 
@@ -75,7 +75,7 @@ Each top-level directory is a scope that answers "where is this knowledge valid?
 | `projects/<name>/` | one project |
 | `machines/<name>/` | one execution environment |
 
-`search`, `ls` and `lint` read the whole wiki; wikictl does not choose directories from the current directory.
+Commands that take paths read the whole wiki when the paths are omitted; wikictl does not choose directories from the current directory.
 
 `personal/` holds facts that an agent looks up when they become relevant; rules for every conversation belong in the agent's standing instructions, such as `CLAUDE.md`. In a wiki shared by several people, everyone reads the same `personal/`, so do not use it there.
 
@@ -95,7 +95,7 @@ Body. Link to other pages with relative paths: [index](index.md).
 - cites: https://example.com/spec | what this source supports
 ```
 
-- Frontmatter keys that wikictl interprets: `summary` (or `description`), `type`, `tags`, `aliases` and `status: deprecated`, which hides the page from `search`, `ls` and `tree`.
+- Frontmatter keys that wikictl interprets: `summary` (or `description`), `type`, `tags`, `aliases` and `status: deprecated`, which hides the page from `ls` and `tree`.
 - Write links to pages as `[text](path)`, so that `mv` can rewrite them.
 - Names made of lowercase ASCII letters, digits and hyphens are recommended.
 
@@ -105,7 +105,7 @@ Body. Link to other pages with relative paths: [index](index.md).
 
 | Command | Purpose |
 |---|---|
-| `search <word>...` | Find pages containing the given words |
+| `grep <pattern> [<path>...]` | Print the lines that match a pattern |
 | `cat <path>...` | Print files as stored |
 | `stat <path>...` | Show the sha, last update and attributes of files |
 | `links <path>` | List the links in a page and to it |
