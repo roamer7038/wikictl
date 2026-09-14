@@ -138,19 +138,21 @@ than tab are shown as \xNN in text output.
 Output: items[] {path, kind}; kind is "file" or "dir".`,
 		check: (*app).checkFind, run: (*app).cmdFind},
 	{name: "put", args: "<path> < content", minArgs: 1, maxArgs: 1, paths: true,
-		summary: "Create or replace a page from standard input",
-		detail: `Read the whole page, frontmatter included, from standard input and commit it
-as <path>. Omit --base for a new page. For an existing page pass --base with
-the blob sha from stat; without it, or if the page changed in the meantime, the
-command exits with code 3 and prints the current content and sha. A page
-whose frontmatter is invalid, that is over the size limits, or whose path
-breaks the file name rules (see "help lint") is rejected with exit code 4. A
+		summary: "Create or replace a file from standard input",
+		detail: `Read the content of a file from standard input and commit it as <path>, which
+must be inside a directory. Omit --base for a new file. For an existing file
+pass --base with the blob sha from stat; without it, or if the file changed in
+the meantime, the command exits with code 3 and prints the current content and
+sha. A path that breaks the file name rules (see "help lint") is rejected with
+exit code 4. A path ending in .md is a page: a page whose frontmatter is
+invalid or that is over the size limits is rejected with exit code 4, and a
 missing summary, Links lines that do not parse, links to files missing from
 the wiki and names outside the recommended form only produce warnings on
 standard error; "description" in the frontmatter is read as a synonym of
 "summary", and "summary" wins when it is not blank. When the content equals
-the current page, no commit is created and commit is the current commit. The
-default commit message is "wikictl: put <path>".
+the current file, no commit is created and commit is the current commit. The
+default commit message is "wikictl: put <path>". Nothing is printed on success
+unless -v is given.
 
 Warnings are printed as "wikictl: warning: <path>:<line>: <code>: <message>";
 control characters other than tab in the message are shown as \xNN.
@@ -163,7 +165,8 @@ already exists, or "changed" when it no longer has the expected sha; sha and
 content are empty when the page has been deleted. mv and rm report conflicts
 in the same way.
 
-Output: {path, sha, commit}.`,
+Output: {path, sha, commit}; with -v, text output is
+"<path><TAB><sha><TAB><commit>".`,
 		flags: putFlags, run: (*app).cmdPut},
 	{name: "mv", args: "<path> <newpath> | <dir>/ <newdir>/", minArgs: 2, maxArgs: 2,
 		summary: "Move or rename a page or a directory, rewriting links",
@@ -198,19 +201,25 @@ Output: {path, commit, rewritten} or {path, commit, moved, rewritten}; moved is
 the number of pages moved, and rewritten counts only the other pages whose
 links were rewritten.`,
 		flags: msgFlag, run: (*app).cmdMv},
-	{name: "rm", args: "<path>", minArgs: 1, maxArgs: 1, paths: true,
-		summary: "Delete a page",
-		detail: `Delete a page. Pages that link to it are left unchanged; lint reports them
-as broken_link. A path that is not a page path (see "help lint"), such as a
-file at the wiki root, is rejected with exit code 4. If the page changed since
-rm read it, the command exits with code 3, deletes nothing and prints the
-current content and sha, as put does; run it again. With --no-fetch, a page
-that changed since the last fetch is reported as a conflict. To delete a file
-that is not a page, clone the wiki repository and use git. The default commit
-message is "wikictl: rm <path>".
+	{name: "rm", args: "<path>...", minArgs: 1, maxArgs: -1, paths: true,
+		summary: "Delete files or directories",
+		detail: `Delete files, and with -r directories with every file under them, in one
+commit. A path that is a directory without -r, or that does not exist, is
+reported on standard error, the other paths are still deleted, and the command
+exits with code 1; with -f a path that does not exist is ignored. A file at the
+root of the wiki, or a path that breaks the file name rules (see "help lint"),
+is rejected with exit code 4 and nothing is deleted. Pages that link to a
+deleted page are left unchanged; lint reports them as broken_link. If a file
+changed since rm read it, the command exits with code 3, deletes nothing and
+prints the current content and sha, as put does; run it again. With
+--no-fetch, a file that changed since the last fetch is reported as a
+conflict. The default commit message is "wikictl: rm <path>...". Nothing is
+printed on success unless -v is given.
 
-Output: {path, commit}.`,
-		flags: msgFlag, run: (*app).cmdRm},
+Output: {paths, commit}; paths lists the deleted files, and commit is empty
+when nothing was deleted. With -v, text output is "<path><TAB><commit>" for
+each deleted file.`,
+		flags: rmFlags, run: (*app).cmdRm},
 	{name: "lint", args: "[<path>...]", maxArgs: -1, paths: true,
 		summary: "Report pages that violate the wiki format",
 		detail: `Check pages for missing_summary, frontmatter_invalid, links_syntax, broken_link,
@@ -328,6 +337,8 @@ type app struct {
 	all       bool
 	base      string
 	msg       string
+	verbose   bool
+	force     bool
 
 	ignoreCase   bool
 	filesWith    bool

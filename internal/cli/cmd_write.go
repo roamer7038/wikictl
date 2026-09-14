@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"slices"
 	"strings"
 
 	"github.com/spf13/pflag"
@@ -34,8 +35,16 @@ func (a *app) commit(changes []repo.Change, msg, rerun string) (*repo.Result, er
 }
 
 func putFlags(a *app, fs *pflag.FlagSet) {
-	fs.StringVar(&a.base, "base", "", "blob `sha` of the existing page as printed by stat; omit for a new page")
+	fs.StringVar(&a.base, "base", "", "blob `sha` of the existing file as printed by stat; omit for a new file")
 	msgFlag(a, fs)
+	fs.BoolVarP(&a.verbose, "verbose", "v", false, "print the path, blob sha and commit")
+}
+
+func rmFlags(a *app, fs *pflag.FlagSet) {
+	fs.BoolVarP(&a.recursive, "recursive", "r", false, "delete directories and every file under them")
+	fs.BoolVarP(&a.force, "force", "f", false, "ignore paths that do not exist")
+	msgFlag(a, fs)
+	fs.BoolVarP(&a.verbose, "verbose", "v", false, "print each deleted path and the commit")
 }
 
 // msgFlag registers the -m flag shared by the commands that commit.
@@ -49,22 +58,26 @@ func (a *app) cmdPut(c *command, args []string) error {
 	if err != nil {
 		return err
 	}
-	pg := page.Parse(p, content)
-	for _, is := range pg.Issues {
-		switch is.Code {
-		case "bad_path", "frontmatter_invalid", "page_too_large":
-			return &invalidError{is.Code + ": " + is.Message}
-		default:
+	if strings.HasSuffix(p, ".md") {
+		pg := page.Parse(p, content)
+		for _, is := range pg.Issues {
+			switch is.Code {
+			case "bad_path", "frontmatter_invalid", "page_too_large":
+				return &invalidError{is.Code + ": " + is.Message}
+			default:
+				a.warn(is)
+			}
+		}
+		// Broken links never block the write, so that link targets can be created afterwards.
+		broken, err := wiki.BrokenLinks(a.repo, []*page.Page{pg})
+		if err != nil {
+			return &gitError{err}
+		}
+		for _, is := range broken {
 			a.warn(is)
 		}
-	}
-	// Broken links never block the write, so that link targets can be created afterwards.
-	broken, err := wiki.BrokenLinks(a.repo, []*page.Page{pg})
-	if err != nil {
-		return &gitError{err}
-	}
-	for _, is := range broken {
-		a.warn(is)
+	} else if err := page.CheckFilePath(p); err != nil {
+		return &invalidError{"bad_path: " + err.Error()}
 	}
 	msg := a.msg
 	if msg == "" {
@@ -76,7 +89,11 @@ func (a *app) cmdPut(c *command, args []string) error {
 		return err
 	}
 	out := map[string]string{"path": p, "sha": res.SHAs[p], "commit": res.Commit}
-	a.emit(out, func(w io.Writer) { fmt.Fprintf(w, "%s\t%s\t%s\n", p, res.SHAs[p], res.Commit) })
+	a.emit(out, func(w io.Writer) {
+		if a.verbose {
+			fmt.Fprintf(w, "%s\t%s\t%s\n", escapeControl(p), res.SHAs[p], res.Commit)
+		}
+	})
 	return nil
 }
 
@@ -85,28 +102,81 @@ func (a *app) warn(is page.Issue) {
 	fmt.Fprintf(a.stderr, "wikictl: warning: %s:%d: %s: %s\n", is.Path, is.Line, is.Code, escapeControl(is.Message))
 }
 
+// cmdRm deletes files, and with -r directories, in one commit. As rm does, a
+// path that cannot be deleted is reported and the others are still deleted.
 func (a *app) cmdRm(c *command, args []string) error {
-	p := args[0]
-	if err := page.CheckPath(p); err != nil {
-		return &invalidError{"bad_path: " + err.Error()}
-	}
-	contents, shas, err := a.repo.CatSHA([]string{p})
+	files, err := a.repo.Files(args)
 	if err != nil {
 		return &gitError{err}
 	}
-	if contents[p] == nil {
-		return a.notFound(p)
+	under := func(p string) []string {
+		return slices.DeleteFunc(slices.Clone(files), func(f string) bool { return !strings.HasPrefix(f, p+"/") })
 	}
-	msg := a.msg
-	if msg == "" {
-		msg = "wikictl: rm " + p
+	for _, p := range args {
+		for _, x := range strings.Split(p, "/") {
+			if err := page.CheckName(x); err != nil {
+				return &invalidError{"bad_path: " + err.Error()}
+			}
+		}
+		if !strings.Contains(p, "/") && len(under(p)) == 0 {
+			return &invalidError{"bad_path: " + p + ": a file at the wiki root cannot be deleted"}
+		}
 	}
-	base := shas[p]
-	res, err := a.commit([]repo.Change{{Path: p, Delete: true, Base: &base}}, msg, "rm")
-	if err != nil {
-		return err
+	var targets []string
+	failed := false
+	for _, p := range args {
+		switch sub := under(p); {
+		case len(sub) > 0 && !a.recursive:
+			fmt.Fprintf(a.stderr, "wikictl: %s: is a directory\n", escapeControl(p))
+			failed = true
+		case len(sub) > 0:
+			targets = append(targets, sub...)
+		case slices.Contains(files, p):
+			targets = append(targets, p)
+		case !a.force:
+			fmt.Fprintf(a.stderr, "wikictl: %s: no such file or directory\n", escapeControl(p))
+			failed = true
+		}
 	}
-	a.emit(map[string]string{"path": p, "commit": res.Commit}, func(w io.Writer) { fmt.Fprintf(w, "%s\t%s\n", p, res.Commit) })
+	slices.Sort(targets)
+	targets = slices.Compact(targets)
+	deleted, commit := []string{}, ""
+	if len(targets) > 0 {
+		objs, err := a.repo.Stat(targets)
+		if err != nil {
+			return &gitError{err}
+		}
+		if _, err := a.missing(targets, func(p string) bool { _, ok := objs[p]; return ok }); err != nil {
+			return err
+		}
+		var changes []repo.Change
+		for _, p := range targets {
+			if o, ok := objs[p]; ok {
+				base := o.SHA
+				changes = append(changes, repo.Change{Path: p, Delete: true, Base: &base})
+				deleted = append(deleted, p)
+			}
+		}
+		msg := a.msg
+		if msg == "" {
+			msg = "wikictl: rm " + strings.Join(args, " ")
+		}
+		res, err := a.commit(changes, msg, "rm")
+		if err != nil {
+			return err
+		}
+		commit = res.Commit
+	}
+	a.emit(map[string]any{"paths": deleted, "commit": commit}, func(w io.Writer) {
+		if a.verbose {
+			for _, p := range deleted {
+				fmt.Fprintf(w, "%s\t%s\n", escapeControl(p), commit)
+			}
+		}
+	})
+	if failed {
+		return exitStatus(ExitError)
+	}
 	return nil
 }
 

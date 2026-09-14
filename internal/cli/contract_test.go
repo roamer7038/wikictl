@@ -54,7 +54,8 @@ func TestJSONContract(t *testing.T) {
 			[]string{"items", "items[].code", "items[].line", "items[].message", "items[].path"}},
 		{"mv", "", "", []string{"mv", "global/new.md", "global/new2.md"}, ExitOK, []string{"commit", "path", "rewritten"}},
 		{"mv/dir", "", "", []string{"mv", "projects/app/", "projects/app2/"}, ExitOK, []string{"commit", "moved", "path", "rewritten"}},
-		{"rm", "", "", []string{"rm", "global/new2.md"}, ExitOK, []string{"commit", "path"}},
+		{"rm", "", "", []string{"rm", "global/new2.md"}, ExitOK, []string{"commit", "paths"}},
+		{"rm/missing", "", "", []string{"rm", "global/none.md"}, ExitError, []string{"commit", "paths"}},
 		{"unknown", "", "", []string{"nope"}, ExitUsage, errKeys},
 	}
 	for _, c := range cases {
