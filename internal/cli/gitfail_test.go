@@ -167,23 +167,27 @@ func TestUnreadableObject(t *testing.T) {
 	cases := []struct {
 		name      string
 		remove    string // path whose object is deleted
-		brokenRef bool
+		brokenRef string // content written to the tracking ref, if any
 		stdin     string
 		args      []string
 	}{
 		// machines/h1/y.md, projects/app/x.md and global/push.md match.
-		{"search/grep with another match", "global/push.md", false, "", []string{"--no-fetch", "search", "lease"}},
-		{"ls/deprecated with another match", "global/push.md", false, "", []string{"--no-fetch", "ls"}},
-		{"get/backlinks with another match", "projects/app/x.md", false, "", []string{"--no-fetch", "get", "global/index.md"}},
-		{"get/target blob", "global/push.md", false, "", []string{"--no-fetch", "get", "global/push.md"}},
-		{"get/target tree", "global", false, "", []string{"--no-fetch", "get", "global/push.md"}},
-		{"get/broken ref", "", true, "", []string{"--no-fetch", "get", "global/push.md"}},
-		{"lint/target blob", "global/push.md", false, "", []string{"--no-fetch", "lint", "global/push.md"}},
-		{"rm/target blob", "global/push.md", false, "", []string{"rm", "global/push.md"}},
-		{"mv/source blob", "global/push.md", false, "", []string{"mv", "global/push.md", "global/push2.md"}},
-		{"mv/destination blob", "global/push.md", false, "", []string{"mv", "global/index.md", "global/push.md"}},
-		{"put/base with tree", "global", false, newPage, []string{"put", "--base", "BASE", "global/push.md"}},
-		{"put/existence with tree", "global", false, newPage, []string{"put", "global/push.md"}},
+		{"search/grep with another match", "global/push.md", "", "", []string{"--no-fetch", "search", "lease"}},
+		{"ls/deprecated with another match", "global/push.md", "", "", []string{"--no-fetch", "ls"}},
+		{"get/backlinks with another match", "projects/app/x.md", "", "", []string{"--no-fetch", "get", "global/index.md"}},
+		{"get/target blob", "global/push.md", "", "", []string{"--no-fetch", "get", "global/push.md"}},
+		{"get/target tree", "global", "", "", []string{"--no-fetch", "get", "global/push.md"}},
+		{"get/ref to a missing object", "", "1234567890123456789012345678901234567890\n", "", []string{"--no-fetch", "get", "global/push.md"}},
+		{"get/ref with garbage", "", "garbage\n", "", []string{"--no-fetch", "get", "global/push.md"}},
+		{"search/ref with garbage", "", "garbage\n", "", []string{"--no-fetch", "search", "lease"}},
+		{"ls/ref with garbage", "", "garbage\n", "", []string{"--no-fetch", "ls"}},
+		{"lint/ref with garbage", "", "garbage\n", "", []string{"--no-fetch", "lint"}},
+		{"lint/target blob", "global/push.md", "", "", []string{"--no-fetch", "lint", "global/push.md"}},
+		{"rm/target blob", "global/push.md", "", "", []string{"rm", "global/push.md"}},
+		{"mv/source blob", "global/push.md", "", "", []string{"mv", "global/push.md", "global/push2.md"}},
+		{"mv/destination blob", "global/push.md", "", "", []string{"mv", "global/index.md", "global/push.md"}},
+		{"put/base with tree", "global", "", newPage, []string{"put", "--base", "BASE", "global/push.md"}},
+		{"put/existence with tree", "global", "", newPage, []string{"put", "global/push.md"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -196,9 +200,9 @@ func TestUnreadableObject(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if c.brokenRef {
+			if c.brokenRef != "" {
 				ref := filepath.Join(mirror, "refs", "remotes", "origin", "main")
-				if err := os.WriteFile(ref, []byte("1234567890123456789012345678901234567890\n"), 0o644); err != nil {
+				if err := os.WriteFile(ref, []byte(c.brokenRef), 0o644); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -233,7 +237,7 @@ func TestGitStderrNoise(t *testing.T) {
 		{"ls", "--dirs", "global"},
 		{"get", "global/push.md"},
 	}
-	check := func(name string) {
+	check := func(t *testing.T, name string) {
 		t.Helper()
 		for _, args := range reads {
 			if code, out, errs := runCLI(t, cfg, "", append([]string{"--json"}, args...)...); code != ExitOK {
@@ -243,7 +247,7 @@ func TestGitStderrNoise(t *testing.T) {
 	}
 	t.Run("trace", func(t *testing.T) {
 		t.Setenv("GIT_TRACE", "1")
-		check("GIT_TRACE=1")
+		check(t, "GIT_TRACE=1")
 	})
 	t.Run("warning", func(t *testing.T) {
 		if runtime.GOOS == "windows" || os.Geteuid() == 0 {
@@ -258,6 +262,6 @@ func TestGitStderrNoise(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Setenv("XDG_CONFIG_HOME", conf)
-		check("unreadable attributes")
+		check(t, "unreadable attributes")
 	})
 }
