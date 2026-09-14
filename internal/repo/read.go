@@ -206,8 +206,9 @@ type Object struct {
 	Size int64
 }
 
-// Stat returns the sha and size of every path that is a file at the tracking
-// ref, using one "cat-file --batch-check" call, which reads no contents.
+// Stat returns the sha and size of every path that is a file at the commit
+// that reads use, using one "cat-file --batch-check" call, which reads no
+// contents.
 // Paths that do not exist or are not files are absent from the result.
 func (r *Repo) Stat(paths []string) (map[string]Object, error) {
 	res := map[string]Object{}
@@ -256,7 +257,7 @@ func (r *Repo) CatLimit(paths []string, max int64) (contents map[string][]byte, 
 	return contents, large, nil
 }
 
-// refPaths turns paths into object names at the tracking ref.
+// refPaths turns paths into object names at the commit that reads use.
 func (r *Repo) refPaths(paths []string) []string {
 	names := make([]string, len(paths))
 	for i, p := range paths {
@@ -275,10 +276,11 @@ type catEntry struct {
 
 // catFile looks up names with one "cat-file --batch" call, or with
 // "cat-file --batch-check" when withContent is false, and returns one entry
-// per name.
+// per name. When Snapshot found no branch, every name is missing and git is
+// not run, so that a branch fetched since then is not read.
 func (r *Repo) catFile(names []string, withContent bool) ([]catEntry, error) {
 	res := make([]catEntry, len(names))
-	if len(names) == 0 {
+	if len(names) == 0 || r.pinned && r.snapshot == "" {
 		return res, nil
 	}
 	mode := "--batch-check"
@@ -429,11 +431,10 @@ func (r *Repo) BlobSHA(head, path string) (string, error) {
 }
 
 // CheckMissing is called for paths that Cat did not return. It returns an
-// error when git cannot tell whether a path exists at the tracking ref, or
-// when a path is a blob there that the mirror cannot read; cat-file --batch
-// reports both as "missing". A path that does not exist or is not a file is
-// not an error, and neither is a blob that can be read, which a fetch made
-// after Cat has added.
+// error when git cannot tell whether a path exists at the commit that reads
+// use, or when a path is a blob there that the mirror cannot read; cat-file
+// --batch reports both as "missing". A path that does not exist or is not a
+// file is not an error.
 func (r *Repo) CheckMissing(paths []string) error {
 	head, err := r.Head()
 	if err != nil || head == "" {

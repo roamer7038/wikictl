@@ -21,7 +21,7 @@ type fakeStore map[string]string
 func (f fakeStore) List(dirs []string) ([]string, error) {
 	var out []string
 	for p := range f {
-		if !strings.HasSuffix(p, ".md") || !strings.Contains(p, "/") {
+		if !strings.HasSuffix(p, ".md") || !strings.Contains(p, "/") || strings.HasPrefix(p, ".") || strings.Contains(p, "/.") {
 			continue
 		}
 		if dirs == nil || slices.ContainsFunc(dirs, func(d string) bool { return strings.HasPrefix(p, d+"/") }) {
@@ -139,6 +139,11 @@ func TestClean(t *testing.T) {
 	for _, in := range []string{"..", "../x", "/../x", "a/../../x", "./../"} {
 		if got, err := Clean(in); !errors.Is(err, ErrOutside) {
 			t.Errorf("Clean(%q) = %q, %v; want ErrOutside", in, got, err)
+		}
+	}
+	for _, in := range []string{"global/push.md\nglobal/index.md", "global/a.md\r", "global/\ta.md", "global/a\x00.md", "global/a\u0085.md", "\n"} {
+		if got, err := Clean(in); !errors.Is(err, ErrControl) {
+			t.Errorf("Clean(%q) = %q, %v; want ErrControl", in, got, err)
 		}
 	}
 }
