@@ -13,7 +13,7 @@ const (
 	ExitOK       = 0 // success
 	ExitError    = 1 // general error, such as a missing page
 	ExitUsage    = 2 // usage or configuration error
-	ExitConflict = 3 // the page already exists, or changed or was deleted since it was read
+	ExitConflict = 3 // the file already exists, or changed or was deleted since it was read
 	ExitInvalid  = 4 // the page violates the wiki format
 	ExitGit      = 5 // a git command failed
 )
@@ -155,19 +155,19 @@ func conflictMessage(cf *repo.Conflict, rerun string) string {
 	if rerun != "" {
 		switch {
 		case cf.Reason == "exists":
-			return "the page was created since it was read; re-read the wiki and run " + rerun + " again with another path"
+			return "the file was created since it was read; re-read the wiki and run " + rerun + " again with another path"
 		case cf.SHA == "":
-			return "the page was deleted since it was read; re-read the wiki and run " + rerun + " again"
+			return "the file was deleted since it was read; re-read the wiki and run " + rerun + " again"
 		default:
-			return "the page changed since it was read; re-read the wiki and run " + rerun + " again"
+			return "the file changed since it was read; re-read the wiki and run " + rerun + " again"
 		}
 	}
 	switch {
 	case cf.Reason == "exists":
-		return "the page already exists; pass its sha with --base to replace it, or choose another path"
+		return "the file already exists; pass its sha with --base to replace it, or choose another path"
 	case cf.SHA == "":
-		return "the page was deleted since it was read"
+		return "the file was deleted since it was read"
 	default:
-		return "the page changed since it was read; re-read the current content and reapply the change"
+		return "the file changed since it was read; re-read the current content and reapply the change"
 	}
 }

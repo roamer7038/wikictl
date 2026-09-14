@@ -97,7 +97,7 @@ func TestGitFailure(t *testing.T) {
 		{"lint/cat", gitFault{match: " cat-file --batch "}, "", []string{"lint", "global/push.md"}, ExitGit},
 		{"lint/link targets", gitFault{match: " cat-file --batch-check ", skip: 1}, "", []string{"lint", "global/push.md"}, ExitGit},
 		{"tree/head", gitFault{match: head}, "", []string{"tree"}, ExitGit},
-		{"rm/cat", gitFault{match: " cat-file --batch "}, "", []string{"rm", "global/push.md"}, ExitGit},
+		{"rm/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"rm", "global/push.md"}, ExitGit},
 		{"mv/cat", gitFault{match: " cat-file --batch "}, "", []string{"mv", "global/push.md", "global/push2.md"}, ExitGit},
 		{"mv/destination directory", gitFault{match: " -- projects/app2 "}, "", []string{"mv", "projects/app/", "projects/app2/"}, ExitGit},
 		{"put/link targets", gitFault{match: " cat-file --batch-check "}, newPage, []string{"put", "global/new.md"}, ExitGit},
@@ -200,6 +200,7 @@ func TestUnreadableObject(t *testing.T) {
 		{"mv/destination blob", "global/push.md", "", "", []string{"mv", "global/index.md", "global/push.md"}},
 		{"put/base with tree", "global", "", newPage, []string{"put", "--base", "BASE", "global/push.md"}},
 		{"put/existence with tree", "global", "", newPage, []string{"put", "global/push.md"}},
+		{"put/existence with blob", "global/push.md", "", newPage, []string{"put", "global/push.md"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -69,15 +70,22 @@ func (r *Repo) Commit(changes []Change, msg string, au Author) (*Result, error) 
 		if err != nil {
 			return nil, err
 		}
-		shas, err := r.baseSHAs(head, changes)
+		ents, err := r.entries(head, changes)
 		if err != nil {
+			return nil, err
+		}
+		if err := checkReplace(changes, ents); err != nil {
 			return nil, err
 		}
 		for _, c := range changes {
 			if c.Base == nil {
 				continue
 			}
-			if cur := shas[c.Path]; *c.Base == "" && cur != "" {
+			cur := ""
+			if e := ents[c.Path]; e.typ == "blob" {
+				cur = e.sha
+			}
+			if *c.Base == "" && cur != "" {
 				return nil, r.conflict(c.Path, "exists", cur)
 			} else if *c.Base != "" && cur != *c.Base {
 				return nil, r.conflict(c.Path, "changed", cur)
@@ -96,22 +104,49 @@ func (r *Repo) Commit(changes []Change, msg string, au Author) (*Result, error) 
 	return nil, last
 }
 
-// baseSHAs returns the object sha at commit head of each path of the changes
-// that have a Base, from one "ls-tree"; a directory has the sha of its tree,
-// so that writing over it is a conflict. An absent path has no entry. ls-tree
-// fails when a tree on the way to a path cannot be read.
-func (r *Repo) baseSHAs(head string, changes []Change) (map[string]string, error) {
-	res := map[string]string{}
+// PathError is a change that would replace a directory with a file, or write
+// a file below a path that is a file.
+type PathError struct{ Path, Reason string }
+
+func (e *PathError) Error() string { return e.Path + ": " + e.Reason }
+
+type treeEntry struct{ typ, sha string }
+
+// entries returns the type and object sha at commit head of the path of every
+// change and of every directory above a written path, from one "ls-tree" of
+// the directories that hold them; ls-tree reads no blob, and fails when a
+// tree it lists cannot be read. An absent path has no entry. A directory that
+// ls-tree descends into instead of listing is known as a tree by the entries
+// below it.
+func (r *Repo) entries(head string, changes []Change) (map[string]treeEntry, error) {
+	res := map[string]treeEntry{}
+	if head == "" || len(changes) == 0 {
+		return res, nil
+	}
 	args := []string{"ls-tree", "-z", head, "--"}
 	seen := map[string]bool{}
-	for _, c := range changes {
-		if c.Base != nil && !seen[c.Path] {
-			seen[c.Path] = true
-			args = append(args, c.Path)
+	// list adds the directory that holds p; with the trailing slash ls-tree
+	// lists the entries of the directory.
+	list := func(p string) {
+		d := path.Dir(p)
+		if d != "." {
+			d += "/"
+		}
+		if !seen[d] {
+			seen[d] = true
+			args = append(args, d)
 		}
 	}
-	if head == "" || len(seen) == 0 {
-		return res, nil
+	for _, c := range changes {
+		if strings.ContainsAny(c.Path, "\n\x00") {
+			return nil, fmt.Errorf("path %q contains a newline or NUL", c.Path)
+		}
+		list(c.Path)
+		if !c.Delete {
+			for d := path.Dir(c.Path); d != "."; d = path.Dir(d) {
+				list(d)
+			}
+		}
 	}
 	out, err := r.Git(args...)
 	if err != nil {
@@ -119,11 +154,42 @@ func (r *Repo) baseSHAs(head string, changes []Change) (map[string]string, error
 	}
 	for entry := range strings.SplitSeq(out, "\x00") {
 		meta, p, ok := strings.Cut(entry, "\t")
-		if f := strings.Fields(meta); ok && len(f) == 3 {
-			res[p] = f[2]
+		f := strings.Fields(meta)
+		if !ok || len(f) != 3 {
+			continue
+		}
+		res[p] = treeEntry{f[1], f[2]}
+		for d := path.Dir(p); d != "." && res[d].typ == ""; d = path.Dir(d) {
+			res[d] = treeEntry{typ: "tree"}
 		}
 	}
 	return res, nil
+}
+
+// checkReplace returns a PathError for a written path that is a directory or
+// a submodule, or that is below a file the changes do not delete.
+func checkReplace(changes []Change, ents map[string]treeEntry) error {
+	deleted := map[string]bool{}
+	for _, c := range changes {
+		deleted[c.Path] = deleted[c.Path] || c.Delete
+	}
+	for _, c := range changes {
+		if c.Delete {
+			continue
+		}
+		switch ents[c.Path].typ {
+		case "tree":
+			return &PathError{c.Path, "is a directory"}
+		case "commit":
+			return &PathError{c.Path, "is a submodule"}
+		}
+		for d := path.Dir(c.Path); d != "."; d = path.Dir(d) {
+			if t := ents[d].typ; t != "" && t != "tree" && !deleted[d] {
+				return &PathError{c.Path, d + " is a file"}
+			}
+		}
+	}
+	return nil
 }
 
 // retryWait returns a random duration in [0, 2^(attempt+3)*d), where d is

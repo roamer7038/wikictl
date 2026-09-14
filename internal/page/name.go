@@ -46,15 +46,21 @@ func CheckName(s string) error {
 	return nil
 }
 
-// CheckPath returns nil when p can be a page path: at least one directory,
-// every component passing CheckName, and a .md suffix.
+// CheckPath returns nil when p can be a page path: a .md suffix and, without
+// it, a path that CheckFilePath accepts.
 func CheckPath(p string) error {
 	if !strings.HasSuffix(p, ".md") {
 		return errors.New("path must end in .md")
 	}
-	parts := strings.Split(strings.TrimSuffix(p, ".md"), "/")
+	return CheckFilePath(strings.TrimSuffix(p, ".md"))
+}
+
+// CheckFilePath returns nil when p can be the path of a file: at least one
+// directory, and every component passing CheckName.
+func CheckFilePath(p string) error {
+	parts := strings.Split(p, "/")
 	if len(parts) < 2 {
-		return errors.New("page must be in a directory, not at the wiki root")
+		return errors.New("file must be in a directory, not at the wiki root")
 	}
 	for _, x := range parts {
 		if err := CheckName(x); err != nil {
