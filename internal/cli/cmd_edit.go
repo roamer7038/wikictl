@@ -93,9 +93,13 @@ func (a *app) cmdEdit(c *command, args []string) error {
 		fmt.Fprintf(a.stderr, "wikictl: the edited file is kept in %s\n", tmp.Name())
 		return err
 	}
-	// As git does, the editor is run by the shell, so that it may include arguments.
+	// As git does, an editor with spaces or shell characters, which may include
+	// arguments, is run by the shell; any other is run directly.
 	editor := cmp.Or(os.Getenv("VISUAL"), os.Getenv("EDITOR"), "vi")
-	run := exec.Command("sh", "-c", editor+` "$@"`, editor, tmp.Name())
+	run := exec.Command(editor, tmp.Name())
+	if strings.ContainsAny(editor, "|&;<>()$`\\\"' \t\n*?[#~=%") {
+		run = exec.Command("sh", "-c", editor+` "$@"`, editor, tmp.Name())
+	}
 	run.Stdin, run.Stdout, run.Stderr = a.stdin, a.stdout, a.stderr
 	// As git does, interrupts are left to the editor while it runs: wikictl
 	// receives and drops them, and the editor still gets them.

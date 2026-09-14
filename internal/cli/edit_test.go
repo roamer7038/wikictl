@@ -88,11 +88,12 @@ printf -- '---\nsummary: edited\n---\n# push\n' > "$1"
 		t.Errorf("commit message: %q", got)
 	}
 
-	// VISUAL is used before EDITOR, and a new file is committed with its directories.
+	// VISUAL is used before EDITOR, an editor with arguments is run by the shell,
+	// and a new file is committed with its directories.
 	editWith(t, "exit 1\n")
 	visual := filepath.Join(t.TempDir(), "visual")
-	os.WriteFile(visual, []byte("#!/bin/sh\nprintf png > \"$1\"\n"), 0o755)
-	t.Setenv("VISUAL", visual)
+	os.WriteFile(visual, []byte("[ \"$1\" = --flag ] || exit 5\nprintf png > \"$2\"\n"), 0o644)
+	t.Setenv("VISUAL", "sh "+shQuote(visual)+" --flag")
 	if code, out, errs := runCLI(t, cfg, "", "edit", "-v", "notes/img/a.png"); code != 0 || !strings.HasPrefix(out, "notes/img/a.png\t") {
 		t.Errorf("edit of a new file: code=%d out=%q errs=%q", code, out, errs)
 	}

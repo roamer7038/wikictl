@@ -172,9 +172,10 @@ Output: {path, sha, commit}; with -v, text output is
 		summary: "Edit a file in an editor and commit it",
 		detail: `Open the file in an editor and commit the result as put does, replacing the
 file only if it has not changed since it was opened; a file that does not exist
-starts empty. The editor is $VISUAL, else $EDITOR, else vi, run by the shell,
-so it may include arguments. Nothing is committed when the content is
-unchanged, which includes a new file left empty. When the result cannot be
+starts empty. The editor is $VISUAL, else $EDITOR, else vi; one with spaces or
+shell characters is run by the shell, so it may include arguments. Nothing is
+committed when the content is unchanged, which includes a new file left empty.
+When the result cannot be
 committed, because the file changed in the meantime (exit code 3), the content
 breaks the rules that put applies (exit code 4), or the editor fails (exit
 code 1), the edited content is kept in a temporary file whose path is printed
