@@ -197,7 +197,6 @@ func TestUnreadableObject(t *testing.T) {
 		{"lint/target blob", "global/push.md", "", "", []string{"--no-fetch", "lint", "global/push.md"}},
 		{"rm/target blob", "global/push.md", "", "", []string{"rm", "global/push.md"}},
 		{"mv/source blob", "global/push.md", "", "", []string{"mv", "global/push.md", "global/push2.md"}},
-		{"mv/destination blob", "global/push.md", "", "", []string{"mv", "global/index.md", "global/push.md"}},
 		{"put/base with tree", "global", "", newPage, []string{"put", "--base", "BASE", "global/push.md"}},
 		{"put/existence with tree", "global", "", newPage, []string{"put", "global/push.md"}},
 	}

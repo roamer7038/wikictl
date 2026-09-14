@@ -610,13 +610,15 @@ func TestMvDir(t *testing.T) {
 	if code, _, _ := runCLI(t, cfg, "", "lint"); code != 0 {
 		t.Error("lint must pass after dir mv")
 	}
-	if code, _, _ := runCLI(t, cfg, "", "mv", "projects/app2/", "global/"); code != 1 {
-		t.Error("mv onto dir with existing pages must fail")
+	// A directory given as the destination receives the source, and a path that exists there is not replaced.
+	runCLI(t, cfg, "---\nsummary: g\n---\n# g\n", "put", "global/app2/x.md")
+	if code, _, errs := runCLI(t, cfg, "", "mv", "projects/app2", "global"); code != 1 || errs != "wikictl: global/app2: not replacing\n" {
+		t.Errorf("mv onto an existing directory: code=%d errs=%q", code, errs)
 	}
 	if code, _, errs := runCLI(t, cfg, "", "mv", "projects/app2/", "projects/new dir/"); code != 4 || !strings.Contains(errs, "bad_path") {
 		t.Errorf("mv dir to bad name: code=%d errs=%q", code, errs)
 	}
-	if code, _, errs := runCLI(t, cfg, "", "mv", "projects/app2/", "projects/App3/"); code != 0 || !strings.Contains(errs, "name_style") {
+	if code, _, errs := runCLI(t, cfg, "", "mv", "projects/app2", "projects/App3"); code != 0 || !strings.Contains(errs, "name_style") {
 		t.Errorf("mv dir to style name: code=%d errs=%q", code, errs)
 	}
 	if code, _, errs := runCLI(t, cfg, "", "mv", "projects/App3/", "projects/app2/"); code != 0 {
@@ -630,8 +632,8 @@ func TestMvDir(t *testing.T) {
 	if code, _, _ := runCLI(t, cfg, "", "cat", "global/index.md"); code != 0 {
 		t.Error("rejected dir mv must not move pages")
 	}
-	if code, _, errs := runCLI(t, cfg, "", "mv", "projects/app2/", "global/x.md"); code != 2 || !strings.Contains(errs, "both arguments") {
-		t.Errorf("mixed dir/page mv must be a usage error: code=%d errs=%q", code, errs)
+	if code, _, errs := runCLI(t, cfg, "", "mv", "global/index.md/", "projects"); code != 1 || !strings.Contains(errs, "global/index.md/: not a directory") {
+		t.Errorf("mv of a file given as a directory: code=%d errs=%q", code, errs)
 	}
 }
 
@@ -660,7 +662,10 @@ func TestMvRewriteScope(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("mv: code=%d %s %s", code, out, errs)
 	}
-	var res struct{ Rewritten, Moved int }
+	var res struct {
+		Rewritten int
+		Moved     []struct{ From, To string }
+	}
 	mustUnmarshal(t, out, &res)
 	if res.Rewritten != 1 {
 		t.Errorf("mv rewritten=%d, want 1: %s", res.Rewritten, out)
@@ -676,10 +681,10 @@ func TestMvRewriteScope(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("mv dir: code=%d %s %s", code, out, errs)
 	}
-	res = struct{ Rewritten, Moved int }{}
+	res.Rewritten, res.Moved = 0, nil
 	mustUnmarshal(t, out, &res)
-	if res.Moved != 1 || res.Rewritten != 1 {
-		t.Errorf("mv dir moved=%d rewritten=%d, want 1 and 1: %s", res.Moved, res.Rewritten, out)
+	if len(res.Moved) != 1 || res.Rewritten != 1 {
+		t.Errorf("mv dir moved=%d rewritten=%d, want 1 and 1: %s", len(res.Moved), res.Rewritten, out)
 	}
 	if got := shaOf(t, cfg, "global/unrelated.md"); got != unrelatedSha {
 		t.Errorf("unrelated page changed by dir mv: %s", body("global/unrelated.md"))

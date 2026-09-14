@@ -66,3 +66,68 @@ func TestRm(t *testing.T) {
 		t.Errorf("rm of a directory: code=%d errs=%q", code, errs)
 	}
 }
+
+func TestMvArguments(t *testing.T) {
+	cfg := setup(t)
+	for p, c := range map[string]string{
+		"global/img/logo.png": "png",
+		"projects/app/y.md":   "---\nsummary: y\n---\n# y\n[x](x.md)\n",
+	} {
+		if code, _, errs := runCLI(t, cfg, c, "put", p); code != 0 {
+			t.Fatalf("put %s: %s", p, errs)
+		}
+	}
+	// Several sources move into a directory, and files that are not pages move with theirs.
+	code, out, errs := runCLI(t, cfg, "", "mv", "-v", "global/img", "projects/app/x.md", "machines")
+	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+	if code != 0 || errs != "" || len(lines) != 2 {
+		t.Fatalf("mv into a directory: code=%d out=%q errs=%q", code, out, errs)
+	}
+	commit := strings.TrimPrefix(lines[0], "global/img/logo.png\tmachines/img/logo.png\t")
+	if len(commit) != 40 || lines[1] != "projects/app/x.md\tmachines/x.md\t"+commit {
+		t.Errorf("mv -v: %q", out)
+	}
+	if _, out, _ := runCLI(t, cfg, "", "cat", "projects/app/y.md"); !strings.Contains(out, "[x](../../machines/x.md)") {
+		t.Errorf("link to the moved page: %q", out)
+	}
+	if _, out, _ := runCLI(t, cfg, "", "cat", "machines/img/logo.png"); out != "png" {
+		t.Errorf("moved file: %q", out)
+	}
+
+	// -T renames to a path that must not exist; -t names the directory first.
+	if code, _, errs := runCLI(t, cfg, "", "mv", "-T", "machines/img", "machines/h1"); code != ExitError || errs != "wikictl: machines/h1: not replacing\n" {
+		t.Errorf("mv -T onto a directory: code=%d errs=%q", code, errs)
+	}
+	if code, _, errs := runCLI(t, cfg, "", "mv", "-t", "global", "machines/img", "machines/x.md"); code != 0 {
+		t.Errorf("mv -t: code=%d errs=%q", code, errs)
+	}
+	if code, _, _ := runCLI(t, cfg, "", "stat", "global/img/logo.png", "global/x.md"); code != 0 {
+		t.Error("mv -t did not move the sources")
+	}
+
+	// A missing source is reported, and the other sources are still moved.
+	code, _, errs = runCLI(t, cfg, "", "mv", "global/none.md", "global/x.md", "projects")
+	if code != ExitError || errs != "wikictl: global/none.md: no such file or directory\n" {
+		t.Errorf("mv with a missing source: code=%d errs=%q", code, errs)
+	}
+	if code, _, _ := runCLI(t, cfg, "", "stat", "projects/x.md"); code != 0 {
+		t.Error("the other source was not moved")
+	}
+
+	for _, c := range []struct {
+		args []string
+		code int
+		errs string
+	}{
+		{[]string{"mv", "global/index.md", "global/push.md", "global/new.md"}, ExitError, "global/new.md: not a directory"},
+		{[]string{"mv", "global", "global/sub"}, ExitError, "global: cannot move a directory into itself"},
+		{[]string{"mv", "global/index.md", "index.md"}, ExitInvalid, "bad_path"},
+		{[]string{"mv", "global/index.md"}, ExitUsage, "missing destination"},
+		{[]string{"mv", "-t", "global", "-T", "projects/x.md"}, ExitUsage, "-t and -T cannot be combined"},
+		{[]string{"mv", "-T", "global/index.md", "global/push.md", "projects"}, ExitUsage, "-T takes one source"},
+	} {
+		if code, _, errs := runCLI(t, cfg, "", c.args...); code != c.code || !strings.Contains(errs, c.errs) {
+			t.Errorf("%v: code=%d errs=%q", c.args, code, errs)
+		}
+	}
+}

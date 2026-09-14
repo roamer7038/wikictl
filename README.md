@@ -112,7 +112,7 @@ Body. Link to other pages with relative paths: [index](index.md).
 | `ls [<path>...]` | List the entries of directories |
 | `find [<path>...] [<expression>]` | Find files and directories by name, type, update time or frontmatter |
 | `put <path> < content` | Create or replace a file from standard input |
-| `mv <path> <newpath>` | Move or rename a page or a directory, rewriting links |
+| `mv <src>... <dst>` | Move or rename files and directories, rewriting links |
 | `rm <path>...` | Delete files or directories |
 | `lint [<path>...]` | Report pages that violate the wiki format |
 | `tree [<dir>...]` | Show directories as a tree |
