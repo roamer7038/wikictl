@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/pflag"
@@ -317,6 +318,7 @@ func (a *app) run(args []string) error {
 			printUsage(a.stdout)
 			return nil
 		}
+		a.json = a.json || jsonRequested(fs, args)
 		return &usageError{msg: err.Error() + `; run "wikictl help" for usage`}
 	}
 	if a.version {
@@ -332,10 +334,17 @@ func (a *app) run(args []string) error {
 	a.globalFlags(fs)
 	switch name {
 	case "help", "version":
-		if err := fs.Parse(cargs); errors.Is(err, pflag.ErrHelp) {
-			return a.cmdHelp([]string{name})
-		} else if err != nil {
-			return &usageError{msg: err.Error()}
+		err := fs.Parse(cargs)
+		switch {
+		case errors.Is(err, pflag.ErrHelp):
+			topic := name
+			if name == "help" && len(fs.Args()) > 0 {
+				topic = fs.Args()[0]
+			}
+			return a.cmdHelp([]string{topic})
+		case err != nil:
+			a.json = a.json || jsonRequested(fs, cargs)
+			return &usageError{msg: err.Error() + `; run "wikictl help" for usage`}
 		}
 		if name == "help" && !a.version {
 			return a.cmdHelp(fs.Args())
@@ -356,6 +365,7 @@ func (a *app) run(args []string) error {
 			printCommandHelp(a.stdout, c)
 			return nil
 		}
+		a.json = a.json || jsonRequested(fs, cargs)
 		return &usageError{c, err.Error()}
 	}
 	if a.version {
@@ -372,6 +382,41 @@ func (a *app) run(args []string) error {
 		return err
 	}
 	return c.run(a, c, pos)
+}
+
+// jsonRequested reports whether args, which fs failed to parse, contain
+// --json. pflag stops at the first error, so a --json after it would not be
+// set, and the usage error would not be printed as JSON. The value of a flag
+// that takes one is skipped, and nothing after "--" is a flag.
+func jsonRequested(fs *pflag.FlagSet, args []string) bool {
+	on := false
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--":
+			return on
+		case a == "--json":
+			on = true
+		case strings.HasPrefix(a, "--json="):
+			on, _ = strconv.ParseBool(strings.TrimPrefix(a, "--json="))
+		case strings.HasPrefix(a, "--"):
+			if f := fs.Lookup(a[2:]); f != nil && f.NoOptDefVal == "" {
+				i++
+			}
+		case len(a) > 1 && a[0] == '-':
+			// In a group of short flags, the first one that takes a value
+			// takes the rest of the group, or the next argument.
+			for j := 1; j < len(a); j++ {
+				if f := fs.ShorthandLookup(a[j : j+1]); f != nil && f.NoOptDefVal == "" {
+					if j == len(a)-1 {
+						i++
+					}
+					break
+				}
+			}
+		}
+	}
+	return on
 }
 
 // setup loads the configuration with its profile, opens the mirror and

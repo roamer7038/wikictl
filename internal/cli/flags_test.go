@@ -82,6 +82,54 @@ func TestFlagsAfterArguments(t *testing.T) {
 			t.Errorf("%v: code=%d errs=%q", args, code, errs)
 		}
 	}
+	for _, args := range [][]string{{"search", "--number", "1"}, {"search", "-n1"}, {"search", "-n=1"}} {
+		res.Items = nil
+		code, out, errs := runCLI(t, cfg, "", append(args, "--json", "lease")...)
+		if code != 0 {
+			t.Fatalf("%v: code=%d %s", args, code, errs)
+		}
+		if mustUnmarshal(t, out, &res); len(res.Items) != 1 {
+			t.Errorf("%v: %s", args, out)
+		}
+	}
+}
+
+// A --json that follows the flag in error still selects JSON for the usage
+// error, unless it is the value of a flag or comes after "--".
+func TestUsageErrorJSONAfterTheError(t *testing.T) {
+	for _, args := range [][]string{
+		{"search", "--bogus", "--json"},
+		{"search", "-n", "0", "--json", "x"},
+		{"--bogus", "--json", "search"},
+		{"help", "--bogus", "--json"},
+	} {
+		if code, out, _ := runNoConfig(t, args...); code != ExitUsage || !strings.HasPrefix(out, `{"error":"usage"`) {
+			t.Errorf("%v: code=%d out=%q", args, code, out)
+		}
+	}
+	for _, args := range [][]string{
+		{"put", "--bogus", "-m", "--json", "global/x.md"},
+		{"search", "--bogus", "--", "--json"},
+	} {
+		if code, out, errs := runNoConfig(t, args...); code != ExitUsage || out != "" || !strings.Contains(errs, "Usage: wikictl") {
+			t.Errorf("%v: code=%d out=%q errs=%q", args, code, out, errs)
+		}
+	}
+}
+
+func TestHelpAndVersionFlags(t *testing.T) {
+	if code, out, _ := runNoConfig(t, "help", "search", "-h"); code != ExitOK || !strings.Contains(out, "Usage: wikictl search") {
+		t.Errorf("help search -h: code=%d out=%q", code, out)
+	}
+	if code, out, _ := runNoConfig(t, "help", "-h"); code != ExitOK || !strings.Contains(out, "Usage: wikictl help") {
+		t.Errorf("help -h: code=%d out=%q", code, out)
+	}
+	if code, out, _ := runNoConfig(t, "search", "x", "--version"); code != ExitOK || !strings.HasPrefix(out, "wikictl ") {
+		t.Errorf("search x --version: code=%d out=%q", code, out)
+	}
+	if code, _, errs := runNoConfig(t, "put", "global/x.md", "-m"); code != ExitUsage || !strings.Contains(errs, "needs an argument") {
+		t.Errorf("put -m without a value: code=%d errs=%q", code, errs)
+	}
 }
 
 func lastCommitMessage(t *testing.T, cfg string) string {
