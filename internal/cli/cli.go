@@ -96,8 +96,8 @@ Names of directories end with "/". With more than one argument or with -R,
 the entries of each directory follow a line "<dir>:". Names starting with a
 dot and pages whose frontmatter has status: deprecated are hidden unless -a is
 given. With -l, a line shows the type from the frontmatter, the time of the
-last commit that changed the entry (for a directory, any file under it), the
-name, and the summary, or the title when the page has no summary; "-" marks an
+last commit that changed the entry (for a directory, any file ever under it),
+the name, and the summary, or the title when the page has no summary; "-" marks an
 empty type or time. A path that does not exist is reported on standard error,
 also with --json, the others are still listed, and the command exits with code
 1. Control characters other than tab are shown as \xNN in text output.
@@ -114,16 +114,19 @@ starting with a dot are included. The expression is a list of primaries that
 must all be true; "!" negates the primary that follows it.
 
   -name PATTERN    the last element of the path matches the shell pattern
-  -path PATTERN    the path matches the shell pattern; * and ? also match "/"
+  -path PATTERN    the path as printed, without a leading "./", matches the
+                   shell pattern; * and ? also match "/"
   -type f|d        the entry is a file or a directory
   -maxdepth N      descend at most N levels below the paths
   -mindepth N      print no entry less than N levels below the paths
   -mtime [+|-]N    the last commit that changed the entry (for a directory, any
-                   file under it) is N days old, more than N days (+N) or less
-                   (-N); the age is rounded down to whole days
+                   file ever under it) is N days old, more than N days (+N) or
+                   less (-N); the age is rounded down to whole days
   -newer PATH      the entry changed later than PATH
   -meta KEY=VALUE  the frontmatter value of KEY is VALUE, or a list with the
-                   element VALUE; a directory never matches
+                   element VALUE; a number is compared in its shortest form,
+                   such as 1.5 for 1.50; a directory, a mapping and a page over
+                   1 MiB never match
 
 Only -h and the arguments starting with "--", such as --json, are flags. A
 path that does not exist is reported on standard error, the other paths are
@@ -421,7 +424,7 @@ func (a *app) run(args []string) error {
 			printCommandHelp(a.stdout, c)
 			return nil
 		}
-		a.json = a.json || jsonRequested(fs, cargs)
+		a.json = a.json || jsonRequested(fs, args)
 		return &usageError{c, err.Error()}
 	}
 	if a.version {

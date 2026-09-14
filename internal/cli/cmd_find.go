@@ -3,7 +3,9 @@ package cli
 import (
 	"fmt"
 	"io"
+	"math"
 	"path"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -133,7 +135,7 @@ func (a *app) checkFind(c *command, args []string) error {
 				if !ok {
 					return false
 				}
-				days := int(q.now.Sub(t) / (24 * time.Hour))
+				days := int(math.Floor(q.now.Sub(t).Hours() / 24))
 				switch val[0] {
 				case '+':
 					return days > n
@@ -171,18 +173,27 @@ func (a *app) checkFind(c *command, args []string) error {
 	return nil
 }
 
-// metaHas reports whether a frontmatter value is want, or is a list with an
-// element that is.
+// metaHas reports whether a frontmatter value is the scalar want, or is a
+// list with an element that is.
 func metaHas(v any, want string) bool {
 	if list, ok := v.([]any); ok {
-		return slices.ContainsFunc(list, func(e any) bool { return e != nil && fmt.Sprint(e) == want })
+		return slices.ContainsFunc(list, func(e any) bool { return scalarIs(e, want) })
 	}
-	return v != nil && fmt.Sprint(v) == want
+	return scalarIs(v, want)
+}
+
+func scalarIs(v any, want string) bool {
+	switch reflect.ValueOf(v).Kind() {
+	case reflect.Invalid, reflect.Map, reflect.Slice:
+		return false
+	}
+	return fmt.Sprint(v) == want
 }
 
 // globRegexp compiles a shell pattern as find matches it: * and ? match any
-// characters, "/" included, [...] is a class, negated by ! or ^, and a
-// backslash quotes the next character.
+// characters, "/" included, [...] is a class, negated by ! or ^, that may
+// contain names such as [:alpha:], and a backslash quotes the next character.
+// A pattern that ends with an unquoted backslash matches nothing.
 func globRegexp(pattern string) (*regexp.Regexp, error) {
 	rs := []rune(pattern)
 	var b strings.Builder
@@ -194,37 +205,63 @@ func globRegexp(pattern string) (*regexp.Regexp, error) {
 		case '?':
 			b.WriteString(".")
 		case '\\':
-			if i+1 < len(rs) {
-				i++
+			if i+1 == len(rs) {
+				return regexp.Compile(`[^\x00-\x{10FFFF}]`)
 			}
+			i++
 			b.WriteString(regexp.QuoteMeta(string(rs[i])))
 		case '[':
-			j := i + 1
-			if j < len(rs) && (rs[j] == '!' || rs[j] == '^') {
-				j++
-			}
-			if j < len(rs) && rs[j] == ']' {
-				j++
-			}
-			for j < len(rs) && rs[j] != ']' {
-				j++
-			}
-			if j == len(rs) {
+			class, n := globClass(rs[i+1:])
+			if n == 0 {
 				b.WriteString(`\[`)
 				continue
 			}
-			class := string(rs[i+1 : j])
-			if class[0] == '!' {
-				class = "^" + class[1:]
-			}
-			b.WriteString("[" + strings.ReplaceAll(class, `\`, `\\`) + "]")
-			i = j
+			b.WriteString(class)
+			i += n
 		default:
 			b.WriteString(regexp.QuoteMeta(string(r)))
 		}
 	}
 	b.WriteString(`)$`)
 	return regexp.Compile(b.String())
+}
+
+// globClass translates the class at the start of rs, which follows its "[",
+// into a regular expression, and returns it with the number of runes up to
+// and including the closing "]", or 0 when the class is not closed.
+func globClass(rs []rune) (string, int) {
+	var b strings.Builder
+	b.WriteString("[")
+	i := 0
+	if i < len(rs) && (rs[i] == '!' || rs[i] == '^') {
+		b.WriteString("^")
+		i++
+	}
+	start := i
+	for ; i < len(rs); i++ {
+		r := rs[i]
+		switch {
+		case r == ']' && i > start:
+			return b.String() + "]", i + 1
+		case r == '[' && i+1 < len(rs) && rs[i+1] == ':':
+			if name, _, ok := strings.Cut(string(rs[i+2:]), ":]"); ok {
+				b.WriteString("[:" + name + ":]")
+				i += len([]rune(name)) + 3
+				continue
+			}
+		case r == '\\' && i+1 < len(rs):
+			i++
+			r = rs[i]
+		case r == '-':
+			b.WriteString("-")
+			continue
+		}
+		if strings.ContainsRune(`\]-^[`, r) {
+			b.WriteString(`\`)
+		}
+		b.WriteRune(r)
+	}
+	return "", 0
 }
 
 func (a *app) cmdFind(c *command, args []string) error {
