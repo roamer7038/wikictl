@@ -7,7 +7,6 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -97,18 +96,21 @@ func (r *Repo) Commit(changes []Change, msg string, au Author) (*Result, error) 
 	return nil, last
 }
 
-// baseSHAs returns the blob sha at commit head of each path of the changes
-// that have a Base, from one "ls-tree". A path that is absent or not a blob
-// has no entry. ls-tree fails when a tree on the way to a path cannot be read.
+// baseSHAs returns the object sha at commit head of each path of the changes
+// that have a Base, from one "ls-tree"; a directory has the sha of its tree,
+// so that writing over it is a conflict. An absent path has no entry. ls-tree
+// fails when a tree on the way to a path cannot be read.
 func (r *Repo) baseSHAs(head string, changes []Change) (map[string]string, error) {
 	res := map[string]string{}
 	args := []string{"ls-tree", "-z", head, "--"}
+	seen := map[string]bool{}
 	for _, c := range changes {
-		if c.Base != nil && !slices.Contains(args[4:], c.Path) {
+		if c.Base != nil && !seen[c.Path] {
+			seen[c.Path] = true
 			args = append(args, c.Path)
 		}
 	}
-	if head == "" || len(args) == 4 {
+	if head == "" || len(seen) == 0 {
 		return res, nil
 	}
 	out, err := r.Git(args...)
@@ -117,7 +119,7 @@ func (r *Repo) baseSHAs(head string, changes []Change) (map[string]string, error
 	}
 	for entry := range strings.SplitSeq(out, "\x00") {
 		meta, p, ok := strings.Cut(entry, "\t")
-		if f := strings.Fields(meta); ok && len(f) == 3 && f[1] == "blob" {
+		if f := strings.Fields(meta); ok && len(f) == 3 {
 			res[p] = f[2]
 		}
 	}
