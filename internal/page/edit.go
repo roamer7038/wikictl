@@ -236,34 +236,93 @@ func RelDest(fromPage, toPath string) string {
 
 // Relocate rewrites the relative links of a page written at fromPage so that
 // they are correct when the page lives at toPage. When mapper maps a link
-// target to a new path, the link points to that path instead. Links inside
-// code fences are left alone. The second result is the number of links changed.
+// target to a new path, the link points to that path instead. Only links whose
+// path no longer points to their target at toPage are changed, and only their
+// path is replaced: a leading "./", angle brackets, a query, a fragment and a
+// title are kept. Links inside code fences and code spans are left alone. The
+// second result is the number of links changed.
 func Relocate(content []byte, fromPage, toPage string, mapper func(target string) (string, bool)) ([]byte, int) {
-	return rewrite(content, fromPage, func(dest, target string) (string, bool) {
+	return rewrite(content, fromPage, func(p, target string) (string, bool) {
 		if mapper != nil {
 			if nt, ok := mapper(target); ok {
 				target = nt
 			}
 		}
-		nd := RelDest(toPage, target)
-		if nd == stripSuffix(dest) {
+		if path.Join(path.Dir(toPage), p) == target {
 			return "", false
 		}
-		return nd, true
+		np := RelDest(toPage, target)
+		if strings.HasPrefix(p, "./") && !strings.HasPrefix(np, "../") {
+			np = "./" + np
+		}
+		return np, true
 	})
 }
 
-func stripSuffix(dest string) string {
-	if i := strings.Index(dest, "#"); i >= 0 {
-		return dest[:i]
+// splitDest splits a link destination as written into its path and the text
+// before and after it. The path is enclosed in angle brackets when the
+// destination starts with "<", and otherwise ends at a space or a tab; in both
+// forms it also ends at a query or a fragment.
+func splitDest(dest string) (before, p, after string) {
+	start := len(dest) - len(strings.TrimLeft(dest, " \t"))
+	end := len(dest)
+	stops := "?# \t"
+	if strings.HasPrefix(dest[start:], "<") {
+		if i := strings.IndexByte(dest[start+1:], '>'); i >= 0 {
+			start++
+			end = start + i
+			stops = "?#"
+		}
 	}
-	return dest
+	if i := strings.IndexAny(dest[start:end], stops); i >= 0 {
+		end = start + i
+	}
+	return dest[:start], dest[start:end], dest[end:]
 }
 
-// rewrite applies fn to every page link outside code fences. fn receives the
-// destination as written and the resolved target, and returns the new
-// destination; a "#fragment" of the original destination is preserved.
-func rewrite(content []byte, pagePath string, fn func(dest, target string) (string, bool)) ([]byte, int) {
+// rewriteLinks applies fn to every page link of text outside code spans and
+// replaces the path of the destination with the result.
+func rewriteLinks(text, pagePath string, fn func(p, target string) (string, bool)) (string, int) {
+	spans := reInline.FindAllStringIndex(text, -1)
+	changed := 0
+	var b strings.Builder
+	last := 0
+	for _, m := range reMDLink.FindAllStringSubmatchIndex(text, -1) {
+		inSpan := false
+		for _, s := range spans {
+			if m[0] < s[1] && s[0] < m[1] {
+				inSpan = true
+				break
+			}
+		}
+		if inSpan {
+			continue
+		}
+		before, p, after := splitDest(text[m[2]:m[3]])
+		target, isURL, err := ResolveDest(pagePath, p)
+		if err != nil || isURL {
+			continue
+		}
+		np, ok := fn(p, target)
+		if !ok {
+			continue
+		}
+		changed++
+		b.WriteString(text[last:m[2]])
+		b.WriteString(before + np + after)
+		last = m[3]
+	}
+	if changed == 0 {
+		return text, 0
+	}
+	b.WriteString(text[last:])
+	return b.String(), changed
+}
+
+// rewrite applies fn to every page link outside code fences and code spans. fn
+// receives the path of the destination as written and the resolved target, and
+// returns the new path; the rest of the destination is kept.
+func rewrite(content []byte, pagePath string, fn func(p, target string) (string, bool)) ([]byte, int) {
 	fm, rest, n, ok := SplitFrontmatter(content)
 	lines := ScanLines(rest, n+1)
 	changed := 0
@@ -276,23 +335,9 @@ func rewrite(content []byte, pagePath string, fn func(dest, target string) (stri
 	for _, l := range lines {
 		text := l.Text
 		if !l.InFence {
-			text = reMDLink.ReplaceAllStringFunc(text, func(m string) string {
-				dest := m[2 : len(m)-1]
-				got, isURL, err := ResolveDest(pagePath, dest)
-				if err != nil || isURL {
-					return m
-				}
-				nd, ok := fn(dest, got)
-				if !ok {
-					return m
-				}
-				changed++
-				suffix := ""
-				if i := strings.Index(dest, "#"); i >= 0 {
-					suffix = dest[i:]
-				}
-				return "](" + nd + suffix + ")"
-			})
+			var n int
+			text, n = rewriteLinks(text, pagePath, fn)
+			changed += n
 		}
 		b.WriteString(text)
 		b.WriteByte('\n')

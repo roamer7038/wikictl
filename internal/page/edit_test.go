@@ -164,6 +164,55 @@ func TestRelocateWithMapper(t *testing.T) {
 	}
 }
 
+func TestRelocateKeepsForm(t *testing.T) {
+	const fm = "---\nsummary: s\n---\n"
+	rename := map[string]string{"global/a.md": "global/a2.md"}
+	for _, tc := range []struct {
+		name, from, to string
+		mapping        map[string]string
+		in, want       string
+		n              int
+	}{
+		{"unrelated links are kept", "global/unrelated.md", "global/unrelated.md", rename,
+			"see [t](other.md \"title\") and [d](./index.md) and `[c](a.md)`\n",
+			"see [t](other.md \"title\") and [d](./index.md) and `[c](a.md)`\n", 0},
+		{"title", "global/r.md", "global/r.md", rename,
+			"[t](a.md \"title\")\n", "[t](a2.md \"title\")\n", 1},
+		{"dot slash", "global/r.md", "global/r.md", rename,
+			"[d](./a.md)\n", "[d](./a2.md)\n", 1},
+		{"fragment and query", "global/r.md", "global/r.md", rename,
+			"[f](a.md#x) [q](a.md?v=1#x)\n", "[f](a2.md#x) [q](a2.md?v=1#x)\n", 2},
+		{"angle brackets", "global/r.md", "global/r.md", rename,
+			"[b](<a.md> \"t\") [c](<./a.md#x>)\n", "[b](<a2.md> \"t\") [c](<./a2.md#x>)\n", 2},
+		{"code span", "global/r.md", "global/r.md", rename,
+			"`[c](a.md)` and [c](a.md) and `x](a.md)`\n", "`[c](a.md)` and [c](a2.md) and `x](a.md)`\n", 1},
+		{"code fence", "global/r.md", "global/r.md", rename,
+			"```\n[c](a.md)\n```\n", "```\n[c](a.md)\n```\n", 0},
+		{"other directory", "projects/p/r.md", "projects/p/r.md", rename,
+			"[a](../../global/a.md \"t\") [i](../../global/./index.md)\n", "[a](../../global/a2.md \"t\") [i](../../global/./index.md)\n", 1},
+		{"links section", "global/r.md", "global/r.md", rename,
+			"# r\n\n## Links\n- part_of: [a](./a.md \"t\") | n\n- see_also: [o](./other.md)\n- `[a](a.md)`\n",
+			"# r\n\n## Links\n- part_of: [a](./a2.md \"t\") | n\n- see_also: [o](./other.md)\n- `[a](a.md)`\n", 1},
+		{"urls and fragments only", "global/r.md", "global/r.md", rename,
+			"[u](https://e.example/a.md) [h](#a.md)\n", "[u](https://e.example/a.md) [h](#a.md)\n", 0},
+		{"moved page", "global/p.md", "projects/a/p.md", map[string]string{"global/p.md": "projects/a/p.md"},
+			"[i](./index.md \"t\") [s](../projects/a/x.md#h) [me](p.md#top) `[c](index.md)`\n",
+			"[i](../../global/index.md \"t\") [s](x.md#h) [me](p.md#top) `[c](index.md)`\n", 2},
+		{"renamed page", "global/p.md", "global/p2.md", map[string]string{"global/p.md": "global/p2.md"},
+			"[i](./index.md) [me](./p.md#top)\n", "[i](./index.md) [me](./p2.md#top)\n", 1},
+		{"moved along", "global/p.md", "projects/a/p.md", map[string]string{"global/p.md": "projects/a/p.md", "global/q.md": "projects/a/q.md"},
+			"[q](./q.md \"t\") [i](index.md)\n", "[q](./q.md \"t\") [i](../../global/index.md)\n", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mapper := func(target string) (string, bool) { nt, ok := tc.mapping[target]; return nt, ok }
+			out, n := Relocate([]byte(fm+tc.in), tc.from, tc.to, mapper)
+			if string(out) != fm+tc.want || n != tc.n {
+				t.Errorf("n=%d (want %d)\ngot  %q\nwant %q", n, tc.n, out, fm+tc.want)
+			}
+		})
+	}
+}
+
 func TestAddAliasDeepFrontmatter(t *testing.T) {
 	in := "---\nx: " + strings.Repeat("[", 30000) + strings.Repeat("]", 30000) + "\n---\n# t\n"
 	if got := string(AddAlias([]byte(in), "old")); got != in {

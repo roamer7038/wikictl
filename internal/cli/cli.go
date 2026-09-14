@@ -91,9 +91,12 @@ Output: {path, sha, commit}.`,
 		flags: func(fs *flag.FlagSet) { putFlags(fs) }, run: (*app).cmdPut},
 	{name: "mv", args: "<path> <newpath> | <dir>/ <newdir>/", minArgs: 2, maxArgs: 2,
 		summary: "Move or rename a page or a directory, rewriting links",
-		detail: `Move or rename a page. Links inside the moved page and links to it from other
-pages are rewritten in the same commit, and the old file name (without .md) is
-added to aliases when it changes. The alias is added only when the frontmatter
+		detail: `Move or rename a page. Links to it from other pages, and relative links inside
+it whose destination changes with the move, are rewritten in the same commit,
+and the old file name (without .md) is added to aliases when it changes. Other
+links and links inside code spans and code fences are left as written. Only
+the path of a rewritten link changes; a leading "./", angle brackets, a query,
+a fragment and a title are kept. The alias is added only when the frontmatter
 is empty or a block-style mapping and aliases is absent, a sequence (block or
 flow style), or null; otherwise, such as when aliases is a string or there is
 no frontmatter, no alias is added and no warning is printed. When both
