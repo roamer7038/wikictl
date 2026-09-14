@@ -182,10 +182,15 @@ func metaHas(v any, want string) bool {
 	return scalarIs(v, want)
 }
 
+// scalarIs reports whether v is a scalar written as want; a number matches
+// any number of equal value.
 func scalarIs(v any, want string) bool {
-	switch reflect.ValueOf(v).Kind() {
-	case reflect.Invalid, reflect.Map, reflect.Slice:
+	switch rv := reflect.ValueOf(v); {
+	case rv.Kind() == reflect.Invalid || rv.Kind() == reflect.Map || rv.Kind() == reflect.Slice:
 		return false
+	case rv.CanInt() || rv.CanUint() || rv.CanFloat():
+		n, err := strconv.ParseFloat(want, 64)
+		return err == nil && n == reflect.ValueOf(v).Convert(reflect.TypeFor[float64]()).Float()
 	}
 	return fmt.Sprint(v) == want
 }
