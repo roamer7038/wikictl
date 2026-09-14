@@ -954,6 +954,53 @@ profiles:
 	}
 }
 
+// Credentials in the repo URL and in the origin remote of the current
+// directory must not appear in context output or in git error messages.
+func TestCredentialsRedacted(t *testing.T) {
+	cfg := setup(t)
+	d := filepath.Dir(cfg)
+	app := filepath.Join(d, "app")
+	mustRun(t, "", "git", "init", "-q", app)
+	mustRun(t, app, "git", "remote", "add", "origin", "https://bob:ghp_remote@example.com/team/app.git")
+	t.Chdir(app)
+
+	os.WriteFile(cfg, []byte("repo: nope://alice:ghp_repo@example.com/wiki.git\nbranch: main\nauthor: {name: agent, email: a@a}\nmachine: h1\n"), 0o600)
+	code, out, errs := runCLI(t, cfg, "", "--no-fetch", "context", "--json")
+	if code != 0 {
+		t.Fatalf("context: code=%d %s %s", code, out, errs)
+	}
+	var cx struct {
+		Repo, Remote, Project string
+	}
+	mustUnmarshal(t, out, &cx)
+	if cx.Repo != "nope://***@example.com/wiki.git" || cx.Remote != "https://***@example.com/team/app.git" || cx.Project != "app" {
+		t.Errorf("context json: %+v", cx)
+	}
+	_, out, _ = runCLI(t, cfg, "", "--no-fetch", "context")
+	if !strings.Contains(out, "repo: nope://***@example.com/wiki.git\n") || !strings.Contains(out, "remote: https://***@example.com/team/app.git\n") {
+		t.Errorf("context text: %s", out)
+	}
+	for _, s := range []string{out, errs} {
+		if strings.Contains(s, "ghp_") {
+			t.Errorf("credentials in output: %s", s)
+		}
+	}
+
+	// Without branch, the remote HEAD is read with ls-remote, which fails for
+	// the unknown scheme; the arguments of the git command are in the message.
+	os.WriteFile(cfg, []byte("repo: nope://alice:ghp_repo@example.com/other.git\nauthor: {name: agent, email: a@a}\nmachine: h1\n"), 0o600)
+	code, out, errs = runCLI(t, cfg, "", "ls")
+	if code != ExitGit || !strings.Contains(errs, "ls-remote --symref nope://***@example.com/other.git HEAD") || strings.Contains(out+errs, "ghp_") {
+		t.Errorf("ls: code=%d %s %s", code, out, errs)
+	}
+	code, out, _ = runCLI(t, cfg, "", "--json", "ls")
+	var e errorOut
+	mustUnmarshal(t, out, &e)
+	if code != ExitGit || e.Error != "git" || strings.Contains(e.Message, "ghp_") || !strings.Contains(e.Message, "nope://***@example.com") {
+		t.Errorf("ls --json: code=%d %s", code, out)
+	}
+}
+
 func TestMirrorName(t *testing.T) {
 	a := mirrorName("/srv/foo_bar/wiki.git")
 	b := mirrorName("/srv/foo/bar_wiki.git")
@@ -964,6 +1011,8 @@ func TestMirrorName(t *testing.T) {
 		"/srv/foo_bar/wiki.git":                      "wiki-",
 		"git@github.com:team/app.wiki.git":           "app.wiki-",
 		"https://alice:token@example.com/team/wiki/": "wiki-",
+		"https://alice:token@example.com":            "example.com-",
+		"https://token@example.com:8443/":            "8443-",
 		`C:\wikis\notes`:                             "notes-",
 		"":                                           "wiki-",
 	} {

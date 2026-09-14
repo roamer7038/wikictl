@@ -182,7 +182,9 @@ directories that other commands use by default: up to four of global/,
 personal/, projects/<name>/ and machines/<name>/. Each is shown with the
 number of pages at any depth under it ("." counts the whole wiki); 0 means the
 directory has no page yet. Unlike dirs, which counts only the pages directly in
-each directory, pages in subdirectories are included.
+each directory, pages in subdirectories are included. The user information
+(user:token@) of an HTTPS or other URL in repo and remote is shown as ***@; an SSH user
+name without a password, such as git@, is shown as it is.
 
 Output: {config, profile, profile_source, repo, mirror, branch, author, machine, project, remote, dirs, pages}.`,
 		run: (*app).cmdContext},
@@ -361,6 +363,10 @@ func (a *app) openRepo() error {
 func mirrorName(repoURL string) string {
 	base := strings.TrimRight(repoURL, `/\`)
 	if i := strings.LastIndexAny(base, `/\:`); i >= 0 {
+		base = base[i+1:]
+	}
+	// A URL without a path leaves "token@host" here.
+	if i := strings.LastIndex(base, "@"); i >= 0 {
 		base = base[i+1:]
 	}
 	base = strings.TrimSuffix(base, ".git")

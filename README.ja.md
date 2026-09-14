@@ -33,6 +33,8 @@ flowchart LR
 | SSH で接続できるサーバー | `ssh://you@server.example/srv/git/wiki.git` |
 | ローカルのディレクトリ | `/home/you/wiki.git` |
 
+`https://user:token@github.com/you/wiki.git` のように、`repo` にパスワードやトークンを書かないでください。git は URL をそのままミラーの設定に保存します。認証情報を含まない HTTPS の URL と git の credential helper、または SSH の URL と SSH エージェントを使ってください。`repo` に認証情報が含まれる場合、wikictl は出力でそれを伏せます。HTTPS などの URL のユーザー情報（`user:token@`）は、`context` と git のエラーメッセージで `***@` になります。SSH の URL（`user@host:path` の形式を含む）では、パスワードを含むユーザー情報だけを伏せます。`git@` のようなユーザー名だけの場合は、秘密ではなく、どのアカウントを使うかを示すため、そのまま表示します。
+
 サーバーやローカルに置く場合は、初期ブランチを指定して空の bare リポジトリを作成します。
 
     git init --bare -b main ~/wiki.git
@@ -215,7 +217,7 @@ type: concept
 - `rm` は、削除したページへリンクしている他のページを書き換えない。それらのリンクは `lint` が `broken_link` として報告する。`rm` が削除するのはページだけで、ファイル名の規則に反するパス（wiki のルートにある `README.md` など）は終了コード 4 で拒否する。そのようなファイルを削除するには、wiki のリポジトリを clone して git で直接操作する
 - `lint` は、指定したページ、または検索対象ディレクトリ配下の全ページを検査する。wiki 全体を検査するには `wikictl --dirs . lint` を使う。`case_collision` は常に wiki 全体を対象に検査する
 - `dirs` は、ページを直接含むすべてのディレクトリを、直下のページ数（deprecated のページを含む）と `index.md` の `summary`（`index.md` がなければ `(no index)`）とともに一覧表示する。検索対象ディレクトリの設定は無視する。`wikictl dirs projects` のように引数を指定すると、`projects/` 配下のディレクトリだけに絞り込める
-- `context` は、設定ファイル、選択されたプロファイルとその選択経緯、リポジトリ、ミラー、ブランチ、author、マシン名とプロジェクト名、カレントディレクトリの `origin` リモート、検索対象ディレクトリとそのページ数を表示する
+- `context` は、設定ファイル、選択されたプロファイルとその選択経緯、リポジトリ、ミラー、ブランチ、author、マシン名とプロジェクト名、カレントディレクトリの `origin` リモート、検索対象ディレクトリとそのページ数を表示する。リポジトリとリモートの URL に含まれる認証情報は、[wiki リポジトリの置き場所](#wiki-リポジトリの置き場所)で説明したとおり伏せる
 
 `wikictl help <command>` で、各コマンドの説明、フラグ、JSON 出力のフィールドを確認できます。
 

@@ -33,6 +33,8 @@ flowchart LR
 | Server over SSH | `ssh://you@server.example/srv/git/wiki.git` |
 | Local directory | `/home/you/wiki.git` |
 
+Do not write a password or token in `repo`, as in `https://user:token@github.com/you/wiki.git`: git saves the URL in the mirror's configuration as it is. Use an HTTPS URL without credentials together with a git credential helper, or an SSH URL with an SSH agent. When `repo` does hold credentials, wikictl hides them in its output: the user info part (`user:token@`) of an HTTPS or other URL becomes `***@` in `context` and in git error messages. For SSH URLs, including the `user@host:path` form, only user info that includes a password is hidden; a plain user name such as `git@` is shown, because it is not a secret and tells which account is used.
+
 On a server or in a local directory, create an empty bare repository, specifying the initial branch:
 
     git init --bare -b main ~/wiki.git
@@ -215,7 +217,7 @@ Details of each command:
 - `rm` leaves the pages that link to the deleted page unchanged; `lint` reports those links as `broken_link`. `rm` deletes only pages: a path that breaks the file name rules, such as `README.md` at the wiki root, is rejected with exit code 4. To delete such a file, clone the wiki repository and use git directly.
 - `lint` checks the given pages, or every page under the search directories; `wikictl --dirs . lint` checks the whole wiki. `case_collision` is always checked against the whole wiki.
 - `dirs` lists every directory that directly contains a page, with the number of pages directly in it (deprecated pages included) and the `summary` of its `index.md`, or `(no index)`. It ignores the search directories; `wikictl dirs projects` restricts the list to the directories under `projects/`.
-- `context` shows the configuration file, the selected profile and how it was selected, the repository, the mirror, the branch, the author, the machine and project names, the `origin` remote of the current directory, and the search directories with their page counts.
+- `context` shows the configuration file, the selected profile and how it was selected, the repository, the mirror, the branch, the author, the machine and project names, the `origin` remote of the current directory, and the search directories with their page counts. Credentials in the repository and remote URLs are hidden as described in [Where the wiki repository can live](#where-the-wiki-repository-can-live).
 
 `wikictl help <command>` describes each command, its flags and the fields of its JSON output.
 
