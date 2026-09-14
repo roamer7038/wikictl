@@ -42,6 +42,7 @@ func TestJSONContract(t *testing.T) {
 		{"put/conflict", "", newPage, []string{"put", "global/new.md"}, ExitConflict,
 			[]string{"content", "error", "message", "path", "reason", "sha"}},
 		{"put/bad_path", "", newPage, []string{"put", "global/bad name.md"}, ExitInvalid, errKeys},
+		{"edit/usage", "", "", []string{"edit", "global/push.md"}, ExitUsage, errKeys},
 		{"cat", "", "", []string{"cat", "global/push.md"}, ExitOK, []string{"items", "items[].content", "items[].path", "items[].sha"}},
 		{"cat/missing", "", "", []string{"cat", "global/none.md"}, ExitError, []string{"items"}},
 		{"stat", "", "", []string{"stat", "global/push.md"}, ExitOK,
