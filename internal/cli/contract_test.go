@@ -13,8 +13,8 @@ import (
 func TestJSONContract(t *testing.T) {
 	cfg := setup(t)
 
-	// The page links to an existing page and a missing one, so that get has
-	// links and backlinks and lint has items.
+	// The page links to an existing page and a missing one, so that links has
+	// both directions and lint has items.
 	newPage := "---\nsummary: new\n---\n# New\n[push](push.md)\n[gone](gone.md)\n"
 	errKeys := []string{"error", "message"}
 	cases := []struct {
@@ -37,10 +37,14 @@ func TestJSONContract(t *testing.T) {
 		{"put/conflict", "", newPage, []string{"put", "global/new.md"}, ExitConflict,
 			[]string{"content", "error", "message", "path", "reason", "sha"}},
 		{"put/bad_path", "", newPage, []string{"put", "global/bad name.md"}, ExitInvalid, errKeys},
-		{"get", "", "", []string{"get", "global/push.md"}, ExitOK,
-			[]string{"backlinks", "backlinks[].path", "backlinks[].type", "body", "frontmatter", "links",
-				"links[].note", "links[].target", "links[].type", "path", "sha", "title", "updated"}},
-		{"get/not_found", "", "", []string{"get", "global/none.md"}, ExitError, errKeys},
+		{"cat", "", "", []string{"cat", "global/push.md"}, ExitOK, []string{"items", "items[].content", "items[].path", "items[].sha"}},
+		{"cat/missing", "", "", []string{"cat", "global/none.md"}, ExitError, []string{"items"}},
+		{"stat", "", "", []string{"stat", "global/push.md"}, ExitOK,
+			[]string{"items", "items[].aliases", "items[].path", "items[].sha", "items[].status", "items[].summary",
+				"items[].tags", "items[].title", "items[].type", "items[].updated"}},
+		{"links", "", "", []string{"links", "global/push.md"}, ExitOK,
+			[]string{"items", "items[].direction", "items[].note", "items[].target", "items[].type"}},
+		{"links/not_found", "", "", []string{"links", "global/none.md"}, ExitError, errKeys},
 		{"lint", "", "", []string{"lint"}, ExitInvalid,
 			[]string{"items", "items[].code", "items[].line", "items[].message", "items[].path"}},
 		{"mv", "", "", []string{"mv", "global/new.md", "global/new2.md"}, ExitOK, []string{"commit", "path", "rewritten"}},

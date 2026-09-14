@@ -29,8 +29,8 @@ func TestHelpNeedsNoConfig(t *testing.T) {
 			t.Errorf("%v: code=%d out=%q", args, code, out)
 		}
 	}
-	if code, out, _ := runNoConfig(t, "get", "-h"); code != ExitOK || !strings.Contains(out, "Usage: wikictl get <path>") {
-		t.Errorf("get -h: code=%d out=%q", code, out)
+	if code, out, _ := runNoConfig(t, "links", "-h"); code != ExitOK || !strings.Contains(out, "Usage: wikictl links [flags] <path>") {
+		t.Errorf("links -h: code=%d out=%q", code, out)
 	}
 	_, out, _ := runNoConfig(t, "put", "--help")
 	if !strings.Contains(out, "--base <sha>") || !strings.Contains(out, "-m, --message <message>") {
@@ -64,9 +64,9 @@ func TestVersion(t *testing.T) {
 }
 
 func TestUsageErrorsNeedNoConfig(t *testing.T) {
-	code, _, errs := runNoConfig(t, "get")
-	if code != ExitUsage || !strings.Contains(errs, "Usage: wikictl get <path>") {
-		t.Errorf("get: code=%d errs=%q", code, errs)
+	code, _, errs := runNoConfig(t, "links")
+	if code != ExitUsage || !strings.Contains(errs, "Usage: wikictl links [flags] <path>") {
+		t.Errorf("links: code=%d errs=%q", code, errs)
 	}
 	code, _, errs = runNoConfig(t, "put", "--bogus", "global/x.md")
 	if code != ExitUsage || !strings.Contains(errs, "-bogus") {
@@ -80,7 +80,7 @@ func TestUsageErrorsNeedNoConfig(t *testing.T) {
 	if code != ExitUsage || !strings.Contains(errs, "Usage: wikictl search") {
 		t.Errorf("search -n 0: code=%d errs=%q", code, errs)
 	}
-	code, out, _ := runNoConfig(t, "--json", "get")
+	code, out, _ := runNoConfig(t, "--json", "cat")
 	if code != ExitUsage || !strings.HasPrefix(out, `{"error":"usage"`) {
 		t.Errorf("json usage error: code=%d out=%q", code, out)
 	}

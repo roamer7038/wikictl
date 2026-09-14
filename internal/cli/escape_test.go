@@ -51,7 +51,7 @@ func TestTextOutputEscapesControl(t *testing.T) {
 		}
 	}
 
-	runCLI(t, cfg, "---\nsummary: \"\\e[2Kidx\"\n---\n", "put", "--base", getSha(t, cfg, "global/index.md"), "global/index.md")
+	runCLI(t, cfg, "---\nsummary: \"\\e[2Kidx\"\n---\n", "put", "--base", shaOf(t, cfg, "global/index.md"), "global/index.md")
 	_, out, _ := runCLI(t, cfg, "", "dirs", "global")
 	if strings.Contains(out, "\x1b") || !strings.Contains(out, `\x1b[2Kidx`) {
 		t.Errorf("dirs: %q", out)
@@ -68,9 +68,13 @@ func TestTextOutputEscapesControl(t *testing.T) {
 		t.Errorf("lint: %q", out)
 	}
 
-	_, out, _ = runCLI(t, cfg, "", "get", "global/ctl.md")
-	if !strings.Contains(out, "# t\x1b[31m") {
-		t.Errorf("get body must be unchanged: %q", out)
+	_, out, _ = runCLI(t, cfg, "", "cat", "global/ctl.md")
+	if out != content {
+		t.Errorf("cat must print the file unchanged: %q", out)
+	}
+	_, out, _ = runCLI(t, cfg, "", "stat", "global/ctl.md")
+	if strings.ContainsAny(out, "\x1b\x07\r") || !strings.Contains(out, "summary: "+escaped+"\n") || !strings.Contains(out, `title: t\x1b[31m`) {
+		t.Errorf("stat: %q", out)
 	}
 
 	linkPage := "# t\n## Links\n- see_also: [x](missing\x1b[2K.md) | note\x07\n"
@@ -81,10 +85,8 @@ func TestTextOutputEscapesControl(t *testing.T) {
 	if strings.ContainsAny(errs, "\x1b\x07\r") || !strings.Contains(errs, `missing\x1b[2K.md`) {
 		t.Errorf("put warning: %q", errs)
 	}
-	_, out, _ = runCLI(t, cfg, "", "get", "global/linkctl.md")
-	if i := strings.Index(out, "\nlinks:"); i < 0 {
-		t.Errorf("get missing links: %q", out)
-	} else if links := out[i:]; strings.ContainsAny(links, "\x1b\x07") || !strings.Contains(links, `missing\x1b[2K.md`) || !strings.Contains(links, `note\x07`) {
-		t.Errorf("get links must escape target and note: %q", links)
+	_, out, _ = runCLI(t, cfg, "", "links", "global/linkctl.md")
+	if out != "out\tsee_also\tglobal/missing\\x1b[2K.md\n" {
+		t.Errorf("links must escape the target: %q", out)
 	}
 }

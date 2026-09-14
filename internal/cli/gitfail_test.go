@@ -75,17 +75,20 @@ func TestGitFailure(t *testing.T) {
 		{"search/grep without stderr", gitFault{match: " grep -E -l ", quiet: true}, "", []string{"search", "lease"}, ExitGit},
 		{"search/deprecated", gitFault{match: " grep -l -E "}, "", []string{"search", "lease"}, ExitGit},
 		{"search/updated", gitFault{match: " log --format="}, "", []string{"search", "lease"}, ExitGit},
-		{"get/head", gitFault{match: head}, "", []string{"get", "global/push.md"}, ExitGit},
-		{"get/sha", gitFault{match: " ls-tree -z "}, "", []string{"get", "global/push.md"}, ExitGit},
-		{"get/backlinks grep", gitFault{match: " grep -E -l "}, "", []string{"get", "global/index.md"}, ExitGit},
-		{"get/backlinks cat", gitFault{match: " cat-file --batch ", skip: 1}, "", []string{"get", "global/index.md"}, ExitGit},
-		{"get/updated", gitFault{match: " log --format="}, "", []string{"get", "global/push.md"}, ExitGit},
+		{"cat/head", gitFault{match: head}, "", []string{"cat", "global/push.md"}, ExitGit},
+		{"cat/cat", gitFault{match: " cat-file --batch "}, "", []string{"cat", "global/push.md"}, ExitGit},
+		{"cat/missing path", gitFault{match: " ls-tree -z "}, "", []string{"cat", "global/none.md"}, ExitGit},
+		{"stat/updated", gitFault{match: " log --format="}, "", []string{"stat", "global/push.md"}, ExitGit},
+		{"stat/cat", gitFault{match: " cat-file --batch "}, "", []string{"stat", "global/push.md"}, ExitGit},
+		{"links/backlinks grep", gitFault{match: " grep -E -l "}, "", []string{"links", "global/index.md"}, ExitGit},
+		{"links/backlinks cat", gitFault{match: " cat-file --batch ", skip: 1}, "", []string{"links", "global/index.md"}, ExitGit},
 		{"ls/deprecated", gitFault{match: " grep -l -E "}, "", []string{"ls"}, ExitGit},
 		{"ls/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"ls"}, ExitGit},
 		{"ls/cat", gitFault{match: " cat-file --batch "}, "", []string{"ls"}, ExitGit},
 		{"ls/updated", gitFault{match: " log --format="}, "", []string{"ls"}, ExitGit},
 		{"search/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"search", "lease"}, ExitGit},
-		{"get/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"get", "global/push.md"}, ExitGit},
+		{"stat/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"stat", "global/push.md"}, ExitGit},
+		{"links/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"links", "global/push.md"}, ExitGit},
 		{"dirs/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"dirs"}, ExitGit},
 		{"lint/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"lint", "global/push.md"}, ExitGit},
 		{"lint/cat", gitFault{match: " cat-file --batch "}, "", []string{"lint", "global/push.md"}, ExitGit},
@@ -178,11 +181,13 @@ func TestUnreadableObject(t *testing.T) {
 		// machines/h1/y.md, projects/app/x.md and global/push.md match.
 		{"search/grep with another match", "global/push.md", "", "", []string{"--no-fetch", "search", "lease"}},
 		{"ls/deprecated with another match", "global/push.md", "", "", []string{"--no-fetch", "ls"}},
-		{"get/backlinks with another match", "projects/app/x.md", "", "", []string{"--no-fetch", "get", "global/index.md"}},
-		{"get/target blob", "global/push.md", "", "", []string{"--no-fetch", "get", "global/push.md"}},
-		{"get/target tree", "global", "", "", []string{"--no-fetch", "get", "global/push.md"}},
-		{"get/ref to a missing object", "", "1234567890123456789012345678901234567890\n", "", []string{"--no-fetch", "get", "global/push.md"}},
-		{"get/ref with garbage", "", "garbage\n", "", []string{"--no-fetch", "get", "global/push.md"}},
+		{"links/backlinks with another match", "projects/app/x.md", "", "", []string{"--no-fetch", "links", "global/index.md"}},
+		{"cat/target blob", "global/push.md", "", "", []string{"--no-fetch", "cat", "global/push.md"}},
+		{"cat/target tree", "global", "", "", []string{"--no-fetch", "cat", "global/push.md"}},
+		{"stat/target tree", "global", "", "", []string{"--no-fetch", "stat", "global/push.md"}},
+		{"links/target blob", "global/push.md", "", "", []string{"--no-fetch", "links", "global/push.md"}},
+		{"stat/ref to a missing object", "", "1234567890123456789012345678901234567890\n", "", []string{"--no-fetch", "stat", "global/push.md"}},
+		{"cat/ref with garbage", "", "garbage\n", "", []string{"--no-fetch", "cat", "global/push.md"}},
 		{"search/ref with garbage", "", "garbage\n", "", []string{"--no-fetch", "search", "lease"}},
 		{"ls/ref with garbage", "", "garbage\n", "", []string{"--no-fetch", "ls"}},
 		{"lint/ref with garbage", "", "garbage\n", "", []string{"--no-fetch", "lint"}},
@@ -239,7 +244,9 @@ func TestGitStderrNoise(t *testing.T) {
 		{"search", "lease"},
 		{"search", "zzz-none"},
 		{"ls"},
-		{"get", "global/push.md"},
+		{"cat", "global/push.md"},
+		{"stat", "global/push.md"},
+		{"links", "global/index.md"},
 	}
 	check := func(t *testing.T, name string) {
 		t.Helper()
@@ -338,11 +345,15 @@ func TestLargeBlobNotRead(t *testing.T) {
 		!slices.Equal(search.Items[0].Matched, []string{"äpfel", "lorem"}) {
 		t.Errorf("search: code=%d out=%q errs=%q", code, out, errs)
 	}
-	var get getOut
-	code, out, errs = runCLI(t, cfg, "", "--json", "get", "global/huge.md")
-	mustUnmarshal(t, out, &get)
-	if code != ExitOK || get.SHA != sha || get.Title != "huge" || get.Body != "" || len(get.Frontmatter) != 0 || len(get.Links) != 0 {
-		t.Errorf("get: code=%d out=%q errs=%q", code, out, errs)
+	var st struct{ Items []statItem }
+	code, out, errs = runCLI(t, cfg, "", "--json", "stat", "global/huge.md")
+	mustUnmarshal(t, out, &st)
+	if code != ExitOK || len(st.Items) != 1 || st.Items[0].SHA != sha || st.Items[0].Title != "huge" || st.Items[0].Summary != "" {
+		t.Errorf("stat: code=%d out=%q errs=%q", code, out, errs)
+	}
+	// The large page itself is not parsed, so only the link to it is listed.
+	if code, out, errs := runCLI(t, cfg, "", "links", "global/huge.md"); code != ExitOK || out != "in\tmentions\tglobal/refer.md\n" {
+		t.Errorf("links: code=%d out=%q errs=%q", code, out, errs)
 	}
 	code, out, _ = runCLI(t, cfg, "", "lint", "global/huge.md", "global/refer.md")
 	if code != ExitInvalid || out != "global/huge.md:0: page_too_large: page is larger than 1048576 bytes\n" {
