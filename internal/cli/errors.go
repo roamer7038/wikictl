@@ -37,6 +37,15 @@ type notFoundError struct{ path string }
 
 func (e *notFoundError) Error() string { return "page not found: " + e.path }
 
+// notFound returns notFoundError for a page that Cat did not return, or
+// gitError when the page may exist but git cannot read it.
+func (a *app) notFound(p string) error {
+	if err := a.repo.CheckMissing([]string{p}); err != nil {
+		return &gitError{err}
+	}
+	return &notFoundError{p}
+}
+
 // invalidError is a page or path that violates the wiki format. The message
 // starts with the issue code, such as "bad_path: ".
 type invalidError struct{ msg string }
@@ -48,6 +57,8 @@ type gitError struct{ err error }
 
 func (e *gitError) Error() string { return e.err.Error() }
 
+func (e *gitError) Unwrap() error { return e.err }
+
 // conflictError is an optimistic-lock failure of a commit. rerun names the
 // command to run again; it is empty for put and init.
 type conflictError struct {
@@ -56,6 +67,8 @@ type conflictError struct {
 }
 
 func (e *conflictError) Error() string { return e.cf.Error() }
+
+func (e *conflictError) Unwrap() error { return e.cf }
 
 // exitStatus ends the command with its value as the exit code after the
 // command has written its output, such as lint with violations.

@@ -551,6 +551,62 @@ func TestMvDir(t *testing.T) {
 	}
 }
 
+// TestMvRewriteScope checks that mv rewrites only the links to the moved pages,
+// keeps how they are written, and counts only the pages it rewrote.
+func TestMvRewriteScope(t *testing.T) {
+	cfg := setup(t)
+	unrelated := "---\nsummary: u\n---\n# u\nsee [t](other.md \"title\") and [d](./index.md) and `[c](a.md)`\n"
+	for p, c := range map[string]string{
+		"global/a.md":         "---\nsummary: a\n---\n# a\n",
+		"global/unrelated.md": unrelated,
+		"global/ref.md":       "---\nsummary: r\n---\n# r\n[r](./a.md \"t\") `[c](a.md)` [x](../projects/app/x.md#h)\n",
+	} {
+		if code, _, errs := runCLI(t, cfg, c, "put", p); code != 0 {
+			t.Fatalf("put %s: code=%d %s", p, code, errs)
+		}
+	}
+	unrelatedSha := getSha(t, cfg, "global/unrelated.md")
+	body := func(p string) string {
+		t.Helper()
+		_, out, _ := runCLI(t, cfg, "", "get", "--json", p)
+		var g struct{ Body string }
+		mustUnmarshal(t, out, &g)
+		return g.Body
+	}
+
+	code, out, errs := runCLI(t, cfg, "", "mv", "--json", "global/a.md", "global/a2.md")
+	if code != 0 {
+		t.Fatalf("mv: code=%d %s %s", code, out, errs)
+	}
+	var res struct{ Rewritten, Moved int }
+	mustUnmarshal(t, out, &res)
+	if res.Rewritten != 1 {
+		t.Errorf("mv rewritten=%d, want 1: %s", res.Rewritten, out)
+	}
+	if got := getSha(t, cfg, "global/unrelated.md"); got != unrelatedSha {
+		t.Errorf("unrelated page changed: %s", body("global/unrelated.md"))
+	}
+	if b := body("global/ref.md"); !strings.Contains(b, "[r](./a2.md \"t\") `[c](a.md)` [x](../projects/app/x.md#h)") {
+		t.Errorf("referrer: %q", b)
+	}
+
+	code, out, errs = runCLI(t, cfg, "", "mv", "--json", "projects/app/", "projects/app2/")
+	if code != 0 {
+		t.Fatalf("mv dir: code=%d %s %s", code, out, errs)
+	}
+	res = struct{ Rewritten, Moved int }{}
+	mustUnmarshal(t, out, &res)
+	if res.Moved != 1 || res.Rewritten != 1 {
+		t.Errorf("mv dir moved=%d rewritten=%d, want 1 and 1: %s", res.Moved, res.Rewritten, out)
+	}
+	if got := getSha(t, cfg, "global/unrelated.md"); got != unrelatedSha {
+		t.Errorf("unrelated page changed by dir mv: %s", body("global/unrelated.md"))
+	}
+	if b := body("global/ref.md"); !strings.Contains(b, "[x](../projects/app2/x.md#h)") {
+		t.Errorf("referrer after dir mv: %q", b)
+	}
+}
+
 // TestMvRmStaleMirror checks that mv and rm report a conflict and write
 // nothing when a page they read was changed from another mirror in between.
 func TestMvRmStaleMirror(t *testing.T) {

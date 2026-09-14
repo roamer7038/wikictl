@@ -64,12 +64,18 @@ func (r *Repo) Commit(changes []Change, msg string, au Author) (*Result, error) 
 		if err := r.Fetch(); err != nil {
 			return nil, err
 		}
-		head, _ := r.Head()
+		head, err := r.Head()
+		if err != nil {
+			return nil, err
+		}
 		for _, c := range changes {
 			if c.Base == nil {
 				continue
 			}
-			cur, _ := r.BlobSHA(head, c.Path)
+			cur, err := r.BlobSHA(head, c.Path)
+			if err != nil {
+				return nil, err
+			}
 			if *c.Base == "" && cur != "" {
 				return nil, r.conflict(c.Path, "exists", cur)
 			}
@@ -101,10 +107,15 @@ func retryWait(d time.Duration, attempt int) time.Duration {
 	return time.Duration(rand.Int64N(n))
 }
 
-func (r *Repo) conflict(path, reason, sha string) *Conflict {
+// conflict returns a Conflict with the current content of the page, or the
+// error of git when the content cannot be read.
+func (r *Repo) conflict(path, reason, sha string) error {
 	cf := &Conflict{Path: path, Reason: reason, SHA: sha}
 	if sha != "" {
-		out, _ := r.Git("cat-file", "-p", sha)
+		out, err := r.Git("cat-file", "-p", sha)
+		if err != nil {
+			return err
+		}
 		cf.Content = []byte(out)
 	}
 	return cf
@@ -191,10 +202,8 @@ func (r *Repo) buildAndPush(head string, changes []Change, msg string, au Author
 		"--force-with-lease=refs/heads/"+r.Branch+":"+lease)
 	switch pushStatus(pout) {
 	case pushOK:
-		if head != "" {
-			r.Git("update-ref", r.trackingRef(), commit, head)
-		} else {
-			r.Git("update-ref", r.trackingRef(), commit)
+		if err := r.updateTrackingRef(head, commit); err != nil {
+			return nil, false, fmt.Errorf("pushed %s, but updating %s failed: %w", commit, r.trackingRef(), err)
 		}
 		return &Result{Commit: commit, SHAs: shas}, false, nil
 	case pushStale:
@@ -206,6 +215,24 @@ func (r *Repo) buildAndPush(head string, changes []Change, msg string, au Author
 		}
 		return nil, retry, fmt.Errorf("push failed: %s", strings.TrimSpace(pout))
 	}
+}
+
+// updateTrackingRef moves the tracking ref from head to the pushed commit. A
+// read that fetched after the push may have moved the ref already, so a
+// failure is not an error when the ref now contains commit.
+func (r *Repo) updateTrackingRef(head, commit string) error {
+	args := []string{"update-ref", r.trackingRef(), commit}
+	if head != "" {
+		args = append(args, head)
+	}
+	_, err := r.Git(args...)
+	if err == nil {
+		return nil
+	}
+	if _, aerr := r.Git("merge-base", "--is-ancestor", commit, r.trackingRef()); aerr == nil {
+		return nil
+	}
+	return err
 }
 
 // remoteMoved reports whether a failed push lost a race with another push.
@@ -225,8 +252,8 @@ func (r *Repo) remoteMoved(head, pout string, perr error) bool {
 	if r.Fetch() != nil {
 		return false
 	}
-	cur, _ := r.Head()
-	return cur != head
+	cur, err := r.Head()
+	return err == nil && cur != head
 }
 
 // pushResult is the outcome of a push as reported by pushStatus.

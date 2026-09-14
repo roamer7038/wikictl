@@ -148,11 +148,15 @@ func (r *Repo) Fetch() error {
 	return nil
 }
 
-// Head returns the commit sha of the tracking ref, or "" when the branch does not exist yet.
+// Head returns the commit sha of the tracking ref, or "" when the branch does
+// not exist yet. A failure of git is an error.
 func (r *Repo) Head() (string, error) {
 	out, err := r.Git("rev-parse", "--verify", "-q", r.trackingRef())
-	if err != nil {
+	if noResult(err) {
 		return "", nil
+	}
+	if err != nil {
+		return "", err
 	}
 	return strings.TrimSpace(out), nil
 }

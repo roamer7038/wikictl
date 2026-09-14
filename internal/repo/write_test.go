@@ -46,6 +46,39 @@ func TestCommitConcurrentMirrors(t *testing.T) {
 	}
 }
 
+// TestUpdateTrackingRef checks that a failed update of the tracking ref is an
+// error only when the ref does not contain the pushed commit.
+func TestUpdateTrackingRef(t *testing.T) {
+	remote := newRemote(t, true)
+	r := openFetched(t, remote)
+	old, err := r.Head()
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedRemote(t, remote, map[string]string{"global/other.md": "---\nsummary: o\n---\n"})
+	if err := r.Fetch(); err != nil {
+		t.Fatal(err)
+	}
+	cur, err := r.Head()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The ref is no longer at old, so update-ref fails, but it contains old.
+	if err := r.updateTrackingRef(old, old); err != nil {
+		t.Errorf("ref containing the commit: %v", err)
+	}
+	out, err := r.Git("-c", "user.name=t", "-c", "user.email=t@t", "commit-tree", "--no-gpg-sign", old+"^{tree}", "-m", "elsewhere")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.updateTrackingRef(old, strings.TrimSpace(out)); err == nil {
+		t.Error("ref without the commit: no error")
+	}
+	if h, _ := r.Head(); h != cur {
+		t.Errorf("ref moved to %s, want %s", h, cur)
+	}
+}
+
 func TestRetryWait(t *testing.T) {
 	if w := retryWait(0, 1); w != 0 {
 		t.Errorf("retryWait(0, 1) = %v, want 0", w)
