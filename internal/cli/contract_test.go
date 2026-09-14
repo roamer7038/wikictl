@@ -2,8 +2,6 @@ package cli
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"slices"
 	"testing"
 )
@@ -14,12 +12,6 @@ import (
 // exit code or a key on purpose updates this table.
 func TestJSONContract(t *testing.T) {
 	cfg := setup(t)
-	// init needs an empty repository; it shares the cache set by setup.
-	d := t.TempDir()
-	empty := filepath.Join(d, "empty.git")
-	mustRun(t, "", "git", "init", "-q", "--bare", "-b", "main", empty)
-	emptyCfg := filepath.Join(d, "empty.yaml")
-	os.WriteFile(emptyCfg, []byte("repo: "+empty+"\nauthor: {name: a, email: a@a}\n"), 0o600)
 
 	// The page links to an existing page and a missing one, so that get has
 	// links and backlinks and lint has items.
@@ -54,8 +46,6 @@ func TestJSONContract(t *testing.T) {
 		{"mv", "", "", []string{"mv", "global/new.md", "global/new2.md"}, ExitOK, []string{"commit", "path", "rewritten"}},
 		{"mv/dir", "", "", []string{"mv", "projects/app/", "projects/app2/"}, ExitOK, []string{"commit", "moved", "path", "rewritten"}},
 		{"rm", "", "", []string{"rm", "global/new2.md"}, ExitOK, []string{"commit", "path"}},
-		{"init", emptyCfg, "", []string{"init"}, ExitOK, []string{"commit"}},
-		{"init/exists", "", "", []string{"init"}, ExitError, errKeys},
 		{"unknown", "", "", []string{"nope"}, ExitUsage, errKeys},
 	}
 	for _, c := range cases {

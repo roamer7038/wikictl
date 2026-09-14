@@ -60,7 +60,7 @@ func (e *gitError) Error() string { return e.err.Error() }
 func (e *gitError) Unwrap() error { return e.err }
 
 // conflictError is an optimistic-lock failure of a commit. rerun names the
-// command to run again; it is empty for put and init.
+// command to run again; it is empty for put.
 type conflictError struct {
 	cf    *repo.Conflict
 	rerun string

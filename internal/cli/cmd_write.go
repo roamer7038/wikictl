@@ -257,33 +257,3 @@ func (a *app) relocate(mapping map[string]string) ([]repo.Change, error) {
 	}
 	return changes, nil
 }
-
-const initReadme = `# wiki
-
-A knowledge base shared by AI agents and people. A page is a Markdown file
-whose frontmatter should have a one-line summary. Relations go in a "## Links"
-section at the end; links are relative paths. Directories are scopes:
-global/ for everything, personal/ for one user, projects/<name>/ and
-machines/<name>/ for the rest.
-`
-
-func (a *app) cmdInit(c *command, args []string) error {
-	head, err := a.repo.Head()
-	if err != nil {
-		return &gitError{err}
-	}
-	if head != "" {
-		return errors.New("branch " + a.repo.Branch + " already exists on the remote; init only works on an empty repository")
-	}
-	empty := ""
-	changes := []repo.Change{
-		{Path: "README.md", Content: []byte(initReadme), Base: &empty},
-		{Path: "global/index.md", Content: []byte("---\nsummary: Entry point for knowledge that does not depend on any project, machine or user\n---\n# global\n"), Base: &empty},
-	}
-	res, err := a.commit(changes, "wikictl: init", "")
-	if err != nil {
-		return err
-	}
-	a.emit(map[string]string{"commit": res.Commit}, func(w io.Writer) { fmt.Fprintf(w, "initialized: %s\n", res.Commit) })
-	return nil
-}

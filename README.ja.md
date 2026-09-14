@@ -55,11 +55,10 @@ Linux と macOS（x86_64、arm64）のバイナリは [Releases ページ](https
          name: claude-code@laptop
          email: claude-code@laptop.invalid
 
-3. 設定を確認し、初期ページを作成してから、ページを書き込んで読み出します。
+3. 設定を確認してから、ページを書き込んで読み出します。空のリポジトリでは、最初の `put` がブランチを作成します。
 
        wikictl context
-       wikictl init
-       printf -- '---\nsummary: --force-with-lease 付きの push は、リモートの ref が期待する sha のままでなければ拒否される\n---\n# --force-with-lease は何を保証するか\n\n本文。\n\n## Links\n- part_of: [index](index.md)\n' \
+       printf -- '---\nsummary: --force-with-lease 付きの push は、リモートの ref が期待する sha のままでなければ拒否される\n---\n# --force-with-lease は何を保証するか\n\n本文。\n' \
          | wikictl put global/git-force-with-lease.md
        wikictl search lease
        wikictl get global/git-force-with-lease.md
@@ -107,7 +106,6 @@ type: concept
 
 | コマンド | 説明 |
 |---|---|
-| `init` | 空のリポジトリに初期ページを作成する |
 | `search <word>...` | 指定した語を含むページを検索する |
 | `get <path>` | ページを sha、リンク、バックリンクとともに表示する |
 | `ls` | ページを一覧表示する |

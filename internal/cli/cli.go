@@ -35,16 +35,6 @@ type command struct {
 
 // commands lists the subcommands in the order shown by help.
 var commands = []*command{
-	{name: "init", maxArgs: 0,
-		summary: "Create the initial pages in an empty repository",
-		detail: `Create README.md and global/index.md, as a single commit, in the repository
-given by repo in the config file or its selected profile. The repository
-itself must already exist; it may be on a Git host, on a server reached over
-SSH, or a local bare repository; a relative local path is resolved against
-the directory of the config file. Fails with exit code 1 if the branch already
-exists. The branch is the one shown by "wikictl context"; in an empty
-repository without branch in the config file, it is main.`,
-		run: (*app).cmdInit},
 	{name: "search", args: "<word>...", minArgs: 1, maxArgs: -1,
 		summary: "Find pages containing the given words",
 		detail: `Find pages that contain all of the words (fixed strings, ignoring case,
