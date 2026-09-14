@@ -259,10 +259,10 @@ func (a *app) cmdMv(c *command, args []string) error {
 		return slices.Contains(files, p) || (p != "." && len(under(p)) > 0) || slices.ContainsFunc(slices.Collect(maps.Values(mapping)),
 			func(np string) bool { return np == p || strings.HasPrefix(np, p+"/") || strings.HasPrefix(p, np+"/") })
 	}
-	// belowFile reports whether a directory above p is a file, or a path a file is moved to.
+	// belowFile reports whether a directory above p is a file.
 	belowFile := func(p string) bool {
 		for d := path.Dir(p); d != "."; d = path.Dir(d) {
-			if slices.Contains(files, d) || slices.Contains(slices.Collect(maps.Values(mapping)), d) {
+			if slices.Contains(files, d) {
 				return true
 			}
 		}
@@ -321,6 +321,9 @@ func (a *app) cmdMv(c *command, args []string) error {
 				fail(srcs[i], "no such file or directory")
 				continue
 			}
+			if !strings.Contains(src, "/") {
+				return &invalidError{"bad_path: " + src + ": a file at the wiki root cannot be moved"}
+			}
 			if strings.HasSuffix(srcs[i], "/") {
 				fail(srcs[i], "not a directory")
 				continue
@@ -328,9 +331,6 @@ func (a *app) cmdMv(c *command, args []string) error {
 			if !into && strings.HasSuffix(dst, "/") {
 				fail(dst, "not a directory")
 				continue
-			}
-			if !strings.Contains(src, "/") {
-				return &invalidError{"bad_path: " + src + ": a file at the wiki root cannot be moved"}
 			}
 			if strings.HasSuffix(target, ".md") {
 				for _, is := range page.PathIssues(target) {
