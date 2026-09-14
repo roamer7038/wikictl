@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"path"
 	"strings"
+	"unicode"
 
 	"github.com/roamer7038/wikictl/internal/page"
 	"github.com/roamer7038/wikictl/internal/repo"
@@ -34,10 +35,17 @@ type Store interface {
 // ErrOutside is the error of Clean for a path that leaves the wiki.
 var ErrOutside = errors.New("path is outside the wiki")
 
+// ErrControl is the error of Clean for a path that contains a control
+// character.
+var ErrControl = errors.New("path contains a control character")
+
 // Clean turns a path given on the command line into a path relative to the
 // wiki root. A leading "/" or "./" and a trailing "/" make no difference, and
 // the root itself is ".". Wildcards are not interpreted.
 func Clean(p string) (string, error) {
+	if strings.ContainsFunc(p, unicode.IsControl) {
+		return "", fmt.Errorf("%w: %q", ErrControl, p)
+	}
 	c := path.Clean(strings.TrimLeft(p, "/"))
 	if c == ".." || strings.HasPrefix(c, "../") {
 		return "", fmt.Errorf("%w: %s", ErrOutside, p)
