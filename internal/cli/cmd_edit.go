@@ -97,10 +97,12 @@ func (a *app) cmdEdit(c *command, args []string) error {
 	editor := cmp.Or(os.Getenv("VISUAL"), os.Getenv("EDITOR"), "vi")
 	run := exec.Command("sh", "-c", editor+` "$@"`, editor, tmp.Name())
 	run.Stdin, run.Stdout, run.Stderr = a.stdin, a.stdout, a.stderr
-	// As git does, interrupts are left to the editor while it runs.
-	signal.Ignore(os.Interrupt, syscall.SIGQUIT)
+	// As git does, interrupts are left to the editor while it runs: wikictl
+	// receives and drops them, and the editor still gets them.
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGQUIT)
 	err = run.Run()
-	signal.Reset(os.Interrupt, syscall.SIGQUIT)
+	signal.Stop(sig)
 	if err != nil {
 		return keep(fmt.Errorf("editor %s: %w", editor, err))
 	}
