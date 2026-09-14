@@ -325,7 +325,6 @@ func TestRmRejectsBadPath(t *testing.T) {
 	}
 	sha := strings.TrimSpace(string(out))
 	for _, p := range []string{
-		"README.md",
 		"global/index.md\n120000 " + sha + "\tglobal/link.md\n100644 " + sha + "\t.github/workflows/x.yml",
 		"global/index.md\x00",
 		"global/.hidden.md",

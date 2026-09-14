@@ -35,7 +35,7 @@ func (a *app) commit(changes []repo.Change, msg, rerun string) (*repo.Result, er
 }
 
 func putFlags(a *app, fs *pflag.FlagSet) {
-	fs.StringVar(&a.base, "base", "", "blob `sha` of the existing file as printed by stat; omit for a new file")
+	fs.StringVar(&a.base, "base", "", "blob `sha` of the file to replace, from stat")
 	msgFlag(a, fs)
 	fs.BoolVarP(&a.verbose, "verbose", "v", false, "print the path, blob sha and commit")
 }
@@ -97,6 +97,17 @@ func (a *app) cmdPut(c *command, args []string) error {
 	return nil
 }
 
+// commitMessage returns the default commit message "wikictl: <cmd> <args>",
+// which names only the first argument and the number of the others when the
+// arguments are long.
+func commitMessage(cmd string, args []string) string {
+	msg := "wikictl: " + cmd + " " + strings.Join(args, " ")
+	if len(msg) > 200 && len(args) > 1 {
+		msg = fmt.Sprintf("wikictl: %s %s and %d more", cmd, args[0], len(args)-1)
+	}
+	return msg
+}
+
 // warn prints a non-blocking issue on stderr.
 func (a *app) warn(is page.Issue) {
 	fmt.Fprintf(a.stderr, "wikictl: warning: %s:%d: %s: %s\n", is.Path, is.Line, is.Code, escapeControl(is.Message))
@@ -105,6 +116,13 @@ func (a *app) warn(is page.Issue) {
 // cmdRm deletes files, and with -r directories, in one commit. As rm does, a
 // path that cannot be deleted is reported and the others are still deleted.
 func (a *app) cmdRm(c *command, args []string) error {
+	for _, p := range args {
+		for _, x := range strings.Split(p, "/") {
+			if err := page.CheckName(x); err != nil {
+				return &invalidError{"bad_path: " + err.Error()}
+			}
+		}
+	}
 	files, err := a.repo.Files(args)
 	if err != nil {
 		return &gitError{err}
@@ -113,12 +131,7 @@ func (a *app) cmdRm(c *command, args []string) error {
 		return slices.DeleteFunc(slices.Clone(files), func(f string) bool { return !strings.HasPrefix(f, p+"/") })
 	}
 	for _, p := range args {
-		for _, x := range strings.Split(p, "/") {
-			if err := page.CheckName(x); err != nil {
-				return &invalidError{"bad_path: " + err.Error()}
-			}
-		}
-		if !strings.Contains(p, "/") && len(under(p)) == 0 {
+		if !strings.Contains(p, "/") && slices.Contains(files, p) {
 			return &invalidError{"bad_path: " + p + ": a file at the wiki root cannot be deleted"}
 		}
 	}
@@ -159,7 +172,7 @@ func (a *app) cmdRm(c *command, args []string) error {
 		}
 		msg := a.msg
 		if msg == "" {
-			msg = "wikictl: rm " + strings.Join(args, " ")
+			msg = commitMessage("rm", args)
 		}
 		res, err := a.commit(changes, msg, "rm")
 		if err != nil {
