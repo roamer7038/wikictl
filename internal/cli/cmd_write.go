@@ -116,7 +116,7 @@ func (a *app) cmdPut(c *command, args []string) int {
 
 // warn prints a non-blocking issue on stderr.
 func (a *app) warn(is page.Issue) {
-	fmt.Fprintf(a.stderr, "wikictl: warning: %s:%d: %s: %s\n", is.Path, is.Line, is.Code, is.Message)
+	fmt.Fprintf(a.stderr, "wikictl: warning: %s:%d: %s: %s\n", is.Path, is.Line, is.Code, escapeControl(is.Message))
 }
 
 func (a *app) cmdRm(c *command, args []string) int {

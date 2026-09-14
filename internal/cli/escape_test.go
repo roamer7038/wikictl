@@ -72,4 +72,19 @@ func TestTextOutputEscapesControl(t *testing.T) {
 	if !strings.Contains(out, "# t\x1b[31m") {
 		t.Errorf("get body must be unchanged: %q", out)
 	}
+
+	linkPage := "# t\n## Links\n- see_also: [x](missing\x1b[2K.md) | note\x07\n"
+	code, _, errs := runCLI(t, cfg, linkPage, "put", "global/linkctl.md")
+	if code != 0 {
+		t.Fatalf("put linkctl: %d %s", code, errs)
+	}
+	if strings.ContainsAny(errs, "\x1b\x07\r") || !strings.Contains(errs, `missing\x1b[2K.md`) {
+		t.Errorf("put warning: %q", errs)
+	}
+	_, out, _ = runCLI(t, cfg, "", "get", "global/linkctl.md")
+	if i := strings.Index(out, "\nlinks:"); i < 0 {
+		t.Errorf("get missing links: %q", out)
+	} else if links := out[i:]; strings.ContainsAny(links, "\x1b\x07") || !strings.Contains(links, `missing\x1b[2K.md`) || !strings.Contains(links, `note\x07`) {
+		t.Errorf("get links must escape target and note: %q", links)
+	}
 }
