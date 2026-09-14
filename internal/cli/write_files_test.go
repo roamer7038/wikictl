@@ -201,4 +201,23 @@ func TestWriteOverDirectoryOrFile(t *testing.T) {
 	if got := gitOut(t, "--git-dir", remote, "rev-parse", "main"); got != head {
 		t.Errorf("a rejected write moved the remote branch: %s -> %s", head, got)
 	}
+
+	// A submodule is neither replaced nor turned into a directory.
+	work := filepath.Join(filepath.Dir(cfg), "work")
+	mustRun(t, work, "git", "pull", "-q", "origin", "main")
+	mustRun(t, work, "git", "update-index", "--add", "--cacheinfo", "160000,"+head+",global/sub")
+	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "submodule")
+	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
+	head = gitOut(t, "--git-dir", remote, "rev-parse", "main")
+	for p, errs := range map[string]string{
+		"global/sub":       "wikictl: global/sub: is a submodule\n",
+		"global/sub/x.png": "wikictl: global/sub/x.png: global/sub is a file\n",
+	} {
+		if code, _, got := runCLI(t, cfg, "x", "put", p); code != ExitError || got != errs {
+			t.Errorf("put %s: code=%d errs=%q", p, code, got)
+		}
+	}
+	if got := gitOut(t, "--git-dir", remote, "rev-parse", "main"); got != head {
+		t.Errorf("a rejected write over a submodule moved the remote branch: %s -> %s", head, got)
+	}
 }
