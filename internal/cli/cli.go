@@ -215,8 +215,9 @@ commit. A path that is a directory without -r, or that does not exist, is
 reported on standard error, the other paths are still deleted, and the command
 exits with code 1; with -f a path that does not exist is ignored. A file at the
 root of the wiki, or a path that breaks the file name rules (see "help lint"),
-is rejected with exit code 4 and nothing is deleted. Pages that link to a
-deleted page are left unchanged; lint reports them as broken_link. If a file
+is rejected with exit code 4 and nothing is deleted. A file added under a
+directory after rm read it is not deleted. Pages that link to a deleted page
+are left unchanged; lint reports them as broken_link. If a file
 changed since rm read it, the command exits with code 3, deletes nothing and
 prints the current content and sha, as put does; run it again. With
 --no-fetch, a file that changed since the last fetch is reported as a

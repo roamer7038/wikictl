@@ -99,10 +99,10 @@ func TestGitFailure(t *testing.T) {
 		{"tree/head", gitFault{match: head}, "", []string{"tree"}, ExitGit},
 		{"rm/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"rm", "global/push.md"}, ExitGit},
 		{"mv/cat", gitFault{match: " cat-file --batch "}, "", []string{"mv", "global/push.md", "global/push2.md"}, ExitGit},
-		{"mv/destination directory", gitFault{match: " -- projects/app2 "}, "", []string{"mv", "projects/app/", "projects/app2/"}, ExitGit},
+		{"mv/files", gitFault{match: " ls-tree -r -z --name-only "}, "", []string{"mv", "projects/app", "projects/app2"}, ExitGit},
 		{"put/link targets", gitFault{match: " cat-file --batch-check "}, newPage, []string{"put", "global/new.md"}, ExitGit},
 		{"put/head", gitFault{match: head}, newPage, []string{"put", "global/new.md"}, ExitGit},
-		{"put/sha", gitFault{match: " ls-tree -r -z "}, newPage, []string{"put", "global/push.md"}, ExitGit},
+		{"put/sha", gitFault{match: " ls-tree -z "}, newPage, []string{"put", "global/push.md"}, ExitGit},
 		{"put/conflict content", gitFault{match: " cat-file -p "}, newPage, []string{"put", "global/push.md"}, ExitGit},
 		// push itself moves the tracking ref to the pushed commit, so a failed
 		// update-ref leaves nothing to report.

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"path"
 	"regexp"
 	"slices"
 	"strconv"
@@ -358,19 +359,28 @@ func (r *Repo) catFile(names []string, withContent bool) ([]catEntry, error) {
 }
 
 // Updated returns the last commit time of each of files, reading "git log -z
-// --name-only" limited to dirs from the newest commit and stopping once every
-// file has been seen. Renames are not followed.
-func (r *Repo) Updated(dirs, files []string) (map[string]time.Time, error) {
+// --name-only --full-history" from the newest commit and stopping once every
+// file has been seen. The log is limited to the directories of the files when
+// they are in a few directories; git log slows down with every path it is
+// given. Renames are not followed.
+func (r *Repo) Updated(files []string) (map[string]time.Time, error) {
 	res := map[string]time.Time{}
 	head, err := r.Head()
 	if err != nil || head == "" || len(files) == 0 {
 		return res, err
 	}
 	want := map[string]bool{}
+	var dirs []string
 	for _, f := range files {
 		want[f] = true
+		if d := path.Dir(f); !slices.Contains(dirs, d) {
+			dirs = append(dirs, d)
+		}
 	}
-	args := append([]string{"log", "-z", "--format=%x00%x01%cI", "--name-only", r.readRef()}, pathspec(dirs)...)
+	if len(dirs) > 8 || slices.Contains(dirs, ".") {
+		dirs = nil
+	}
+	args := append([]string{"log", "-z", "--format=%x00%x01%cI", "--name-only", "--full-history", r.readRef()}, pathspec(dirs)...)
 	c := r.command(nil, args)
 	var errb bytes.Buffer
 	c.Stderr = &errb

@@ -13,7 +13,7 @@ const (
 	ExitOK       = 0 // success
 	ExitError    = 1 // general error, such as a missing page
 	ExitUsage    = 2 // usage or configuration error
-	ExitConflict = 3 // the page already exists, or changed or was deleted since it was read
+	ExitConflict = 3 // the file already exists, or changed or was deleted since it was read
 	ExitInvalid  = 4 // the page violates the wiki format
 	ExitGit      = 5 // a git command failed
 )
@@ -164,7 +164,7 @@ func conflictMessage(cf *repo.Conflict, rerun string) string {
 	}
 	switch {
 	case cf.Reason == "exists":
-		return "the page already exists; pass its sha with --base to replace it, or choose another path"
+		return "the file already exists; pass its sha with --base to replace it, or choose another path"
 	case cf.SHA == "":
 		return "the page was deleted since it was read"
 	default:

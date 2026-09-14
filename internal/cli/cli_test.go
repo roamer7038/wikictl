@@ -325,7 +325,6 @@ func TestRmRejectsBadPath(t *testing.T) {
 	}
 	sha := strings.TrimSpace(string(out))
 	for _, p := range []string{
-		"README.md",
 		"global/index.md\n120000 " + sha + "\tglobal/link.md\n100644 " + sha + "\t.github/workflows/x.yml",
 		"global/index.md\x00",
 		"global/.hidden.md",
@@ -1313,5 +1312,23 @@ func TestGrepQuietAndErrors(t *testing.T) {
 		if code != c.code || out != "" || !strings.Contains(errs, c.errs) {
 			t.Errorf("%v: code=%d out=%q errs=%q", c.args, code, out, errs)
 		}
+	}
+}
+
+// TestPutOverDirectory checks that put refuses to replace a directory that has
+// the name of the page.
+func TestPutOverDirectory(t *testing.T) {
+	cfg := setup(t)
+	work := filepath.Join(filepath.Dir(cfg), "work")
+	os.MkdirAll(filepath.Join(work, "global", "x.md"), 0o755)
+	os.WriteFile(filepath.Join(work, "global", "x.md", "in.md"), []byte("---\nsummary: in\n---\n# in\n"), 0o644)
+	mustRun(t, work, "git", "add", "-A")
+	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "dir")
+	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
+	if code, _, errs := runCLI(t, cfg, "---\nsummary: x\n---\n# x\n", "put", "global/x.md"); code != ExitError || errs != "wikictl: global/x.md: is a directory\n" {
+		t.Errorf("put over a directory: code=%d errs=%q", code, errs)
+	}
+	if code, _, _ := runCLI(t, cfg, "", "cat", "global/x.md/in.md"); code != 0 {
+		t.Error("the directory was replaced")
 	}
 }

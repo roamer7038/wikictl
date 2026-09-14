@@ -70,15 +70,22 @@ func (r *Repo) Commit(changes []Change, msg string, au Author) (*Result, error) 
 		if err != nil {
 			return nil, err
 		}
-		shas, err := r.baseSHAs(head, changes)
+		ents, err := r.entries(head, changes)
 		if err != nil {
+			return nil, err
+		}
+		if err := checkReplace(changes, ents); err != nil {
 			return nil, err
 		}
 		for _, c := range changes {
 			if c.Base == nil {
 				continue
 			}
-			if cur := shas[c.Path]; *c.Base == "" && cur != "" {
+			cur := ""
+			if e := ents[c.Path]; e.typ == "blob" {
+				cur = e.sha
+			}
+			if *c.Base == "" && cur != "" {
 				return nil, r.conflict(c.Path, "exists", cur)
 			} else if *c.Base != "" && cur != *c.Base {
 				return nil, r.conflict(c.Path, "changed", cur)
@@ -97,21 +104,36 @@ func (r *Repo) Commit(changes []Change, msg string, au Author) (*Result, error) 
 	return nil, last
 }
 
-// baseSHAs returns the blob sha at commit head of each file in the
-// directories of the changes that have a Base, from one "ls-tree -r". A path
-// that is absent or not a blob has no entry. ls-tree fails when a tree on the
-// way cannot be read.
-func (r *Repo) baseSHAs(head string, changes []Change) (map[string]string, error) {
-	res := map[string]string{}
-	args := []string{"ls-tree", "-r", "-z", head, "--"}
-	dirs := map[string]bool{}
-	for _, c := range changes {
-		if d := path.Dir(c.Path); c.Base != nil && !dirs[d] {
-			dirs[d] = true
-			args = append(args, d)
+// PathError is a change that would replace a directory with a file, or write
+// a file below a path that is a file.
+type PathError struct{ Path, Reason string }
+
+func (e *PathError) Error() string { return e.Path + ": " + e.Reason }
+
+type treeEntry struct{ typ, sha string }
+
+// entries returns the entry at commit head of the path of every change and of
+// every directory above a written path, from one "ls-tree". An absent path
+// has no entry. ls-tree fails when a tree on the way to a path cannot be read.
+func (r *Repo) entries(head string, changes []Change) (map[string]treeEntry, error) {
+	res := map[string]treeEntry{}
+	args := []string{"ls-tree", "-z", head, "--"}
+	seen := map[string]bool{}
+	add := func(p string) {
+		if !seen[p] {
+			seen[p] = true
+			args = append(args, p)
 		}
 	}
-	if head == "" || len(dirs) == 0 {
+	for _, c := range changes {
+		add(c.Path)
+		if !c.Delete {
+			for d := path.Dir(c.Path); d != "."; d = path.Dir(d) {
+				add(d)
+			}
+		}
+	}
+	if head == "" || len(seen) == 0 {
 		return res, nil
 	}
 	out, err := r.Git(args...)
@@ -120,11 +142,34 @@ func (r *Repo) baseSHAs(head string, changes []Change) (map[string]string, error
 	}
 	for entry := range strings.SplitSeq(out, "\x00") {
 		meta, p, ok := strings.Cut(entry, "\t")
-		if f := strings.Fields(meta); ok && len(f) == 3 && f[1] == "blob" {
-			res[p] = f[2]
+		if f := strings.Fields(meta); ok && len(f) == 3 {
+			res[p] = treeEntry{f[1], f[2]}
 		}
 	}
 	return res, nil
+}
+
+// checkReplace returns a PathError for a written path that is a directory, or
+// that is below a file the changes do not delete.
+func checkReplace(changes []Change, ents map[string]treeEntry) error {
+	deleted := map[string]bool{}
+	for _, c := range changes {
+		deleted[c.Path] = deleted[c.Path] || c.Delete
+	}
+	for _, c := range changes {
+		if c.Delete {
+			continue
+		}
+		if ents[c.Path].typ == "tree" {
+			return &PathError{c.Path, "is a directory"}
+		}
+		for d := path.Dir(c.Path); d != "."; d = path.Dir(d) {
+			if ents[d].typ == "blob" && !deleted[d] {
+				return &PathError{c.Path, d + " is a file"}
+			}
+		}
+	}
+	return nil
 }
 
 // retryWait returns a random duration in [0, 2^(attempt+3)*d), where d is

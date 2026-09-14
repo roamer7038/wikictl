@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -28,8 +30,23 @@ func TestPutFiles(t *testing.T) {
 
 func TestRm(t *testing.T) {
 	cfg := setup(t)
+	work := filepath.Join(filepath.Dir(cfg), "work")
+	os.WriteFile(filepath.Join(work, "README.md"), []byte("# wiki\n"), 0o644)
+	mustRun(t, work, "git", "add", "-A")
+	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "readme")
+	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
 	if code, _, errs := runCLI(t, cfg, "x", "put", "global/img/logo.png"); code != 0 {
 		t.Fatalf("put: %s", errs)
+	}
+	// A file at the root is rejected; a name at the root that does not exist is only missing.
+	if code, _, errs := runCLI(t, cfg, "", "rm", "README.md"); code != ExitInvalid || !strings.Contains(errs, "bad_path") {
+		t.Errorf("rm of a root file: code=%d errs=%q", code, errs)
+	}
+	if code, _, errs := runCLI(t, cfg, "", "rm", "projcts"); code != ExitError || errs != "wikictl: projcts: no such file or directory\n" {
+		t.Errorf("rm of a missing root name: code=%d errs=%q", code, errs)
+	}
+	if code, _, errs := runCLI(t, cfg, "", "rm", "-rf", "projcts"); code != 0 || errs != "" {
+		t.Errorf("rm -rf of a missing root name: code=%d errs=%q", code, errs)
 	}
 	// A directory without -r and a missing path are reported; the other paths are deleted.
 	code, out, errs := runCLI(t, cfg, "", "rm", "global", "projects/app/x.md", "global/none.md")
@@ -55,7 +72,7 @@ func TestRm(t *testing.T) {
 	if got := lastCommitMessage(t, cfg); got != "wikictl: rm global global/push.md none/x.md" {
 		t.Errorf("commit message: %q", got)
 	}
-	if _, out, _ := runCLI(t, cfg, "", "ls"); out != "machines/\n" {
+	if _, out, _ := runCLI(t, cfg, "", "ls"); out != "README.md\nmachines/\n" {
 		t.Errorf("ls after rm -r: %q", out)
 	}
 
@@ -129,5 +146,41 @@ func TestMvArguments(t *testing.T) {
 		if code, _, errs := runCLI(t, cfg, "", c.args...); code != c.code || !strings.Contains(errs, c.errs) {
 			t.Errorf("%v: code=%d errs=%q", c.args, code, errs)
 		}
+	}
+}
+
+func TestCommitMessage(t *testing.T) {
+	if got := commitMessage("rm", []string{"global/a.md", "global/b"}); got != "wikictl: rm global/a.md global/b" {
+		t.Errorf("short: %q", got)
+	}
+	long := make([]string, 30)
+	for i := range long {
+		long[i] = "global/some-long-page-name.md"
+	}
+	if got := commitMessage("rm", long); got != "wikictl: rm global/some-long-page-name.md and 29 more" {
+		t.Errorf("long: %q", got)
+	}
+}
+
+// TestWriteOverDirectoryOrFile checks that a write never replaces a directory
+// with a file or puts a file below a path that is a file.
+func TestWriteOverDirectoryOrFile(t *testing.T) {
+	cfg := setup(t)
+	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
+	head := gitOut(t, "--git-dir", remote, "rev-parse", "main")
+	for _, c := range []struct {
+		args []string
+		errs string
+	}{
+		{[]string{"put", "projects/app"}, "wikictl: projects/app: is a directory\n"},
+		{[]string{"put", "global/push.md/child.png"}, "wikictl: global/push.md/child.png: global/push.md is a file\n"},
+		{[]string{"mv", "global/index.md", "global/push.md/index.md"}, "wikictl: global/push.md/index.md: global/push.md is a file\n"},
+	} {
+		if code, _, errs := runCLI(t, cfg, "x", c.args...); code != ExitError || !strings.HasSuffix(errs, c.errs) {
+			t.Errorf("%v: code=%d errs=%q", c.args, code, errs)
+		}
+	}
+	if got := gitOut(t, "--git-dir", remote, "rev-parse", "main"); got != head {
+		t.Errorf("a rejected write moved the remote branch: %s -> %s", head, got)
 	}
 }
