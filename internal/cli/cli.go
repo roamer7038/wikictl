@@ -150,9 +150,10 @@ missing summary, Links lines that do not parse, links to files missing from
 the wiki and names outside the recommended form only produce warnings on
 standard error; "description" in the frontmatter is read as a synonym of
 "summary", and "summary" wins when it is not blank. When the content equals
-the current file, no commit is created and commit is the current commit. The
-default commit message is "wikictl: put <path>". Nothing is printed on success
-unless -v is given.
+the current file, no commit is created and commit is the current commit. A
+path that is a directory or that is below a file is rejected with exit code 1.
+The default commit message is "wikictl: put <path>". Nothing is printed on
+success unless -v is given.
 
 Warnings are printed as "wikictl: warning: <path>:<line>: <code>: <message>";
 control characters other than tab in the message are shown as \xNN.
