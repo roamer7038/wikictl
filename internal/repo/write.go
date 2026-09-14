@@ -8,7 +8,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -114,58 +113,54 @@ func (e *PathError) Error() string { return e.Path + ": " + e.Reason }
 type treeEntry struct{ typ, sha string }
 
 // entries returns the type and object sha at commit head of the path of every
-// change and of every directory above a written path, from one "cat-file
-// --batch-check". An absent path has no entry. cat-file also reports a path
-// below a tree that cannot be read as missing, so the directories of the
-// missing paths are listed once with ls-tree, which fails on such a tree.
+// change and of every directory above a written path, from one "ls-tree" of
+// the directories that hold them; ls-tree reads no blob, and fails when a
+// tree it lists cannot be read. An absent path has no entry. A directory that
+// ls-tree descends into instead of listing is known as a tree by the entries
+// below it.
 func (r *Repo) entries(head string, changes []Change) (map[string]treeEntry, error) {
 	res := map[string]treeEntry{}
-	var paths []string
+	if head == "" || len(changes) == 0 {
+		return res, nil
+	}
+	args := []string{"ls-tree", "-z", head, "--"}
 	seen := map[string]bool{}
-	add := func(p string) {
-		if !seen[p] {
-			seen[p] = true
-			paths = append(paths, p)
+	// list adds the directory that holds p; with the trailing slash ls-tree
+	// lists the entries of the directory.
+	list := func(p string) {
+		d := path.Dir(p)
+		if d != "." {
+			d += "/"
+		}
+		if !seen[d] {
+			seen[d] = true
+			args = append(args, d)
 		}
 	}
 	for _, c := range changes {
 		if strings.ContainsAny(c.Path, "\n\x00") {
 			return nil, fmt.Errorf("path %q contains a newline or NUL", c.Path)
 		}
-		add(c.Path)
+		list(c.Path)
 		if !c.Delete {
 			for d := path.Dir(c.Path); d != "."; d = path.Dir(d) {
-				add(d)
+				list(d)
 			}
 		}
 	}
-	if head == "" || len(paths) == 0 {
-		return res, nil
-	}
-	var in bytes.Buffer
-	for _, p := range paths {
-		fmt.Fprintf(&in, "%s:%s\n", head, p)
-	}
-	out, err := r.GitIn(in.Bytes(), "cat-file", "--batch-check")
+	out, err := r.Git(args...)
 	if err != nil {
 		return nil, err
 	}
-	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
-	if len(lines) != len(paths) {
-		return nil, fmt.Errorf("cat-file --batch-check printed %d lines for %d paths", len(lines), len(paths))
-	}
-	dirs := []string{"--"}
-	for i, l := range lines {
-		if f := strings.Fields(l); len(f) == 3 && f[2] != "missing" {
-			res[paths[i]] = treeEntry{f[1], f[0]}
-		} else if d := path.Dir(paths[i]) + "/"; !slices.Contains(dirs, d) {
-			// With the trailing slash ls-tree lists the directory, and so reads its tree.
-			dirs = append(dirs, d)
+	for entry := range strings.SplitSeq(out, "\x00") {
+		meta, p, ok := strings.Cut(entry, "\t")
+		f := strings.Fields(meta)
+		if !ok || len(f) != 3 {
+			continue
 		}
-	}
-	if len(dirs) > 1 {
-		if _, err := r.Git(append([]string{"ls-tree", head}, dirs...)...); err != nil {
-			return nil, err
+		res[p] = treeEntry{f[1], f[2]}
+		for d := path.Dir(p); d != "." && res[d].typ == ""; d = path.Dir(d) {
+			res[d] = treeEntry{typ: "tree"}
 		}
 	}
 	return res, nil

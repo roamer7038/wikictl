@@ -102,7 +102,7 @@ func TestGitFailure(t *testing.T) {
 		{"mv/destination directory", gitFault{match: " -- projects/app2 "}, "", []string{"mv", "projects/app/", "projects/app2/"}, ExitGit},
 		{"put/link targets", gitFault{match: " cat-file --batch-check "}, newPage, []string{"put", "global/new.md"}, ExitGit},
 		{"put/head", gitFault{match: head}, newPage, []string{"put", "global/new.md"}, ExitGit},
-		{"put/sha", gitFault{match: " cat-file --batch-check ", skip: 1}, newPage, []string{"put", "global/push.md"}, ExitGit},
+		{"put/sha", gitFault{match: " ls-tree -z "}, newPage, []string{"put", "global/push.md"}, ExitGit},
 		{"put/conflict content", gitFault{match: " cat-file -p "}, newPage, []string{"put", "global/push.md"}, ExitGit},
 		// push itself moves the tracking ref to the pushed commit, so a failed
 		// update-ref leaves nothing to report.
@@ -200,6 +200,7 @@ func TestUnreadableObject(t *testing.T) {
 		{"mv/destination blob", "global/push.md", "", "", []string{"mv", "global/index.md", "global/push.md"}},
 		{"put/base with tree", "global", "", newPage, []string{"put", "--base", "BASE", "global/push.md"}},
 		{"put/existence with tree", "global", "", newPage, []string{"put", "global/push.md"}},
+		{"put/existence with blob", "global/push.md", "", newPage, []string{"put", "global/push.md"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
