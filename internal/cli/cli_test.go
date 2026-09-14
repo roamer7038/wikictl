@@ -125,6 +125,12 @@ func TestReadCommands(t *testing.T) {
 	if _, out, _ = runCLI(t, cfg, "", "ls", "global", "projects/app/x.md"); out != "projects/app/x.md\n\nglobal:\nindex.md\npush.md\n" {
 		t.Errorf("ls of a file and a directory: %q", out)
 	}
+	if _, out, _ = runCLI(t, cfg, "", "ls", "projects", "global"); out != "global:\nindex.md\npush.md\n\nprojects:\napp/\n" {
+		t.Errorf("ls must sort its arguments: %q", out)
+	}
+	if code, out, _ = runCLI(t, cfg, "", "ls", "none", "projects"); code != 1 || out != "projects:\napp/\n" {
+		t.Errorf("ls with a missing path must keep the heading: code=%d %q", code, out)
+	}
 	if _, out, _ = runCLI(t, cfg, "", "ls", "-R", "machines"); out != "machines:\nh1/\n\nmachines/h1:\n" {
 		t.Errorf("ls -R must hide the deprecated page: %q", out)
 	}

@@ -52,9 +52,13 @@ func TestTextOutputEscapesControl(t *testing.T) {
 	}
 
 	runCLI(t, cfg, "# only title\x1b[2K\n", "put", "global/notitle.md")
+	runCLI(t, cfg, "---\ntype: \"\\e[2J\"\n---\n# typ\n", "put", "global/typ.md")
 	_, out, _ := runCLI(t, cfg, "", "ls", "-l", "global")
 	if !strings.Contains(out, "notitle.md  only title\\x1b[2K\n") {
 		t.Errorf("ls title: %q", out)
+	}
+	if strings.Contains(out, "\x1b") || !strings.Contains(out, `\x1b[2J`) {
+		t.Errorf("ls -l must escape the type: %q", out)
 	}
 
 	_, out, _ = runCLI(t, cfg, "", "lint", "global/ctl.md")

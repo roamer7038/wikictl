@@ -119,6 +119,8 @@ func (a *app) cmdLs(c *command, args []string) error {
 			missing = append(missing, p)
 		}
 	}
+	sort.Strings(files)
+	sort.Strings(dirs)
 	var sections []lsSection
 	if len(files) > 0 {
 		s := lsSection{}
@@ -157,7 +159,7 @@ func (a *app) cmdLs(c *command, args []string) error {
 		items = append(items, s.items...)
 	}
 	a.emit(map[string]any{"items": items}, func(w io.Writer) {
-		headings := len(files)+len(dirs) > 1 || a.recursive
+		headings := len(args) > 1 || a.recursive
 		for i, s := range sections {
 			if i > 0 {
 				fmt.Fprintln(w)
@@ -174,7 +176,7 @@ func (a *app) cmdLs(c *command, args []string) error {
 				if it.Kind == "dir" {
 					name += "/"
 				}
-				rows = append(rows, [4]string{orDash(it.Type), orDash(it.Updated), escapeControl(name), escapeControl(summaryOrTitle(it.Summary, it.Title))})
+				rows = append(rows, [4]string{orDash(escapeControl(it.Type)), orDash(it.Updated), escapeControl(name), escapeControl(summaryOrTitle(it.Summary, it.Title))})
 			}
 			writeLs(w, rows, a.long)
 		}
