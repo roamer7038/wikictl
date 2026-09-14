@@ -177,11 +177,13 @@ otherwise move every source into the destination directory, keeping its name.
 -T renames even when the destination is a directory, and -t moves every
 argument into the directory given. Files that are not pages move with their
 directory. A destination that exists is never replaced: it is reported on
-standard error as "not replacing", as is a source that does not exist, the
-other sources are still moved, and the command exits with code 1. A file at
-the root of the wiki, the root itself, or a destination that breaks the
-file name rules (see "help lint") is rejected with exit code 4, and nothing is
-moved. The default commit message is "wikictl: mv <src>... <dst>". Nothing is
+standard error as "not replacing". A source that does not exist, a
+destination below a file or ending with "/" that is not a directory ("not a
+directory"), and a directory moved into itself are reported too; the other
+sources are still moved, and the command exits with code 1. A file at the root
+of the wiki, the root itself, or a destination that breaks the file name rules
+(see "help lint") is rejected with exit code 4, and nothing is moved. The
+default commit message is "wikictl: mv <src>... <dst>". Nothing is
 printed on success unless -v is given.
 
 Links to a moved page from other pages, and relative links inside a moved page

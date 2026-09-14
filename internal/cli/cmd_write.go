@@ -199,7 +199,7 @@ func (a *app) cmdRm(c *command, args []string) error {
 }
 
 func mvFlags(a *app, fs *pflag.FlagSet) {
-	fs.BoolVarP(&a.noTargetDir, "no-target-directory", "T", false, "rename the source to the destination even when the destination is a directory")
+	fs.BoolVarP(&a.noTargetDir, "no-target-directory", "T", false, "treat the destination as the new name, not as a directory")
 	fs.StringVarP(&a.targetDir, "target-directory", "t", "", "move every source into `dir`")
 	msgFlag(a, fs)
 	fs.BoolVarP(&a.verbose, "verbose", "v", false, "print each moved file and the commit")
@@ -250,11 +250,23 @@ func (a *app) cmdMv(c *command, args []string) error {
 	if !into && len(srcs) > 1 {
 		return fmt.Errorf("%s: not a directory", to)
 	}
+	if !into && to == "." {
+		return &invalidError{"bad_path: the root of the wiki cannot be replaced"}
+	}
 	mapping := map[string]string{}
 	// taken reports whether p exists, or is or contains a path already moved to.
 	taken := func(p string) bool {
 		return slices.Contains(files, p) || (p != "." && len(under(p)) > 0) || slices.ContainsFunc(slices.Collect(maps.Values(mapping)),
 			func(np string) bool { return np == p || strings.HasPrefix(np, p+"/") || strings.HasPrefix(p, np+"/") })
+	}
+	// belowFile reports whether a directory above p is a file, or a path a file is moved to.
+	belowFile := func(p string) bool {
+		for d := path.Dir(p); d != "."; d = path.Dir(d) {
+			if slices.Contains(files, d) || slices.Contains(slices.Collect(maps.Values(mapping)), d) {
+				return true
+			}
+		}
+		return false
 	}
 	failed := false
 	fail := func(p, msg string) {
@@ -271,6 +283,12 @@ func (a *app) cmdMv(c *command, args []string) error {
 		case src == ".":
 			return &invalidError{"bad_path: the root of the wiki cannot be moved"}
 		case len(sub) > 0:
+			// Files moved by an earlier source are not moved again.
+			sub = slices.DeleteFunc(sub, func(f string) bool { _, moved := mapping[f]; return moved })
+			if len(sub) == 0 {
+				fail(srcs[i], "no such file or directory")
+				continue
+			}
 			if target == src || strings.HasPrefix(target, src+"/") {
 				fail(srcs[i], "cannot move a directory into itself")
 				continue
@@ -282,6 +300,10 @@ func (a *app) cmdMv(c *command, args []string) error {
 				if !page.Recommended(seg) {
 					a.warn(page.Issue{Path: target + "/", Code: "name_style", Message: fmt.Sprintf("name %q: lowercase ASCII letters, digits and hyphens are recommended", seg)})
 				}
+			}
+			if belowFile(target) {
+				fail(target, "not a directory")
+				continue
 			}
 			if taken(target) {
 				fail(target, "not replacing")
@@ -295,8 +317,16 @@ func (a *app) cmdMv(c *command, args []string) error {
 				mapping[f] = np
 			}
 		case slices.Contains(files, src):
+			if _, moved := mapping[src]; moved {
+				fail(srcs[i], "no such file or directory")
+				continue
+			}
 			if strings.HasSuffix(srcs[i], "/") {
 				fail(srcs[i], "not a directory")
+				continue
+			}
+			if !into && strings.HasSuffix(dst, "/") {
+				fail(dst, "not a directory")
 				continue
 			}
 			if !strings.Contains(src, "/") {
@@ -311,6 +341,10 @@ func (a *app) cmdMv(c *command, args []string) error {
 				}
 			} else if err := page.CheckFilePath(target); err != nil {
 				return &invalidError{"bad_path: " + err.Error()}
+			}
+			if belowFile(target) {
+				fail(target, "not a directory")
+				continue
 			}
 			if taken(target) {
 				fail(target, "not replacing")

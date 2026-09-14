@@ -138,6 +138,9 @@ func TestMvArguments(t *testing.T) {
 	}{
 		{[]string{"mv", "global/index.md", "global/push.md", "global/new.md"}, ExitError, "global/new.md: not a directory"},
 		{[]string{"mv", "global", "global/sub"}, ExitError, "global: cannot move a directory into itself"},
+		{[]string{"mv", "global/push.md", "global/new/"}, ExitError, "global/new/: not a directory"},
+		{[]string{"mv", "global/push.md", "global/index.md/x.md"}, ExitError, "global/index.md/x.md: not a directory"},
+		{[]string{"mv", "-T", "global", "."}, ExitInvalid, "the root of the wiki cannot be replaced"},
 		{[]string{"mv", "global/index.md", "index.md"}, ExitInvalid, "bad_path"},
 		{[]string{"mv", "global/index.md"}, ExitUsage, "missing destination"},
 		{[]string{"mv", "-t", "global", "-T", "projects/x.md"}, ExitUsage, "-t and -T cannot be combined"},
@@ -146,6 +149,15 @@ func TestMvArguments(t *testing.T) {
 		if code, _, errs := runCLI(t, cfg, "", c.args...); code != c.code || !strings.Contains(errs, c.errs) {
 			t.Errorf("%v: code=%d errs=%q", c.args, code, errs)
 		}
+	}
+
+	// A source already moved with an earlier source is reported as missing.
+	code, _, errs = runCLI(t, cfg, "", "mv", "global", "global/push.md", "machines")
+	if code != ExitError || errs != "wikictl: global/push.md: no such file or directory\n" {
+		t.Errorf("mv of overlapping sources: code=%d errs=%q", code, errs)
+	}
+	if code, _, _ := runCLI(t, cfg, "", "stat", "machines/global/push.md", "machines/global/index.md"); code != 0 {
+		t.Error("the directory was not moved with all its files")
 	}
 }
 
@@ -177,10 +189,10 @@ func TestWriteOverDirectoryOrFile(t *testing.T) {
 		args []string
 		errs string
 	}{
-		{[]string{"mv", "global/d.md/z.md", "global/d.md"}, "wikictl: global/d.md: is a directory\n"},
+		{[]string{"mv", "global/d.md/z.md", "global/d.md"}, "wikictl: global/d.md/z.md: not replacing\n"},
 		{[]string{"put", "projects/app"}, "wikictl: projects/app: is a directory\n"},
 		{[]string{"put", "global/push.md/child.png"}, "wikictl: global/push.md/child.png: global/push.md is a file\n"},
-		{[]string{"mv", "global/index.md", "global/push.md/index.md"}, "wikictl: global/push.md/index.md: global/push.md is a file\n"},
+		{[]string{"mv", "global/index.md", "global/push.md/index.md"}, "wikictl: global/push.md/index.md: not a directory\n"},
 	} {
 		if code, _, errs := runCLI(t, cfg, "x", c.args...); code != ExitError || !strings.HasSuffix(errs, c.errs) {
 			t.Errorf("%v: code=%d errs=%q", c.args, code, errs)
