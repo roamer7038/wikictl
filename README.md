@@ -338,7 +338,7 @@ With `--json`:
 | 2 | usage or configuration error |
 | 3 | conflict: the page already exists, or changed or was deleted since it was read |
 | 4 | the page violates the wiki format: `put` rejects invalid frontmatter, a page over the size limits or a bad path, `mv` a bad source or destination path, and `rm` a bad path; `lint` exits with 4 on any finding |
-| 5 | a git command failed |
+| 5 | a git command failed. This includes reads: when git fails while `search`, `get`, `ls`, `lint`, `dirs` or `context` reads the wiki, or while `init`, `put`, `mv` or `rm` reads it before writing, the command exits with 5 and prints no partial result. A page that exists but cannot be read from the mirror exits with 5, not with `page not found` |
 
 ### Lint codes
 
