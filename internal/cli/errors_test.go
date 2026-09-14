@@ -50,7 +50,7 @@ func TestReport(t *testing.T) {
 		{"wrapped git", fmt.Errorf("wrap: %w", &gitError{errors.New("x")}), ExitGit, "", "wikictl: wrap: x\n",
 			`{"error":"git","message":"wrap: x"}` + "\n"},
 		{"conflict", &conflictError{cf, "mv"}, ExitConflict, "# a\n", "wikictl: conflict (changed): global/a.md sha=abc\n",
-			`{"error":"conflict","reason":"changed","path":"global/a.md","sha":"abc","content":"# a\n","message":"the page changed since it was read; re-read the wiki and run mv again"}` + "\n"},
+			`{"error":"conflict","reason":"changed","path":"global/a.md","sha":"abc","content":"# a\n","message":"the file changed since it was read; re-read the wiki and run mv again"}` + "\n"},
 	}
 	for _, c := range cases {
 		for _, js := range []bool{false, true} {

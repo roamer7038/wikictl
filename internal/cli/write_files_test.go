@@ -167,11 +167,17 @@ func TestCommitMessage(t *testing.T) {
 func TestWriteOverDirectoryOrFile(t *testing.T) {
 	cfg := setup(t)
 	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
+	for _, p := range []string{"global/d.md/z.md", "global/d.md/w.md"} {
+		if code, _, errs := runCLI(t, cfg, "---\nsummary: d\n---\n# d\n", "put", p); code != 0 {
+			t.Fatalf("put %s: %s", p, errs)
+		}
+	}
 	head := gitOut(t, "--git-dir", remote, "rev-parse", "main")
 	for _, c := range []struct {
 		args []string
 		errs string
 	}{
+		{[]string{"mv", "global/d.md/z.md", "global/d.md"}, "wikictl: global/d.md: is a directory\n"},
 		{[]string{"put", "projects/app"}, "wikictl: projects/app: is a directory\n"},
 		{[]string{"put", "global/push.md/child.png"}, "wikictl: global/push.md/child.png: global/push.md is a file\n"},
 		{[]string{"mv", "global/index.md", "global/push.md/index.md"}, "wikictl: global/push.md/index.md: global/push.md is a file\n"},

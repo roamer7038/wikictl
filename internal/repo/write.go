@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -112,20 +113,25 @@ func (e *PathError) Error() string { return e.Path + ": " + e.Reason }
 
 type treeEntry struct{ typ, sha string }
 
-// entries returns the entry at commit head of the path of every change and of
-// every directory above a written path, from one "ls-tree". An absent path
-// has no entry. ls-tree fails when a tree on the way to a path cannot be read.
+// entries returns the type and object sha at commit head of the path of every
+// change and of every directory above a written path, from one "cat-file
+// --batch-check". An absent path has no entry. cat-file also reports a path
+// below a tree that cannot be read as missing, so the directories of the
+// missing paths are listed once with ls-tree, which fails on such a tree.
 func (r *Repo) entries(head string, changes []Change) (map[string]treeEntry, error) {
 	res := map[string]treeEntry{}
-	args := []string{"ls-tree", "-z", head, "--"}
+	var paths []string
 	seen := map[string]bool{}
 	add := func(p string) {
 		if !seen[p] {
 			seen[p] = true
-			args = append(args, p)
+			paths = append(paths, p)
 		}
 	}
 	for _, c := range changes {
+		if strings.ContainsAny(c.Path, "\n\x00") {
+			return nil, fmt.Errorf("path %q contains a newline or NUL", c.Path)
+		}
 		add(c.Path)
 		if !c.Delete {
 			for d := path.Dir(c.Path); d != "."; d = path.Dir(d) {
@@ -133,24 +139,40 @@ func (r *Repo) entries(head string, changes []Change) (map[string]treeEntry, err
 			}
 		}
 	}
-	if head == "" || len(seen) == 0 {
+	if head == "" || len(paths) == 0 {
 		return res, nil
 	}
-	out, err := r.Git(args...)
+	var in bytes.Buffer
+	for _, p := range paths {
+		fmt.Fprintf(&in, "%s:%s\n", head, p)
+	}
+	out, err := r.GitIn(in.Bytes(), "cat-file", "--batch-check")
 	if err != nil {
 		return nil, err
 	}
-	for entry := range strings.SplitSeq(out, "\x00") {
-		meta, p, ok := strings.Cut(entry, "\t")
-		if f := strings.Fields(meta); ok && len(f) == 3 {
-			res[p] = treeEntry{f[1], f[2]}
+	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+	if len(lines) != len(paths) {
+		return nil, fmt.Errorf("cat-file --batch-check printed %d lines for %d paths", len(lines), len(paths))
+	}
+	dirs := []string{"--"}
+	for i, l := range lines {
+		if f := strings.Fields(l); len(f) == 3 && f[2] != "missing" {
+			res[paths[i]] = treeEntry{f[1], f[0]}
+		} else if d := path.Dir(paths[i]) + "/"; !slices.Contains(dirs, d) {
+			// With the trailing slash ls-tree lists the directory, and so reads its tree.
+			dirs = append(dirs, d)
+		}
+	}
+	if len(dirs) > 1 {
+		if _, err := r.Git(append([]string{"ls-tree", head}, dirs...)...); err != nil {
+			return nil, err
 		}
 	}
 	return res, nil
 }
 
-// checkReplace returns a PathError for a written path that is a directory, or
-// that is below a file the changes do not delete.
+// checkReplace returns a PathError for a written path that is a directory or
+// a submodule, or that is below a file the changes do not delete.
 func checkReplace(changes []Change, ents map[string]treeEntry) error {
 	deleted := map[string]bool{}
 	for _, c := range changes {
@@ -160,11 +182,14 @@ func checkReplace(changes []Change, ents map[string]treeEntry) error {
 		if c.Delete {
 			continue
 		}
-		if ents[c.Path].typ == "tree" {
+		switch ents[c.Path].typ {
+		case "tree":
 			return &PathError{c.Path, "is a directory"}
+		case "commit":
+			return &PathError{c.Path, "is a submodule"}
 		}
 		for d := path.Dir(c.Path); d != "."; d = path.Dir(d) {
-			if ents[d].typ == "blob" && !deleted[d] {
+			if t := ents[d].typ; t != "" && t != "tree" && !deleted[d] {
 				return &PathError{c.Path, d + " is a file"}
 			}
 		}
