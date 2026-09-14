@@ -53,6 +53,10 @@ Or build from source with Go:
 
 Binaries for Linux and macOS (x86_64 and arm64) and their checksums are on the [releases page](https://github.com/roamer7038/wikictl/releases).
 
+Releases newer than v0.2.0 attach a build provenance attestation to each binary and to `checksums.txt`. The checksum only detects a corrupted download, because `checksums.txt` comes from the same release as the binary. To check that a downloaded file was built by this repository's release workflow, run the [GitHub CLI](https://cli.github.com/):
+
+    gh attestation verify wikictl_linux_x86_64 -R roamer7038/wikictl
+
 ## Quick start
 
 1. Create an empty repository on your Git host or with `git init --bare -b main` (see [Where the wiki repository can live](#where-the-wiki-repository-can-live)), and make sure `git push` to it works without prompting.
@@ -367,7 +371,7 @@ Mirrors created by wikictl 0.2.x and earlier are named after the whole `repo` va
     go test ./...
     go build -o wikictl ./cmd/wikictl
 
-On pushes to `main` and on pull requests, GitHub Actions runs `gofmt -l`, `go vet` and `go test -race` on Linux, `go test -race` on macOS, `staticcheck` together with a check that `go mod tidy` leaves `go.mod` and `go.sum` unchanged, `govulncheck`, and `shellcheck` on `install.sh`. Pushing a tag that starts with `v` builds the binaries and `checksums.txt` with GoReleaser and publishes them as a release.
+On pushes to `main` and on pull requests, GitHub Actions runs `gofmt -l`, `go vet` and `go test -race` on Linux, `go test -race` on macOS, `staticcheck` together with a check that `go mod tidy` leaves `go.mod` and `go.sum` unchanged, `govulncheck`, and `shellcheck` on `install.sh`. Pushing a tag that starts with `v` builds the binaries and `checksums.txt` with GoReleaser, publishes them as a release and attaches build provenance attestations to them.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the branch, pull request and release rules.
 

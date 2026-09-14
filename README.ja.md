@@ -53,6 +53,10 @@ Go でソースからビルドすることもできます。
 
 Linux と macOS（x86_64、arm64）のバイナリとチェックサムは [Releases ページ](https://github.com/roamer7038/wikictl/releases) にあります。
 
+v0.2.0 より後のリリースでは、各バイナリと `checksums.txt` にビルドの出所証明（attestation）を付けています。`checksums.txt` はバイナリと同じリリースから取得するため、チェックサムで検出できるのはダウンロードの破損だけです。ダウンロードしたファイルがこのリポジトリのリリースワークフローでビルドされたことは、[GitHub CLI](https://cli.github.com/) で確認できます。
+
+    gh attestation verify wikictl_linux_x86_64 -R roamer7038/wikictl
+
 ## クイックスタート
 
 1. Git ホスト上か `git init --bare -b main` で空のリポジトリを作成し（[wiki リポジトリの置き場所](#wiki-リポジトリの置き場所)を参照）、対話なしで `git push` できることを確認します。
@@ -367,7 +371,7 @@ wikictl 0.2.x 以前が作ったミラーは、`repo` の値全体の `/`、`:`�
     go test ./...
     go build -o wikictl ./cmd/wikictl
 
-GitHub Actions は、`main` への push とプルリクエストで、Linux での `gofmt -l`、`go vet`、`go test -race`、macOS での `go test -race`、`staticcheck` と `go mod tidy` で `go.mod` と `go.sum` が変わらないことの確認、`govulncheck`、`install.sh` に対する `shellcheck` を実行します。`v` で始まるタグを push すると、GoReleaser がバイナリと `checksums.txt` をビルドし、リリースとして公開します。
+GitHub Actions は、`main` への push とプルリクエストで、Linux での `gofmt -l`、`go vet`、`go test -race`、macOS での `go test -race`、`staticcheck` と `go mod tidy` で `go.mod` と `go.sum` が変わらないことの確認、`govulncheck`、`install.sh` に対する `shellcheck` を実行します。`v` で始まるタグを push すると、GoReleaser がバイナリと `checksums.txt` をビルドしてリリースとして公開し、それらにビルドの出所証明を付けます。
 
 ブランチ、プルリクエスト、リリースの運用ルールは [CONTRIBUTING.md](CONTRIBUTING.md) を参照してください。
 
