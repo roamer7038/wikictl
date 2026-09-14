@@ -3,7 +3,7 @@ package repo
 import (
 	"bufio"
 	"bytes"
-	"errors"
+	"fmt"
 	"io"
 	"regexp"
 	"strconv"
@@ -55,9 +55,9 @@ func stripRef(r *Repo, lines string) []string {
 // List returns the page paths under dirs (or the whole tree when dirs is nil).
 // Directories that do not exist are ignored.
 func (r *Repo) List(dirs []string) ([]string, error) {
-	head, _ := r.Head()
-	if head == "" {
-		return nil, nil
+	head, err := r.Head()
+	if err != nil || head == "" {
+		return nil, err
 	}
 	args := append([]string{"ls-tree", "-r", "--name-only", r.trackingRef()}, pathspec(dirs)...)
 	out, err := r.Git(args...)
@@ -106,9 +106,9 @@ func foldPattern(word string) string {
 // ignoring case as Fold does. With all set, a page must contain every word
 // (--all-match).
 func (r *Repo) Grep(words []string, all bool, dirs []string) ([]string, error) {
-	head, _ := r.Head()
-	if head == "" || len(words) == 0 {
-		return nil, nil
+	head, err := r.Head()
+	if err != nil || head == "" || len(words) == 0 {
+		return nil, err
 	}
 	args := []string{"grep", "-E", "-l"}
 	if all {
@@ -119,12 +119,11 @@ func (r *Repo) Grep(words []string, all bool, dirs []string) ([]string, error) {
 	}
 	args = append(args, r.trackingRef())
 	args = append(args, pathspec(dirs)...)
-	out, err := r.Git(args...)
+	out, err := r.gitStrict(args...)
+	if noResult(err) {
+		return nil, nil
+	}
 	if err != nil {
-		var ge *GitError
-		if errors.As(err, &ge) && strings.TrimSpace(ge.Stderr) == "" {
-			return nil, nil // exit status 1: no match
-		}
 		return nil, err
 	}
 	return stripRef(r, out), nil
@@ -133,14 +132,20 @@ func (r *Repo) Grep(words []string, all bool, dirs []string) ([]string, error) {
 // GrepDeprecated returns the set of pages under dirs whose frontmatter has "status: deprecated".
 func (r *Repo) GrepDeprecated(dirs []string) (map[string]bool, error) {
 	res := map[string]bool{}
-	head, _ := r.Head()
+	head, err := r.Head()
+	if err != nil {
+		return nil, err
+	}
 	if head == "" {
 		return res, nil
 	}
 	args := append([]string{"grep", "-l", "-E", "-e", `^status:[[:space:]]*deprecated[[:space:]]*$`, r.trackingRef()}, pathspec(dirs)...)
-	out, err := r.Git(args...)
-	if err != nil {
+	out, err := r.gitStrict(args...)
+	if noResult(err) {
 		return res, nil
+	}
+	if err != nil {
+		return nil, err
 	}
 	for _, p := range stripRef(r, out) {
 		res[p] = true
@@ -198,7 +203,10 @@ func (r *Repo) CatSHA(paths []string) (map[string][]byte, map[string]string, err
 // pass over "git log --name-only". Renames are not followed.
 func (r *Repo) Updated(dirs []string) (map[string]time.Time, error) {
 	res := map[string]time.Time{}
-	head, _ := r.Head()
+	head, err := r.Head()
+	if err != nil {
+		return nil, err
+	}
 	if head == "" {
 		return res, nil
 	}
@@ -223,14 +231,56 @@ func (r *Repo) Updated(dirs []string) (map[string]time.Time, error) {
 	return res, nil
 }
 
-// BlobSHA returns the blob sha of path at commit head, or "" when absent.
+// treeEntry returns the type and object sha of path at commit head, or ""
+// when absent. It uses ls-tree, which fails when a tree on the way cannot be
+// read, unlike "rev-parse <commit>:<path>", which then exits with 1 and
+// nothing on stderr as it does for an absent path.
+func (r *Repo) treeEntry(head, path string) (typ, sha string, err error) {
+	out, err := r.Git("ls-tree", "-z", head, "--", path)
+	if err != nil {
+		return "", "", err
+	}
+	for _, l := range strings.Split(out, "\x00") {
+		meta, p, ok := strings.Cut(l, "\t")
+		if f := strings.Fields(meta); ok && p == path && len(f) == 3 {
+			return f[1], f[2], nil
+		}
+	}
+	return "", "", nil
+}
+
+// BlobSHA returns the object sha of path at commit head, or "" when absent.
+// A failure of git is an error.
 func (r *Repo) BlobSHA(head, path string) (string, error) {
 	if head == "" {
 		return "", nil
 	}
-	out, err := r.Git("rev-parse", "--verify", "-q", head+":"+path)
-	if err != nil {
-		return "", nil
+	_, sha, err := r.treeEntry(head, path)
+	return sha, err
+}
+
+// CheckMissing is called for paths that Cat did not return. It returns an
+// error when git cannot tell whether a path exists at the tracking ref, or
+// when a path is a blob there that the mirror cannot read; cat-file --batch
+// reports both as "missing". A path that does not exist or is not a file is
+// not an error, and neither is a blob that can be read, which a fetch made
+// after Cat has added.
+func (r *Repo) CheckMissing(paths []string) error {
+	head, err := r.Head()
+	if err != nil || head == "" {
+		return err
 	}
-	return strings.TrimSpace(out), nil
+	for _, p := range paths {
+		typ, sha, err := r.treeEntry(head, p)
+		if err != nil {
+			return err
+		}
+		if typ != "blob" {
+			continue
+		}
+		if _, err := r.Git("cat-file", "-e", sha); err != nil {
+			return fmt.Errorf("cannot read %s (blob %s) from the mirror: %w", p, sha, err)
+		}
+	}
+	return nil
 }

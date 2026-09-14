@@ -9,6 +9,19 @@ import (
 	"github.com/roamer7038/wikictl/internal/repo"
 )
 
+func TestErrorUnwrap(t *testing.T) {
+	cf := &repo.Conflict{Path: "global/a.md", Reason: "exists"}
+	var gotCf *repo.Conflict
+	if !errors.As(&conflictError{cf, "mv"}, &gotCf) || gotCf != cf {
+		t.Errorf("conflictError does not unwrap to its *repo.Conflict")
+	}
+	ge := &repo.GitError{Args: []string{"grep"}, Err: errors.New("exit status 128")}
+	var gotGe *repo.GitError
+	if !errors.As(&gitError{ge}, &gotGe) || gotGe != ge {
+		t.Errorf("gitError does not unwrap to its *repo.GitError")
+	}
+}
+
 func TestReport(t *testing.T) {
 	get := lookup("get")
 	cf := &repo.Conflict{Path: "global/a.md", Reason: "changed", SHA: "abc", Content: []byte("# a\n")}

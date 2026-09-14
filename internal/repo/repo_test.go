@@ -180,8 +180,49 @@ func TestOpenEmptyRemote(t *testing.T) {
 	if err := r.Fetch(); err != nil {
 		t.Fatal(err)
 	}
-	if h, _ := r.Head(); h != "" {
-		t.Errorf("empty remote must have no head, got %q", h)
+	if h, err := r.Head(); err != nil || h != "" {
+		t.Errorf("empty remote must have no head, got %q, %v", h, err)
+	}
+}
+
+// TestReadGitFailure reads from a directory that is not a git repository, so
+// that every git command fails. No read may report the failure as an empty
+// result.
+func TestReadGitFailure(t *testing.T) {
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	r := &Repo{Dir: t.TempDir(), Branch: "main"}
+	if h, err := r.Head(); err == nil {
+		t.Errorf("Head = %q, nil", h)
+	}
+	if got, err := r.List(nil); err == nil {
+		t.Errorf("List = %v, nil", got)
+	}
+	if got, err := r.Grep([]string{"x"}, true, nil); err == nil {
+		t.Errorf("Grep = %v, nil", got)
+	}
+	if got, err := r.GrepDeprecated(nil); err == nil {
+		t.Errorf("GrepDeprecated = %v, nil", got)
+	}
+	if got, err := r.Updated(nil); err == nil {
+		t.Errorf("Updated = %v, nil", got)
+	}
+	if got, err := r.BlobSHA("0123456789012345678901234567890123456789", "global/a.md"); err == nil {
+		t.Errorf("BlobSHA = %q, nil", got)
+	}
+}
+
+// TestCheckMissing checks the paths that are not errors: an absent path, a
+// directory and a blob that can be read.
+func TestCheckMissing(t *testing.T) {
+	remote := newRemote(t, true)
+	r := openFetched(t, remote)
+	if err := r.CheckMissing([]string{"global/none.md", "none/x.md", "global", "global/index.md"}); err != nil {
+		t.Error(err)
+	}
+	empty := openFetched(t, newRemote(t, false))
+	if err := empty.CheckMissing([]string{"global/index.md"}); err != nil {
+		t.Error(err)
 	}
 }
 
@@ -365,6 +406,22 @@ func TestGrepFoldsNonASCII(t *testing.T) {
 		got, err := r.Grep(tc.words, tc.all, []string{"global"})
 		if err != nil || len(got) != 1 || got[0] != tc.want {
 			t.Errorf("Grep(%q, %v)=%v, %v; want [%s]", tc.words, tc.all, got, err, tc.want)
+		}
+	}
+}
+
+func TestReportsError(t *testing.T) {
+	for stderr, want := range map[string]bool{
+		"": false,
+		"warning: unable to access '/home/u/.config/git/attributes': Permission denied\n": false,
+		"11:47:25.934953 git.c:463               trace: built-in: git grep -l -e x\n":     false,
+		"error: 'main:g/b.md': unable to read debddc32c7a32af3cc2c787797d0d282bcf18d07\n": true,
+		"warning: something\nfatal: bad object main\n":                                    true,
+		"hint: the error: prefix inside a line is not an error\n":                         false,
+		"warning: ignoring broken ref refs/remotes/origin/main\n":                         true,
+	} {
+		if got := reportsError(stderr); got != want {
+			t.Errorf("reportsError(%q) = %v, want %v", stderr, got, want)
 		}
 	}
 }
