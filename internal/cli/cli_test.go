@@ -119,21 +119,57 @@ func TestReadCommands(t *testing.T) {
 	if code != 1 || out != "---\nsummary: entry point\n---\n# global\n" || errs != "wikictl: global/none.md: no such file\nwikictl: global: no such file\n" {
 		t.Errorf("cat with missing paths: code=%d out=%q errs=%q", code, out, errs)
 	}
-	_, out, _ = runCLI(t, cfg, "", "ls", "--json")
-	var ls struct {
-		Items []struct{ Path, Summary, Type string }
+	if _, out, _ = runCLI(t, cfg, "", "ls"); out != "global/\nmachines/\nprojects/\n" {
+		t.Errorf("ls: %q", out)
 	}
+	if _, out, _ = runCLI(t, cfg, "", "ls", "global", "projects/app/x.md"); out != "projects/app/x.md\n\nglobal:\nindex.md\npush.md\n" {
+		t.Errorf("ls of a file and a directory: %q", out)
+	}
+	if _, out, _ = runCLI(t, cfg, "", "ls", "projects", "global"); out != "global:\nindex.md\npush.md\n\nprojects:\napp/\n" {
+		t.Errorf("ls must sort its arguments: %q", out)
+	}
+	if code, out, _ = runCLI(t, cfg, "", "ls", "none", "projects"); code != 1 || out != "projects:\napp/\n" {
+		t.Errorf("ls with a missing path must keep the heading: code=%d %q", code, out)
+	}
+	if _, out, _ = runCLI(t, cfg, "", "ls", "-R", "machines"); out != "machines:\nh1/\n\nmachines/h1:\n" {
+		t.Errorf("ls -R must hide the deprecated page: %q", out)
+	}
+	if _, out, _ = runCLI(t, cfg, "", "ls", "-Ra", "machines"); out != "machines:\nh1/\n\nmachines/h1:\ny.md\n" {
+		t.Errorf("ls -Ra: %q", out)
+	}
+	_, out, _ = runCLI(t, cfg, "", "ls", "-l", "global")
+	var cols [][]string
+	for _, l := range strings.Split(strings.TrimSuffix(out, "\n"), "\n") {
+		cols = append(cols, strings.Fields(l))
+	}
+	if len(cols) != 2 || len(cols[0]) < 4 || len(cols[1]) < 4 ||
+		cols[0][0] != "-" || cols[0][2] != "index.md" || strings.Join(cols[0][3:], " ") != "entry point" ||
+		cols[1][0] != "policy" || cols[1][2] != "push.md" || strings.Join(cols[1][3:], " ") != "how to push" {
+		t.Errorf("ls -l: %q", out)
+	}
+	var ls struct {
+		Items []struct{ Path, Kind string }
+	}
+	_, out, _ = runCLI(t, cfg, "", "ls", "-R", "--json")
 	mustUnmarshal(t, out, &ls)
-	if len(ls.Items) != 3 {
-		t.Errorf("ls: %s", out)
+	var entries []string
+	for _, it := range ls.Items {
+		entries = append(entries, it.Kind+" "+it.Path)
+	}
+	if want := []string{"dir global", "dir machines", "dir projects", "file global/index.md", "file global/push.md", "dir machines/h1", "dir projects/app", "file projects/app/x.md"}; !slices.Equal(entries, want) {
+		t.Errorf("ls -R --json: %v", entries)
 	}
 	if code, out, _ = runCLI(t, cfg, "", "context", "--json"); code != 0 {
 		t.Errorf("context: %s", out)
 	}
-	_, out, _ = runCLI(t, cfg, "", "ls", "--json", "--tag", "git")
+	ls.Items = nil
+	_, out, _ = runCLI(t, cfg, "", "ls", "--json", "--tag", "git", "global")
 	mustUnmarshal(t, out, &ls)
 	if len(ls.Items) != 1 || ls.Items[0].Path != "global/push.md" {
 		t.Errorf("ls --tag: %s", out)
+	}
+	if code, _, errs = runCLI(t, cfg, "", "ls", "global/none", "global"); code != 1 || errs != "wikictl: global/none: no such file\n" {
+		t.Errorf("ls of a missing path: code=%d errs=%q", code, errs)
 	}
 	// Global flags may follow the command; "--" ends flag parsing.
 	if code, out, _ := runCLI(t, cfg, "", "lint", "--", "global/push.md"); code != 0 || out != "" {
@@ -167,16 +203,26 @@ func TestDeprecatedStatus(t *testing.T) {
 			t.Fatalf("put %s: code=%d %s", p, code, errs)
 		}
 	}
-	for _, args := range [][]string{{"ls"}, {"search", "lease"}} {
+	check := func(args []string, shown, hidden []string) {
+		t.Helper()
 		_, out, _ := runCLI(t, cfg, "", args...)
-		if !strings.Contains(out, "global/howto.md\t") || strings.Contains(out, "global/quoted.md") || strings.Contains(out, "machines/h1/y.md") {
-			t.Errorf("%v: %q", args, out)
+		for _, s := range shown {
+			if !strings.Contains(out, s) {
+				t.Errorf("%v must list %s: %q", args, s, out)
+			}
 		}
-		_, out, _ = runCLI(t, cfg, "", append(args, "--all")...)
-		if !strings.Contains(out, "global/quoted.md\t") || !strings.Contains(out, "machines/h1/y.md\t") {
-			t.Errorf("%v --all: %q", args, out)
+		for _, s := range hidden {
+			if strings.Contains(out, s) {
+				t.Errorf("%v must hide %s: %q", args, s, out)
+			}
 		}
 	}
+	check([]string{"search", "lease"}, []string{"global/howto.md"}, []string{"global/quoted.md", "machines/h1/y.md"})
+	check([]string{"search", "--all", "lease"}, []string{"global/quoted.md", "machines/h1/y.md"}, nil)
+	check([]string{"ls", "-R"}, []string{"howto.md"}, []string{"quoted.md", "y.md"})
+	check([]string{"ls", "-Ra"}, []string{"quoted.md", "y.md"}, nil)
+	check([]string{"tree"}, []string{"howto.md"}, []string{"quoted.md", "y.md"})
+	check([]string{"tree", "-a"}, []string{"quoted.md", "y.md"}, nil)
 }
 
 func TestSearchLimit(t *testing.T) {
@@ -322,8 +368,8 @@ func TestPathForms(t *testing.T) {
 			t.Errorf("stat %s: %s", p, out)
 		}
 	}
-	if code, out, _ := runCLI(t, cfg, "", "dirs", "--json", "/projects/"); code != 0 || !strings.Contains(out, `"dir":"projects/app/"`) {
-		t.Errorf("dirs /projects/: code=%d out=%s", code, out)
+	if code, out, _ := runCLI(t, cfg, "", "ls", "--json", "/projects/"); code != 0 || !strings.Contains(out, `"path":"projects/app"`) {
+		t.Errorf("ls /projects/: code=%d out=%s", code, out)
 	}
 	if code, _, errs := runCLI(t, cfg, "---\nsummary: s\n---\n# s\n", "put", "/global/slash.md"); code != 0 {
 		t.Fatalf("put /global/slash.md: code=%d %s", code, errs)
@@ -331,7 +377,7 @@ func TestPathForms(t *testing.T) {
 	if code, _, _ := runCLI(t, cfg, "", "cat", "global/slash.md"); code != 0 {
 		t.Error("put with a leading / must write global/slash.md")
 	}
-	for _, args := range [][]string{{"cat", "../global/push.md"}, {"rm", "/../x.md"}, {"lint", "global/../../x.md"}, {"dirs", ".."}, {"mv", "global/push.md", "../push.md"}} {
+	for _, args := range [][]string{{"cat", "../global/push.md"}, {"rm", "/../x.md"}, {"lint", "global/../../x.md"}, {"ls", ".."}, {"mv", "global/push.md", "../push.md"}} {
 		if code, _, errs := runCLI(t, cfg, "", args...); code != ExitInvalid || !strings.Contains(errs, "outside the wiki") {
 			t.Errorf("%v: code=%d errs=%q", args, code, errs)
 		}
@@ -759,7 +805,7 @@ func TestOptionalSummary(t *testing.T) {
 			t.Errorf("search text missing %q in %q", want, out)
 		}
 	}
-	_, out, _ = runCLI(t, cfg, "", "ls", "--json")
+	_, out, _ = runCLI(t, cfg, "", "ls", "--json", "global")
 	mustUnmarshal(t, out, &res)
 	got = byPath(res.Items)
 	if it := got["global/nosum.md"]; it.Summary != "" || it.Title != "Heading Title" {
@@ -768,10 +814,16 @@ func TestOptionalSummary(t *testing.T) {
 	if it := got["global/desc.md"]; it.Summary != "from description" {
 		t.Errorf("ls desc: %+v", it)
 	}
-	_, out, _ = runCLI(t, cfg, "", "ls")
-	for _, want := range []string{"global/nosum.md\tHeading Title\n", "global/nofm.md\tnofm\n", "global/index.md\tentry point\n"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("ls text missing %q in %q", want, out)
+	_, out, _ = runCLI(t, cfg, "", "ls", "-l", "global")
+	for name, want := range map[string]string{"nosum.md": "Heading Title", "nofm.md": "nofm", "index.md": "entry point"} {
+		found := false
+		for _, l := range strings.Split(out, "\n") {
+			if f := strings.Fields(l); len(f) >= 4 && f[2] == name && strings.HasSuffix(l, "  "+want) {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("ls -l must show %q for %s: %q", want, name, out)
 		}
 	}
 	// lint still reports the missing summary.
@@ -781,87 +833,36 @@ func TestOptionalSummary(t *testing.T) {
 	}
 }
 
-func TestDirs(t *testing.T) {
+func TestTree(t *testing.T) {
 	cfg := setup(t)
-	runCLI(t, cfg, "---\nsummary: z\n---\n# z\n", "put", "projects/app/sub/z.md")
-	type dirsRes struct {
-		Items []struct {
-			Dir, Summary string
-			Pages        int
+	if code, _, errs := runCLI(t, cfg, "---\nsummary: z\n---\n# z\n", "put", "projects/app/sub/z.md"); code != 0 {
+		t.Fatalf("put: code=%d %s", code, errs)
+	}
+	for args, want := range map[string]string{
+		"":               ".\n├── global\n│   ├── index.md\n│   └── push.md\n├── machines\n│   └── h1\n└── projects\n    └── app\n        ├── sub\n        │   └── z.md\n        └── x.md\n\n6 directories, 4 files\n",
+		"-d -L 2":        ".\n├── global\n├── machines\n│   └── h1\n└── projects\n    └── app\n\n5 directories\n",
+		"-a machines":    "machines\n└── h1\n    └── y.md\n\n1 directory, 1 file\n",
+		"/projects/app/": "projects/app\n├── sub\n│   └── z.md\n└── x.md\n\n1 directory, 2 files\n",
+	} {
+		if code, out, errs := runCLI(t, cfg, "", append([]string{"tree"}, strings.Fields(args)...)...); code != 0 || out != want {
+			t.Errorf("tree %s: code=%d errs=%q\n%s", args, code, errs, out)
 		}
 	}
-	decode := func(out string) dirsRes {
-		t.Helper()
-		var res dirsRes
-		if err := json.Unmarshal([]byte(out), &res); err != nil {
-			t.Fatalf("unmarshal %q: %v", out, err)
-		}
-		return res
+	var res struct {
+		Items              []struct{ Path, Kind string }
+		Directories, Files int
 	}
-	code, out, errs := runCLI(t, cfg, "", "dirs", "--json")
-	if code != 0 {
-		t.Fatalf("code=%d %s", code, errs)
+	code, out, _ := runCLI(t, cfg, "", "tree", "--json", "projects")
+	mustUnmarshal(t, out, &res)
+	if code != 0 || res.Directories != 2 || res.Files != 2 || len(res.Items) != 4 || res.Items[0].Path != "projects/app" || res.Items[0].Kind != "dir" {
+		t.Errorf("tree --json: code=%d %s", code, out)
 	}
-	res := decode(out)
-	want := []struct {
-		dir, summary string
-		pages        int
-	}{{"global/", "entry point", 2}, {"machines/h1/", "", 1}, {"projects/app/", "", 1}, {"projects/app/sub/", "", 1}}
-	if len(res.Items) != len(want) {
-		t.Fatalf("dirs: %s", out)
+	if code, out, errs := runCLI(t, cfg, "", "tree", "global/index.md", "none"); code != 1 || out != "\n0 directories, 0 files\n" ||
+		errs != "wikictl: global/index.md: not a directory\nwikictl: none: not a directory\n" {
+		t.Errorf("tree of paths that are not directories: code=%d out=%q errs=%q", code, out, errs)
 	}
-	for i, w := range want {
-		it := res.Items[i]
-		if it.Dir != w.dir || it.Summary != w.summary || it.Pages != w.pages {
-			t.Errorf("item %d: got %+v want %+v", i, it, w)
-		}
-	}
-	_, out, _ = runCLI(t, cfg, "", "dirs", "--json", "projects")
-	res = decode(out)
-	if len(res.Items) != 2 || res.Items[0].Dir != "projects/app/" || res.Items[1].Dir != "projects/app/sub/" {
-		t.Errorf("dirs projects: %s", out)
-	}
-	_, out, _ = runCLI(t, cfg, "", "dirs", "--json", "global/", "machines")
-	res = decode(out)
-	if len(res.Items) != 2 || res.Items[0].Dir != "global/" || res.Items[1].Dir != "machines/h1/" {
-		t.Errorf("dirs with two args: %s", out)
-	}
-	if code, out, _ := runCLI(t, cfg, "", "dirs", "--json", "none"); code != 0 || !strings.Contains(out, `"items":[]`) {
-		t.Errorf("dirs none: code=%d out=%s", code, out)
-	}
-	if code, _, errs := runCLI(t, cfg, "", "dirs", "global/index.md"); code != ExitUsage {
-		t.Errorf("dirs of a page: code=%d errs=%q", code, errs)
-	}
-	code, out, _ = runCLI(t, cfg, "", "dirs")
-	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
-	if code != 0 || len(lines) != 4 || !strings.HasPrefix(lines[0], "global/") || !strings.HasSuffix(lines[0], "entry point") || !strings.HasSuffix(lines[1], "(no index)") {
-		t.Errorf("dirs text: code=%d out=%q", code, out)
-	}
-	if f := strings.Fields(lines[0]); len(f) < 3 || f[1] != "2" {
-		t.Errorf("dirs text count: %q", lines[0])
-	}
-
-	// An index.md without a summary, committed directly to the wiki repository.
-	cfgData, err := os.ReadFile(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	remote := strings.TrimPrefix(strings.SplitN(string(cfgData), "\n", 2)[0], "repo: ")
-	work := filepath.Join(t.TempDir(), "work")
-	mustRun(t, "", "git", "clone", "-q", remote, work)
-	os.WriteFile(filepath.Join(work, "projects/app/index.md"), []byte("# app\n"), 0o644)
-	mustRun(t, work, "git", "add", "-A")
-	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "index")
-	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
-	_, out, _ = runCLI(t, cfg, "", "dirs", "--json", "projects/app")
-	res = decode(out)
-	if len(res.Items) != 2 || res.Items[0].Dir != "projects/app/" || res.Items[0].Pages != 2 || res.Items[0].Summary != "" {
-		t.Errorf("index without summary: %s", out)
-	}
-	_, out, _ = runCLI(t, cfg, "", "dirs", "projects/app")
-	lines = strings.Split(strings.TrimRight(out, "\n"), "\n")
-	if len(lines) != 2 || strings.Contains(lines[0], "(no index)") || !strings.HasSuffix(lines[1], "(no index)") {
-		t.Errorf("index without summary text: %q", out)
+	if code, _, errs := runCLI(t, cfg, "", "tree", "-L", "0"); code != ExitUsage || !strings.Contains(errs, "must be at least 1") {
+		t.Errorf("tree -L 0: code=%d errs=%q", code, errs)
 	}
 }
 
@@ -1183,7 +1184,7 @@ func TestPageLimits(t *testing.T) {
 	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "limits")
 	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
 
-	if code, out, errs := runCLI(t, cfg, "", "ls", "--json"); code != 0 || !strings.Contains(out, "global/deep.md") || !strings.Contains(out, "global/huge.md") {
+	if code, out, errs := runCLI(t, cfg, "", "ls", "--json", "global"); code != 0 || !strings.Contains(out, "global/deep.md") || !strings.Contains(out, "global/huge.md") {
 		t.Errorf("ls: code=%d out=%q errs=%q", code, out, errs)
 	}
 	if code, out, errs := runCLI(t, cfg, "", "search", "--json", "summary"); code != 0 || !strings.Contains(out, "global/large.md") {

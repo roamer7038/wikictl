@@ -30,11 +30,11 @@ func TestTextOutputEscapesControl(t *testing.T) {
 	}
 	escaped := `ok\x1b]52;c;ZWNobyBwd24=\x07\x1b[2K\x0dfake`
 	for _, args := range [][]string{
-		{"ls"},
+		{"ls", "-l", "global"},
 		{"search", "lease"},
 	} {
 		_, out, _ := runCLI(t, cfg, "", args...)
-		if strings.ContainsAny(out, "\x1b\x07\r") || !strings.Contains(out, "global/ctl.md\t"+escaped+"\n") {
+		if strings.ContainsAny(out, "\x1b\x07\r") || !strings.Contains(out, escaped+"\n") {
 			t.Errorf("%v: %q", args, out)
 		}
 		_, out, _ = runCLI(t, cfg, "", append(args, "--json")...)
@@ -51,16 +51,14 @@ func TestTextOutputEscapesControl(t *testing.T) {
 		}
 	}
 
-	runCLI(t, cfg, "---\nsummary: \"\\e[2Kidx\"\n---\n", "put", "--base", shaOf(t, cfg, "global/index.md"), "global/index.md")
-	_, out, _ := runCLI(t, cfg, "", "dirs", "global")
-	if strings.Contains(out, "\x1b") || !strings.Contains(out, `\x1b[2Kidx`) {
-		t.Errorf("dirs: %q", out)
-	}
-
 	runCLI(t, cfg, "# only title\x1b[2K\n", "put", "global/notitle.md")
-	_, out, _ = runCLI(t, cfg, "", "ls")
-	if !strings.Contains(out, "global/notitle.md\tonly title\\x1b[2K\n") {
+	runCLI(t, cfg, "---\ntype: \"\\e[2J\"\n---\n# typ\n", "put", "global/typ.md")
+	_, out, _ := runCLI(t, cfg, "", "ls", "-l", "global")
+	if !strings.Contains(out, "notitle.md  only title\\x1b[2K\n") {
 		t.Errorf("ls title: %q", out)
+	}
+	if strings.Contains(out, "\x1b") || !strings.Contains(out, `\x1b[2J`) {
+		t.Errorf("ls -l must escape the type: %q", out)
 	}
 
 	_, out, _ = runCLI(t, cfg, "", "lint", "global/ctl.md")

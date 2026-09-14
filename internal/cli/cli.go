@@ -80,16 +80,23 @@ are shown as \xNN in text output.
 
 Output: items[] {direction, type, target, note}.`,
 		flags: linksFlags, run: (*app).cmdLinks},
-	{name: "ls", maxArgs: 0,
-		summary: "List pages",
-		detail: `List the pages of the wiki with their summary and type.
-Pages whose frontmatter has status: deprecated are skipped unless --all is
-given. --tag matches tags written as a YAML list. Text
-output shows the summary of each page, or its title (first heading, else the
-file name) when the page has no summary. Control characters other than tab
-are shown as \xNN in text output.
+	{name: "ls", args: "[<path>...]", maxArgs: -1, paths: true,
+		summary: "List the entries of directories",
+		detail: `List the files and directories directly in each directory given, or the file
+itself for a path that is a file; without arguments, the root of the wiki.
+Names of directories end with "/". With more than one argument or with -R,
+the entries of each directory follow a line "<dir>:". Names starting with a
+dot and pages whose frontmatter has status: deprecated are hidden unless -a is
+given. With -l, a line shows the type from the frontmatter, the time of the
+last commit that changed the entry (for a directory, any file under it), the
+name, and the summary, or the title when the page has no summary; "-" marks an
+empty type or time. --tag matches tags written as a YAML list. A path that
+does not exist is reported on standard error, also with --json, the others
+are still listed, and the command exits with code 1. Control characters other
+than tab are shown as \xNN in text output.
 
-Output: items[] {path, summary, title, type, updated}.`,
+Output: items[] {path, kind, type, summary, title, updated}; kind is "file"
+or "dir".`,
 		flags: lsFlags, run: (*app).cmdLs},
 	{name: "put", args: "<path> < content", minArgs: 1, maxArgs: 1, paths: true,
 		summary: "Create or replace a page from standard input",
@@ -220,18 +227,17 @@ output.
 
 Output: items[] {path, line, code, message}.`,
 		run: (*app).cmdLint},
-	{name: "dirs", args: "[<dir>...]", maxArgs: -1, paths: true,
-		summary: "List the directories of the wiki with their page counts",
-		detail: `List every directory that directly contains at least one page, with the
-number of pages directly in it (nested directories are listed on their own)
-and the summary of its index.md, or "(no index)" when it has none. Deprecated
-pages are counted. Arguments restrict the output to the
-directories at or below each <dir>, which must be a directory path inside the
-wiki, not a page path. Control characters other than tab in the summary are
-shown as \xNN in text output.
+	{name: "tree", args: "[<dir>...]", maxArgs: -1, paths: true,
+		summary: "Show directories as a tree",
+		detail: `Show the files and directories under each directory as a tree, or under the
+root of the wiki without arguments, followed by the number of directories and
+files. Names starting with a dot and pages whose frontmatter has status:
+deprecated are hidden unless -a is given. A path that is not a directory is
+reported on standard error, also with --json, and the command exits with code
+1. Control characters other than tab are shown as \xNN in text output.
 
-Output: items[] {dir, pages, summary}; summary is "" without an index.md.`,
-		run: (*app).cmdDirs},
+Output: {items[] {path, kind}, directories, files}; kind is "file" or "dir".`,
+		flags: treeFlags, run: (*app).cmdTree},
 	{name: "context", maxArgs: 0,
 		summary: "Show the resolved configuration",
 		detail: `Show the config file, the selected profile and how it was selected (flag,
@@ -273,15 +279,20 @@ type app struct {
 	stderr  io.Writer
 
 	// Command flags, registered by the flags function of the command.
-	linksIn  bool
-	linksOut bool
-	any      bool
-	all      bool
-	n        positiveInt
-	typ      string
-	tag      string
-	base     string
-	msg      string
+	linksIn   bool
+	linksOut  bool
+	long      bool
+	recursive bool
+	byTime    bool
+	dirsOnly  bool
+	level     positiveInt
+	any       bool
+	all       bool
+	n         positiveInt
+	typ       string
+	tag       string
+	base      string
+	msg       string
 }
 
 // globalFlags registers the flags accepted before or after the command name.
