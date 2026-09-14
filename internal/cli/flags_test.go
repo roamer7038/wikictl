@@ -55,7 +55,20 @@ func TestBareWordsAreNotGlobalFlags(t *testing.T) {
 		}
 		mustUnmarshal(t, out, &res)
 	}
-	code, _, errs := runCLI(t, cfg, "---\nsummary: k\n---\n# k\n", "put", "-m", "json", "global/k.md")
+	// Search terms are ANDed, so "version" must be used as a term.
+	code, sout, errs := runCLI(t, cfg, "", "search", "--json", "lease", "version")
+	if code != 0 {
+		t.Fatalf("search lease version: code=%d %s", code, errs)
+	}
+	res.Items = nil
+	mustUnmarshal(t, sout, &res)
+	if len(res.Items) != 0 {
+		t.Errorf("search lease version: items=%v", res.Items)
+	}
+	if code, _, _ := runCLI(t, cfg, "", "ls", "json"); code != ExitUsage {
+		t.Errorf("ls json: code=%d, want %d", code, ExitUsage)
+	}
+	code, _, errs = runCLI(t, cfg, "---\nsummary: k\n---\n# k\n", "put", "-m", "json", "global/k.md")
 	if code != 0 {
 		t.Fatalf("put -m json: code=%d %s", code, errs)
 	}
