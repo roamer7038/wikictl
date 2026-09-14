@@ -7,13 +7,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/spf13/pflag"
 
 	"github.com/roamer7038/wikictl/internal/config"
 	ctx "github.com/roamer7038/wikictl/internal/context"
@@ -23,12 +24,12 @@ import (
 // command describes one subcommand.
 type command struct {
 	name    string
-	args    string                 // positional argument synopsis, such as "<path>"
-	minArgs int                    // minimum number of positional arguments
-	maxArgs int                    // maximum number of positional arguments; -1 for unlimited
-	summary string                 // one line for the command list
-	detail  string                 // description shown by "help <command>"
-	flags   func(fs *flag.FlagSet) // registers command flags; nil when there are none
+	args    string                          // positional argument synopsis, such as "<path>"
+	minArgs int                             // minimum number of positional arguments
+	maxArgs int                             // maximum number of positional arguments; -1 for unlimited
+	summary string                          // one line for the command list
+	detail  string                          // description shown by "help <command>"
+	flags   func(a *app, fs *pflag.FlagSet) // registers command flags into fields of a; nil when there are none
 	run     func(a *app, c *command, args []string) error
 }
 
@@ -56,7 +57,7 @@ when the page has no summary. Control characters other than tab are shown as
 \xNN in text output.
 
 Output: items[] {path, summary, title, matched, updated}.`,
-		flags: func(fs *flag.FlagSet) { searchFlags(fs) }, run: (*app).cmdSearch},
+		flags: searchFlags, run: (*app).cmdSearch},
 	{name: "get", args: "<path>", minArgs: 1, maxArgs: 1,
 		summary: "Show a page with its links and backlinks",
 		detail: `Show one page: its blob sha, frontmatter, title, body (without frontmatter
@@ -82,7 +83,7 @@ file name) when the page has no summary. Control characters other than tab
 are shown as \xNN in text output.
 
 Output: items[] {path, summary, title, type, updated}.`,
-		flags: func(fs *flag.FlagSet) { lsFlags(fs) }, run: (*app).cmdLs},
+		flags: lsFlags, run: (*app).cmdLs},
 	{name: "put", args: "<path> < content", minArgs: 1, maxArgs: 1,
 		summary: "Create or replace a page from standard input",
 		detail: `Read the whole page, frontmatter included, from standard input and commit it
@@ -110,7 +111,7 @@ content are empty when the page has been deleted. mv and rm report conflicts
 in the same way.
 
 Output: {path, sha, commit}.`,
-		flags: func(fs *flag.FlagSet) { putFlags(fs) }, run: (*app).cmdPut},
+		flags: putFlags, run: (*app).cmdPut},
 	{name: "mv", args: "<path> <newpath> | <dir>/ <newdir>/", minArgs: 2, maxArgs: 2,
 		summary: "Move or rename a page or a directory, rewriting links",
 		detail: `Move or rename a page. Links to it from other pages, and relative links inside
@@ -143,7 +144,7 @@ changed since the last fetch is reported as a conflict.
 Output: {path, commit, rewritten} or {path, commit, moved, rewritten}; moved is
 the number of pages moved, and rewritten counts only the other pages whose
 links were rewritten.`,
-		flags: func(fs *flag.FlagSet) { msgFlag(fs) }, run: (*app).cmdMv},
+		flags: msgFlag, run: (*app).cmdMv},
 	{name: "rm", args: "<path>", minArgs: 1, maxArgs: 1,
 		summary: "Delete a page",
 		detail: `Delete a page. Pages that link to it are left unchanged; lint reports them
@@ -156,7 +157,7 @@ that is not a page, clone the wiki repository and use git. The default commit
 message is "wikictl: rm <path>".
 
 Output: {path, commit}.`,
-		flags: func(fs *flag.FlagSet) { msgFlag(fs) }, run: (*app).cmdRm},
+		flags: msgFlag, run: (*app).cmdRm},
 	{name: "lint", args: "[<path>...]", maxArgs: -1,
 		summary: "Report pages that violate the wiki format",
 		detail: `Check pages for missing_summary, frontmatter_invalid, links_syntax, broken_link,
@@ -272,18 +273,29 @@ type app struct {
 	stdin   io.Reader
 	stdout  io.Writer
 	stderr  io.Writer
+
+	// Command flags, registered by the flags function of the command.
+	any  bool
+	all  bool
+	n    positiveInt
+	typ  string
+	tag  string
+	base string
+	msg  string
 }
 
 var osHostname = os.Hostname
 
 // globalFlags registers the flags accepted before or after the command name.
-func (a *app) globalFlags(fs *flag.FlagSet) {
-	fs.StringVar(&a.cfgPath, "config", "", "read the configuration from `path` instead of $WIKICTL_CONFIG or $XDG_CONFIG_HOME/wikictl/config.yaml (~/.config/wikictl/config.yaml)")
-	fs.StringVar(&a.profile, "profile", "", "use the profile `name` from the config file instead of $WIKICTL_PROFILE, match or default_profile")
-	fs.StringVar(&a.dirsArg, "dirs", "", "search only the comma-separated `dirs` instead of the defaults; . is the whole wiki")
-	fs.BoolVar(&a.json, "json", false, "print JSON")
-	fs.BoolVar(&a.noFetch, "no-fetch", false, "do not fetch from the remote before reading; writes still fetch before committing")
-	fs.BoolVar(&a.version, "version", false, "print the version and exit")
+// Their defaults are the current values, so that registering them again for
+// the command arguments keeps the values given before the command name.
+func (a *app) globalFlags(fs *pflag.FlagSet) {
+	fs.StringVar(&a.cfgPath, "config", a.cfgPath, "read the configuration from `path` instead of $WIKICTL_CONFIG or $XDG_CONFIG_HOME/wikictl/config.yaml (~/.config/wikictl/config.yaml)")
+	fs.StringVar(&a.profile, "profile", a.profile, "use the profile `name` from the config file instead of $WIKICTL_PROFILE, match or default_profile")
+	fs.StringVar(&a.dirsArg, "dirs", a.dirsArg, "search only the comma-separated `dirs` instead of the defaults; . is the whole wiki")
+	fs.BoolVar(&a.json, "json", a.json, "print JSON")
+	fs.BoolVar(&a.noFetch, "no-fetch", a.noFetch, "do not fetch from the remote before reading; writes still fetch before committing")
+	fs.BoolVar(&a.version, "version", a.version, "print the version and exit")
 }
 
 // Main runs the command line given in args and returns the exit code.
@@ -293,12 +305,15 @@ func Main(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 }
 
 // run parses the command line and runs the command. Errors are reported by
-// the caller.
+// the caller. The global flags before the command name are parsed first; the
+// arguments after it are parsed once, with the global flags and the flags of
+// the command, which may come before or after the positional arguments.
 func (a *app) run(args []string) error {
 	fs := newFlagSet("wikictl")
 	a.globalFlags(fs)
+	fs.SetInterspersed(false)
 	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
+		if errors.Is(err, pflag.ErrHelp) {
 			printUsage(a.stdout)
 			return nil
 		}
@@ -313,23 +328,17 @@ func (a *app) run(args []string) error {
 		return exitStatus(ExitUsage)
 	}
 	name, cargs := rest[0], rest[1:]
-	cmdFlags := newFlagSet(name)
-	if c := lookup(name); c != nil && c.flags != nil {
-		c.flags(cmdFlags)
-	}
-	cargs, common := splitCommon(cargs, cmdFlags)
-	if err := fs.Parse(common); err != nil {
-		return &usageError{msg: err.Error()}
-	}
-	if a.version {
-		return a.cmdVersion()
-	}
+	fs = newFlagSet(name)
+	a.globalFlags(fs)
 	switch name {
-	case "help":
-		return a.cmdHelp(cargs)
-	case "version":
-		if wantsHelp(cargs) {
-			return a.cmdHelp([]string{"version"})
+	case "help", "version":
+		if err := fs.Parse(cargs); errors.Is(err, pflag.ErrHelp) {
+			return a.cmdHelp([]string{name})
+		} else if err != nil {
+			return &usageError{msg: err.Error()}
+		}
+		if name == "help" && !a.version {
+			return a.cmdHelp(fs.Args())
 		}
 		return a.cmdVersion()
 	}
@@ -337,29 +346,32 @@ func (a *app) run(args []string) error {
 	if c == nil {
 		return &usageError{msg: "unknown command: " + name + `; run "wikictl help" for the list of commands`}
 	}
-	if wantsHelp(cargs) {
-		printCommandHelp(a.stdout, c)
-		return nil
-	}
-	// Validate flags and argument count before touching the configuration,
-	// so that usage errors never depend on the environment. Commands with
-	// flags parse cargs again; commands without flags get the positional
-	// arguments (with any "--" removed).
-	check := newFlagSet(c.name)
 	if c.flags != nil {
-		c.flags(check)
+		c.flags(a, fs)
 	}
-	rest, err := parseFlags(c, check, cargs)
-	if err != nil {
-		return err
+	// Flags and the argument count are validated before the configuration is
+	// read, so that usage errors never depend on the environment.
+	if err := fs.Parse(cargs); err != nil {
+		if errors.Is(err, pflag.ErrHelp) {
+			printCommandHelp(a.stdout, c)
+			return nil
+		}
+		return &usageError{c, err.Error()}
 	}
-	if c.flags == nil {
-		cargs = rest
+	if a.version {
+		return a.cmdVersion()
+	}
+	pos := fs.Args()
+	if len(pos) < c.minArgs {
+		return &usageError{c, "missing argument"}
+	}
+	if c.maxArgs >= 0 && len(pos) > c.maxArgs {
+		return &usageError{c, "too many arguments: " + strings.Join(pos[c.maxArgs:], " ")}
 	}
 	if err := a.setup(); err != nil {
 		return err
 	}
-	return c.run(a, c, cargs)
+	return c.run(a, c, pos)
 }
 
 // setup loads the configuration with its profile, opens the mirror and
@@ -382,57 +394,6 @@ func (a *app) setup() error {
 		a.dirs = ctx.DefaultDirs(cfg, a.remote, host)
 	}
 	return nil
-}
-
-// splitCommon separates the global flags (--json, --dirs, --config,
-// --profile, --no-fetch, --version) from the command arguments so that they
-// may follow the command name. Only arguments starting with "-" are global
-// flags. Until the first positional argument, the value of a command flag in
-// cmd (such as the message of "-m message") belongs to the command, as
-// flag.FlagSet.Parse takes it. Everything after "--" belongs to the command.
-func splitCommon(args []string, cmd *flag.FlagSet) (rest, common []string) {
-	positional := false
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		if a == "--" {
-			return append(rest, args[i:]...), common
-		}
-		if len(a) < 2 || a[0] != '-' {
-			positional = true
-			rest = append(rest, a)
-			continue
-		}
-		name := strings.TrimLeft(a, "-")
-		switch {
-		case name == "json" || name == "no-fetch" || name == "version":
-			common = append(common, a)
-		case strings.HasPrefix(name, "json=") || strings.HasPrefix(name, "no-fetch=") || strings.HasPrefix(name, "dirs=") || strings.HasPrefix(name, "config=") || strings.HasPrefix(name, "profile="):
-			common = append(common, a)
-		case (name == "dirs" || name == "config" || name == "profile") && i+1 < len(args):
-			common = append(common, a, args[i+1])
-			i++
-		case !positional && takesValue(cmd, name) && i+1 < len(args):
-			rest = append(rest, a, args[i+1])
-			i++
-		default:
-			rest = append(rest, a)
-		}
-	}
-	return rest, common
-}
-
-// takesValue reports whether name, a flag without "=value", is a non-boolean
-// flag of cmd and so takes the next argument as its value.
-func takesValue(cmd *flag.FlagSet, name string) bool {
-	if cmd == nil || strings.Contains(name, "=") {
-		return false
-	}
-	f := cmd.Lookup(name)
-	if f == nil {
-		return false
-	}
-	b, ok := f.Value.(interface{ IsBoolFlag() bool })
-	return !ok || !b.IsBoolFlag()
 }
 
 // openRepo opens the mirror under $XDG_CACHE_HOME/wikictl (or

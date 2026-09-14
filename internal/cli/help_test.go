@@ -33,7 +33,7 @@ func TestHelpNeedsNoConfig(t *testing.T) {
 		t.Errorf("get -h: code=%d out=%q", code, out)
 	}
 	_, out, _ := runNoConfig(t, "put", "--help")
-	if !strings.Contains(out, "--base <sha>") || !strings.Contains(out, "-m <message>") {
+	if !strings.Contains(out, "--base <sha>") || !strings.Contains(out, "-m, --message <message>") {
 		t.Errorf("put help must list flags: %q", out)
 	}
 	if code, _, errs := runNoConfig(t); code != ExitUsage || !strings.Contains(errs, "Usage: wikictl") {
