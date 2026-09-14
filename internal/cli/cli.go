@@ -40,8 +40,8 @@ var commands = []*command{
 		summary: "Find pages containing the given words",
 		detail: `Find pages that contain all of the words (fixed strings, ignoring case,
 non-ASCII letters included) anywhere in the file, frontmatter included.
-Pages with a line "status: deprecated" (unquoted, anywhere in the file) are
-skipped unless --all is given. Results are ordered by last update, newest
+Pages whose frontmatter has status: deprecated are skipped unless --all is
+given. Results are ordered by last update, newest
 first; with --any, pages matching more words come first. Text output shows
 the summary of each page, or its title (first heading, else the file name)
 when the page has no summary. Control characters other than tab are shown as
@@ -83,8 +83,8 @@ Output: items[] {direction, type, target, note}.`,
 	{name: "ls", maxArgs: 0,
 		summary: "List pages",
 		detail: `List the pages of the wiki with their summary and type.
-Pages with a line "status: deprecated" (unquoted, anywhere in the file) are
-skipped unless --all is given. --tag matches tags written as a YAML list. Text
+Pages whose frontmatter has status: deprecated are skipped unless --all is
+given. --tag matches tags written as a YAML list. Text
 output shows the summary of each page, or its title (first heading, else the
 file name) when the page has no summary. Control characters other than tab
 are shown as \xNN in text output.

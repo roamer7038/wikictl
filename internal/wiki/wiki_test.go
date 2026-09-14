@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -85,6 +86,39 @@ func (f fakeStore) CatLimit(paths []string, max int64) (map[string][]byte, map[s
 		}
 	}
 	return contents, large, nil
+}
+
+func (f fakeStore) GrepDeprecated(dirs []string) (map[string]bool, error) {
+	paths, _ := f.List(dirs)
+	out := map[string]bool{}
+	for _, p := range paths {
+		if strings.Contains(f[p], "deprecated") {
+			out[p] = true
+		}
+	}
+	return out, nil
+}
+
+func TestDeprecated(t *testing.T) {
+	s := fakeStore{
+		"global/plain.md":    "---\nstatus: deprecated\n---\n# p\n",
+		"global/quoted.md":   "---\nsummary: q\nstatus: \"deprecated\"\n---\n# q\n",
+		"global/body.md":     "---\nsummary: b\n---\n# b\n```\nstatus: deprecated\n```\n",
+		"global/other.md":    "---\nstatus: deprecated-soon\n---\n# o\n",
+		"global/nextline.md": "---\nstatus:\n  deprecated\n---\n# n\n",
+		"global/flow.md":     "---\n{summary: f, status: deprecated}\n---\n# f\n",
+		"global/spaced.md":   "---\nstatus : deprecated # old\n---\n# s\n",
+		"global/invalid.md":  "---\nsummary: [unclosed\nstatus: deprecated\n---\n# i\n",
+		"global/big.md":      "---\nstatus: deprecated\n---\n# big\n" + strings.Repeat("x", page.MaxPageSize),
+	}
+	got, err := Deprecated(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{"global/plain.md": true, "global/quoted.md": true, "global/nextline.md": true, "global/flow.md": true, "global/spaced.md": true}
+	if !maps.Equal(got, want) {
+		t.Errorf("Deprecated = %v, want %v", got, want)
+	}
 }
 
 func TestClean(t *testing.T) {

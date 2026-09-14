@@ -155,6 +155,30 @@ func TestReadCommands(t *testing.T) {
 	}
 }
 
+// TestDeprecatedStatus checks that search and ls hide a page by the status in
+// its frontmatter, whether quoted or not, and not by a line in its body.
+func TestDeprecatedStatus(t *testing.T) {
+	cfg := setup(t)
+	for p, c := range map[string]string{
+		"global/howto.md":  "---\nsummary: howto\n---\n# howto\n```yaml\nstatus: deprecated\n```\nlease\n",
+		"global/quoted.md": "---\nsummary: quoted\nstatus: \"deprecated\"\n---\n# quoted\nlease\n",
+	} {
+		if code, _, errs := runCLI(t, cfg, c, "put", p); code != 0 {
+			t.Fatalf("put %s: code=%d %s", p, code, errs)
+		}
+	}
+	for _, args := range [][]string{{"ls"}, {"search", "lease"}} {
+		_, out, _ := runCLI(t, cfg, "", args...)
+		if !strings.Contains(out, "global/howto.md\t") || strings.Contains(out, "global/quoted.md") || strings.Contains(out, "machines/h1/y.md") {
+			t.Errorf("%v: %q", args, out)
+		}
+		_, out, _ = runCLI(t, cfg, "", append(args, "--all")...)
+		if !strings.Contains(out, "global/quoted.md\t") || !strings.Contains(out, "machines/h1/y.md\t") {
+			t.Errorf("%v --all: %q", args, out)
+		}
+	}
+}
+
 func TestSearchLimit(t *testing.T) {
 	cfg := setup(t)
 	for _, n := range []string{"0", "-1"} {
