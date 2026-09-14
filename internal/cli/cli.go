@@ -112,18 +112,22 @@ Output: {path, sha, commit}.`,
 		flags: func(fs *flag.FlagSet) { putFlags(fs) }, run: (*app).cmdPut},
 	{name: "mv", args: "<path> <newpath> | <dir>/ <newdir>/", minArgs: 2, maxArgs: 2,
 		summary: "Move or rename a page or a directory, rewriting links",
-		detail: `Move or rename a page. Links inside the moved page and links to it from other
-pages are rewritten in the same commit, and the old file name (without .md) is
-added to aliases when it changes. The alias is added only when the frontmatter
+		detail: `Move or rename a page. Links to it from other pages, and relative links inside
+it whose destination changes with the move, are rewritten in the same commit,
+and the old file name (without .md) is added to aliases when it changes. Other
+links and links inside code spans and code fences are left as written. Only
+the path of a rewritten link changes; a leading "./", angle brackets, a query,
+a fragment and a title are kept. The alias is added only when the frontmatter
 is empty or a block-style mapping and aliases is absent, a sequence (block or
 flow style), or null; otherwise, such as when aliases is a string or there is
 no frontmatter, no alias is added and no warning is printed. When both
 arguments end with a slash, every page under <dir>/ is moved to <newdir>/
 instead; file names do not change, so no alias is added. A path or new path
 that breaks the file name rules (see "help lint") is rejected with exit code 4.
-If <newpath> already exists, or any page exists under <newdir>/, the command
-fails with exit code 1. The default commit message is "wikictl: mv <path>
-<newpath>". Warnings are printed as for put.
+A rewritten page keeps its BOM, and all its lines get the line ending (CRLF or
+LF) of its first line. If <newpath> already exists, or any page exists under
+<newdir>/, the command fails with exit code 1. The default commit message is
+"wikictl: mv <path> <newpath>". Warnings are printed as for put.
 
 Only links of the form [text](path) are rewritten. A bare path in a Links line,
 such as "- part_of: index.md" or "- index.md", is left unchanged and becomes
@@ -135,7 +139,9 @@ current content and sha of that page, as put does; run it again. With
 --no-fetch, mv builds the change from the unfetched mirror, so a page that
 changed since the last fetch is reported as a conflict.
 
-Output: {path, commit, rewritten} or {path, commit, moved, rewritten}.`,
+Output: {path, commit, rewritten} or {path, commit, moved, rewritten}; moved is
+the number of pages moved, and rewritten counts only the other pages whose
+links were rewritten.`,
 		flags: func(fs *flag.FlagSet) { msgFlag(fs) }, run: (*app).cmdMv},
 	{name: "rm", args: "<path>", minArgs: 1, maxArgs: 1,
 		summary: "Delete a page",
@@ -177,7 +183,9 @@ reported as case_collision, against the whole wiki.
 
 A Links line is "- <type>: <target> | <note>", or "- <target>" for an untyped
 see_also relation (an untyped URL must be "<scheme>://..."); the bullet may
-be "-", "*" or "+" and may be indented.
+be "-", "*" or "+" and may be indented. The "## Links" heading must be the last
+heading of the page; one followed by another heading is reported as
+links_syntax.
 
 A page link is a relative path ending in .md, optionally followed by
 #fragment; absolute paths and paths that leave the wiki are not page links.
