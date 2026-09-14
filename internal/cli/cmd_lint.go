@@ -6,6 +6,7 @@ import (
 	"sort"
 
 	"github.com/roamer7038/wikictl/internal/page"
+	"github.com/roamer7038/wikictl/internal/wiki"
 )
 
 func (a *app) cmdLint(c *command, args []string) error {
@@ -47,7 +48,7 @@ func (a *app) cmdLint(c *command, args []string) error {
 		items = append(items, pg.Issues...)
 		pages = append(pages, pg)
 	}
-	broken, err := a.brokenLinks(pages)
+	broken, err := wiki.BrokenLinks(a.repo, pages)
 	if err != nil {
 		return &gitError{err}
 	}
@@ -67,34 +68,4 @@ func (a *app) cmdLint(c *command, args []string) error {
 		return exitStatus(ExitInvalid)
 	}
 	return nil
-}
-
-// brokenLinks returns a broken_link issue for every link and mention whose
-// target is not a file in the wiki. lint and put share it so that both agree
-// on which targets exist.
-func (a *app) brokenLinks(pages []*page.Page) ([]page.Issue, error) {
-	var targets []string
-	for _, pg := range pages {
-		for _, l := range append(pg.Links, pg.Mentions...) {
-			if !l.IsURL {
-				targets = append(targets, l.Target)
-			}
-		}
-	}
-	if len(targets) == 0 {
-		return nil, nil
-	}
-	found, err := a.repo.Stat(targets)
-	if err != nil {
-		return nil, err
-	}
-	var items []page.Issue
-	for _, pg := range pages {
-		for _, l := range append(pg.Links, pg.Mentions...) {
-			if _, ok := found[l.Target]; !l.IsURL && !ok {
-				items = append(items, page.Issue{Path: pg.Path, Line: l.Line, Code: "broken_link", Message: "link target does not exist: " + l.Target})
-			}
-		}
-	}
-	return items, nil
 }

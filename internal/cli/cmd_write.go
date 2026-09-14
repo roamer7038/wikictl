@@ -11,6 +11,7 @@ import (
 
 	"github.com/roamer7038/wikictl/internal/page"
 	"github.com/roamer7038/wikictl/internal/repo"
+	"github.com/roamer7038/wikictl/internal/wiki"
 )
 
 // commit writes changes as one commit. A conflict is returned as a
@@ -58,7 +59,7 @@ func (a *app) cmdPut(c *command, args []string) error {
 		}
 	}
 	// Broken links never block the write, so that link targets can be created afterwards.
-	broken, err := a.brokenLinks([]*page.Page{pg})
+	broken, err := wiki.BrokenLinks(a.repo, []*page.Page{pg})
 	if err != nil {
 		return &gitError{err}
 	}
@@ -110,10 +111,14 @@ func (a *app) cmdRm(c *command, args []string) error {
 }
 
 func (a *app) cmdMv(c *command, args []string) error {
-	from, to := args[0], args[1]
-	fromDir, toDir := strings.HasSuffix(from, "/"), strings.HasSuffix(to, "/")
+	fromDir, toDir := strings.HasSuffix(args[0], "/"), strings.HasSuffix(args[1], "/")
+	cleaned, err := cleanPaths(args)
+	if err != nil {
+		return err
+	}
+	from, to := cleaned[0], cleaned[1]
 	if fromDir && toDir {
-		return a.mvDir(strings.TrimSuffix(from, "/"), strings.TrimSuffix(to, "/"), a.msg)
+		return a.mvDir(from, to, a.msg)
 	}
 	if fromDir || toDir {
 		return &usageError{c, "to move a directory, end both arguments with /"}
@@ -140,7 +145,7 @@ func (a *app) cmdMv(c *command, args []string) error {
 	if err := a.repo.CheckMissing([]string{to}); err != nil {
 		return &gitError{err}
 	}
-	changes, err := a.relocate(map[string]string{from: to})
+	changes, err := wiki.Relocate(a.repo, map[string]string{from: to})
 	if err != nil {
 		return &gitError{err}
 	}
@@ -210,7 +215,7 @@ func (a *app) mvDir(from, to, msg string) error {
 		}
 		mapping[p] = np
 	}
-	changes, err := a.relocate(mapping)
+	changes, err := wiki.Relocate(a.repo, mapping)
 	if err != nil {
 		return &gitError{err}
 	}
@@ -226,34 +231,15 @@ func (a *app) mvDir(from, to, msg string) error {
 	return nil
 }
 
-// relocate walks every page of the wiki and builds one change set for
-// mapping (old path -> new path): moved pages get their own links re-based
-// at the new location, and pages that refer to a moved page get those links
-// rewritten. Every change carries the blob sha read here as its Base, and
-// every new path requires that the path does not exist, so that a page
-// changed or created since it was read makes the commit a conflict.
-func (a *app) relocate(mapping map[string]string) ([]repo.Change, error) {
-	all, err := a.repo.List(nil)
-	if err != nil {
-		return nil, err
-	}
-	contents, shas, err := a.repo.CatSHA(all)
-	if err != nil {
-		return nil, err
-	}
-	none := ""
-	mapper := func(target string) (string, bool) { nt, ok := mapping[target]; return nt, ok }
-	var changes []repo.Change
-	for _, p := range all {
-		content, base := contents[p], shas[p]
-		if np, moved := mapping[p]; moved {
-			nc, _ := page.Relocate(content, p, np, mapper)
-			changes = append(changes, repo.Change{Path: np, Content: nc, Base: &none}, repo.Change{Path: p, Delete: true, Base: &base})
-			continue
+// cleanPaths applies wiki.Clean to paths given on the command line.
+func cleanPaths(paths []string) ([]string, error) {
+	out := make([]string, len(paths))
+	for i, p := range paths {
+		c, err := wiki.Clean(p)
+		if err != nil {
+			return nil, &invalidError{"bad_path: " + err.Error()}
 		}
-		if nc, n := page.Relocate(content, p, p, mapper); n > 0 {
-			changes = append(changes, repo.Change{Path: p, Content: nc, Base: &base})
-		}
+		out[i] = c
 	}
-	return changes, nil
+	return out, nil
 }

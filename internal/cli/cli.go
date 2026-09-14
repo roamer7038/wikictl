@@ -30,6 +30,7 @@ type command struct {
 	summary string                          // one line for the command list
 	detail  string                          // description shown by "help <command>"
 	flags   func(a *app, fs *pflag.FlagSet) // registers command flags into fields of a; nil when there are none
+	paths   bool                            // the positional arguments are paths in the wiki, cleaned by wiki.Clean
 	run     func(a *app, c *command, args []string) error
 }
 
@@ -48,7 +49,7 @@ when the page has no summary. Control characters other than tab are shown as
 
 Output: items[] {path, summary, title, matched, updated}.`,
 		flags: searchFlags, run: (*app).cmdSearch},
-	{name: "get", args: "<path>", minArgs: 1, maxArgs: 1,
+	{name: "get", args: "<path>", minArgs: 1, maxArgs: 1, paths: true,
 		summary: "Show a page with its links and backlinks",
 		detail: `Show one page: its blob sha, frontmatter, title, body (without frontmatter
 and the Links section), typed links from the Links section, and backlinks
@@ -74,7 +75,7 @@ are shown as \xNN in text output.
 
 Output: items[] {path, summary, title, type, updated}.`,
 		flags: lsFlags, run: (*app).cmdLs},
-	{name: "put", args: "<path> < content", minArgs: 1, maxArgs: 1,
+	{name: "put", args: "<path> < content", minArgs: 1, maxArgs: 1, paths: true,
 		summary: "Create or replace a page from standard input",
 		detail: `Read the whole page, frontmatter included, from standard input and commit it
 as <path>. Omit --base for a new page. For an existing page pass --base with
@@ -135,7 +136,7 @@ Output: {path, commit, rewritten} or {path, commit, moved, rewritten}; moved is
 the number of pages moved, and rewritten counts only the other pages whose
 links were rewritten.`,
 		flags: msgFlag, run: (*app).cmdMv},
-	{name: "rm", args: "<path>", minArgs: 1, maxArgs: 1,
+	{name: "rm", args: "<path>", minArgs: 1, maxArgs: 1, paths: true,
 		summary: "Delete a page",
 		detail: `Delete a page. Pages that link to it are left unchanged; lint reports them
 as broken_link. A path that is not a page path (see "help lint"), such as a
@@ -148,7 +149,7 @@ message is "wikictl: rm <path>".
 
 Output: {path, commit}.`,
 		flags: msgFlag, run: (*app).cmdRm},
-	{name: "lint", args: "[<path>...]", maxArgs: -1,
+	{name: "lint", args: "[<path>...]", maxArgs: -1, paths: true,
 		summary: "Report pages that violate the wiki format",
 		detail: `Check pages for missing_summary, frontmatter_invalid, links_syntax, broken_link,
 page_too_large and the file name rules. Without arguments every page of the
@@ -203,7 +204,7 @@ output.
 
 Output: items[] {path, line, code, message}.`,
 		run: (*app).cmdLint},
-	{name: "dirs", args: "[<dir>...]", maxArgs: -1,
+	{name: "dirs", args: "[<dir>...]", maxArgs: -1, paths: true,
 		summary: "List the directories of the wiki with their page counts",
 		detail: `List every directory that directly contains at least one page, with the
 number of pages directly in it (nested directories are listed on their own)
@@ -355,6 +356,12 @@ func (a *app) run(args []string) error {
 	if c.maxArgs >= 0 && len(pos) > c.maxArgs {
 		return &usageError{c, "too many arguments: " + strings.Join(pos[c.maxArgs:], " ")}
 	}
+	if c.paths {
+		var err error
+		if pos, err = cleanPaths(pos); err != nil {
+			return err
+		}
+	}
 	if err := a.setup(); err != nil {
 		return err
 	}
@@ -412,8 +419,8 @@ func (a *app) setup() error {
 }
 
 // openRepo opens the mirror under $XDG_CACHE_HOME/wikictl (or
-// ~/.cache/wikictl), named by mirrorName, and fetches unless --no-fetch was
-// given.
+// ~/.cache/wikictl), named by mirrorName, fetches unless --no-fetch was
+// given, and fixes the commit that the command reads.
 func (a *app) openRepo() error {
 	cache := os.Getenv("XDG_CACHE_HOME")
 	if cache == "" {
@@ -426,9 +433,11 @@ func (a *app) openRepo() error {
 	}
 	a.repo = r
 	if !a.noFetch {
-		return r.Fetch()
+		if err := r.Fetch(); err != nil {
+			return err
+		}
 	}
-	return nil
+	return r.Snapshot()
 }
 
 // mirrorName returns the mirror directory name for the repository URL: the
