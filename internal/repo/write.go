@@ -112,29 +112,41 @@ func (e *PathError) Error() string { return e.Path + ": " + e.Reason }
 
 type treeEntry struct{ typ, sha string }
 
-// entries returns the entry at commit head of the path of every change and of
-// every directory above a written path, from one "ls-tree". An absent path
-// has no entry. ls-tree fails when a tree on the way to a path cannot be read.
+// entries returns the type and object sha at commit head of the path of every
+// change and of every directory above a written path, from one "ls-tree" of
+// the directories that hold them; ls-tree reads no blob, and fails when a
+// tree it lists cannot be read. An absent path has no entry. A directory that
+// ls-tree descends into instead of listing is known as a tree by the entries
+// below it.
 func (r *Repo) entries(head string, changes []Change) (map[string]treeEntry, error) {
 	res := map[string]treeEntry{}
+	if head == "" || len(changes) == 0 {
+		return res, nil
+	}
 	args := []string{"ls-tree", "-z", head, "--"}
 	seen := map[string]bool{}
-	add := func(p string) {
-		if !seen[p] {
-			seen[p] = true
-			args = append(args, p)
+	// list adds the directory that holds p; with the trailing slash ls-tree
+	// lists the entries of the directory.
+	list := func(p string) {
+		d := path.Dir(p)
+		if d != "." {
+			d += "/"
+		}
+		if !seen[d] {
+			seen[d] = true
+			args = append(args, d)
 		}
 	}
 	for _, c := range changes {
-		add(c.Path)
+		if strings.ContainsAny(c.Path, "\n\x00") {
+			return nil, fmt.Errorf("path %q contains a newline or NUL", c.Path)
+		}
+		list(c.Path)
 		if !c.Delete {
 			for d := path.Dir(c.Path); d != "."; d = path.Dir(d) {
-				add(d)
+				list(d)
 			}
 		}
-	}
-	if head == "" || len(seen) == 0 {
-		return res, nil
 	}
 	out, err := r.Git(args...)
 	if err != nil {
@@ -142,15 +154,20 @@ func (r *Repo) entries(head string, changes []Change) (map[string]treeEntry, err
 	}
 	for entry := range strings.SplitSeq(out, "\x00") {
 		meta, p, ok := strings.Cut(entry, "\t")
-		if f := strings.Fields(meta); ok && len(f) == 3 {
-			res[p] = treeEntry{f[1], f[2]}
+		f := strings.Fields(meta)
+		if !ok || len(f) != 3 {
+			continue
+		}
+		res[p] = treeEntry{f[1], f[2]}
+		for d := path.Dir(p); d != "." && res[d].typ == ""; d = path.Dir(d) {
+			res[d] = treeEntry{typ: "tree"}
 		}
 	}
 	return res, nil
 }
 
-// checkReplace returns a PathError for a written path that is a directory, or
-// that is below a file the changes do not delete.
+// checkReplace returns a PathError for a written path that is a directory or
+// a submodule, or that is below a file the changes do not delete.
 func checkReplace(changes []Change, ents map[string]treeEntry) error {
 	deleted := map[string]bool{}
 	for _, c := range changes {
@@ -160,11 +177,14 @@ func checkReplace(changes []Change, ents map[string]treeEntry) error {
 		if c.Delete {
 			continue
 		}
-		if ents[c.Path].typ == "tree" {
+		switch ents[c.Path].typ {
+		case "tree":
 			return &PathError{c.Path, "is a directory"}
+		case "commit":
+			return &PathError{c.Path, "is a submodule"}
 		}
 		for d := path.Dir(c.Path); d != "."; d = path.Dir(d) {
-			if ents[d].typ == "blob" && !deleted[d] {
+			if t := ents[d].typ; t != "" && t != "tree" && !deleted[d] {
 				return &PathError{c.Path, d + " is a file"}
 			}
 		}
