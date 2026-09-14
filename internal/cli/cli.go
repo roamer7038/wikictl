@@ -195,6 +195,17 @@ reports them as broken_link when the page is missing. Code fences are never
 interpreted, so a "## Links" heading inside a fence does not start the
 Links section.
 
+Code fences follow CommonMark. A fence opens with a line of three or more
+backticks or tildes indented by up to three spaces (after backticks, the rest
+of the line must not contain a backtick), and closes only with a line of the
+same character, at least as many times, followed by nothing but spaces and
+tabs; a line such as "` + "```bash" + `" inside a fence does not close it. A fence
+that is never closed runs to the end of the page.
+
+The title of a page is the text of its first heading outside code fences and
+before the Links section, else the file name. A closing sequence of # is
+removed only when a space or a tab precedes it, so "# C#" has the title "C#".
+
 Control characters other than tab in a message are shown as \xNN in text
 output.
 
