@@ -357,37 +357,62 @@ func (r *Repo) catFile(names []string, withContent bool) ([]catEntry, error) {
 	return res, nil
 }
 
-// Updated returns the last commit time of every file under dirs, from one
-// pass over "git log -z --name-only". Renames are not followed.
-func (r *Repo) Updated(dirs []string) (map[string]time.Time, error) {
+// Updated returns the last commit time of each of files, reading "git log -z
+// --name-only" limited to dirs from the newest commit and stopping once every
+// file has been seen. Renames are not followed.
+func (r *Repo) Updated(dirs, files []string) (map[string]time.Time, error) {
 	res := map[string]time.Time{}
 	head, err := r.Head()
-	if err != nil {
-		return nil, err
+	if err != nil || head == "" || len(files) == 0 {
+		return res, err
 	}
-	if head == "" {
-		return res, nil
+	want := map[string]bool{}
+	for _, f := range files {
+		want[f] = true
 	}
 	args := append([]string{"log", "-z", "--format=%x00%x01%cI", "--name-only", r.readRef()}, pathspec(dirs)...)
-	out, err := r.Git(args...)
+	c := r.command(nil, args)
+	var errb bytes.Buffer
+	c.Stderr = &errb
+	out, err := c.StdoutPipe()
 	if err != nil {
 		return nil, err
+	}
+	if err := c.Start(); err != nil {
+		return nil, &GitError{Args: args, Err: err}
 	}
 	// Each commit is "\x00\x01<time>\x00", then a newline and its paths, each
 	// ending with NUL. Paths are not quoted, and none is empty.
+	rd := bufio.NewReader(out)
 	var cur time.Time
-	toks := strings.Split(out, "\x00")
-	for i, tok := range toks {
-		if i > 0 && toks[i-1] == "" && strings.HasPrefix(tok, "\x01") {
+	prev, first := "-", false
+	for len(res) < len(want) {
+		tok, err := rd.ReadString(0)
+		if err != nil {
+			break
+		}
+		tok = tok[:len(tok)-1]
+		if prev == "" && strings.HasPrefix(tok, "\x01") {
 			cur, _ = time.Parse(time.RFC3339, tok[1:])
+			prev, first = tok, true
 			continue
 		}
-		if i > 0 && strings.HasPrefix(toks[i-1], "\x01") {
-			tok = strings.TrimPrefix(tok, "\n")
+		p := tok
+		if first {
+			p = strings.TrimPrefix(tok, "\n")
 		}
-		if _, seen := res[tok]; tok != "" && !seen {
-			res[tok] = cur
+		if _, seen := res[p]; want[p] && !seen {
+			res[p] = cur
 		}
+		prev, first = tok, false
+	}
+	if len(res) == len(want) {
+		c.Process.Kill()
+		c.Wait()
+		return res, nil
+	}
+	if err := c.Wait(); err != nil {
+		return nil, &GitError{Args: args, Stderr: errb.String(), Err: err}
 	}
 	return res, nil
 }

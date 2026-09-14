@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 
 // fileTree is the files of the wiki arranged by directory.
 type fileTree struct {
+	files    []string                   // every file
 	children map[string]map[string]bool // directory ("." for the root) -> entry name -> whether the entry is a directory
 	hidden   map[string]bool            // pages with status: deprecated
 }
@@ -34,7 +36,7 @@ func (a *app) readTree(hide bool) (*fileTree, error) {
 	if err != nil {
 		return nil, &gitError{err}
 	}
-	t := &fileTree{children: map[string]map[string]bool{".": {}}, hidden: map[string]bool{}}
+	t := &fileTree{files: files, children: map[string]map[string]bool{".": {}}, hidden: map[string]bool{}}
 	for _, f := range files {
 		dir := "."
 		parts := strings.Split(f, "/")
@@ -150,7 +152,7 @@ func (a *app) cmdLs(c *command, args []string) error {
 	for _, d := range dirs {
 		walk(d)
 	}
-	if err := a.lsDetails(sections); err != nil {
+	if err := a.lsDetails(t, slices.Concat(files, dirs), sections); err != nil {
 		return err
 	}
 	items := []lsItem{}
@@ -184,8 +186,8 @@ func (a *app) cmdLs(c *command, args []string) error {
 }
 
 // lsDetails fills in the attributes of the items that the output needs and
-// sorts by time for -t.
-func (a *app) lsDetails(sections []lsSection) error {
+// sorts by time for -t. roots are the arguments, under which every item is.
+func (a *app) lsDetails(t *fileTree, roots []string, sections []lsSection) error {
 	var paths []string
 	for _, s := range sections {
 		for _, it := range s.items {
@@ -210,7 +212,7 @@ func (a *app) lsDetails(sections []lsSection) error {
 		}
 	}
 	if a.long || a.json || a.byTime {
-		latest, err := a.latestUpdates()
+		latest, err := a.latestUpdates(t, roots)
 		if err != nil {
 			return err
 		}
@@ -227,9 +229,20 @@ func (a *app) lsDetails(sections []lsSection) error {
 }
 
 // latestUpdates returns the time of the last commit that changed each file
-// and, for each directory, "." included, the latest time of the files under it.
-func (a *app) latestUpdates() (map[string]time.Time, error) {
-	updated, err := a.repo.Updated(nil)
+// under roots and, for each directory, "." included, the latest time of those
+// files under it.
+func (a *app) latestUpdates(t *fileTree, roots []string) (map[string]time.Time, error) {
+	var files []string
+	for _, f := range t.files {
+		if slices.ContainsFunc(roots, func(r string) bool { return r == "." || f == r || strings.HasPrefix(f, r+"/") }) {
+			files = append(files, f)
+		}
+	}
+	dirs := roots
+	if slices.Contains(roots, ".") {
+		dirs = nil
+	}
+	updated, err := a.repo.Updated(dirs, files)
 	if err != nil {
 		return nil, &gitError{err}
 	}

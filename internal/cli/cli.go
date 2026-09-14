@@ -96,7 +96,7 @@ Names of directories end with "/". With more than one argument or with -R,
 the entries of each directory follow a line "<dir>:". Names starting with a
 dot and pages whose frontmatter has status: deprecated are hidden unless -a is
 given. With -l, a line shows the type from the frontmatter, the time of the
-last commit that changed the entry (for a directory, any file ever under it),
+last commit that changed the entry (for a directory, any file under it),
 the name, and the summary, or the title when the page has no summary; "-" marks an
 empty type or time. A path that does not exist is reported on standard error,
 also with --json, the others are still listed, and the command exits with code
@@ -120,7 +120,7 @@ must all be true; "!" negates the primary that follows it.
   -maxdepth N      descend at most N levels below the paths
   -mindepth N      print no entry less than N levels below the paths
   -mtime [+|-]N    the last commit that changed the entry (for a directory, any
-                   file ever under it) is N days old, more than N days (+N) or
+                   file under it) is N days old, more than N days (+N) or
                    less (-N); the age is rounded down to whole days
   -newer PATH      the entry changed later than PATH
   -meta KEY=VALUE  the frontmatter value of KEY is VALUE, or a list with the

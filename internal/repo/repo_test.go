@@ -257,7 +257,7 @@ func TestReadGitFailure(t *testing.T) {
 	if got, err := r.GrepDeprecated(nil); err == nil {
 		t.Errorf("GrepDeprecated = %v, nil", got)
 	}
-	if got, err := r.Updated(nil); err == nil {
+	if got, err := r.Updated(nil, []string{"global/a.md"}); err == nil {
 		t.Errorf("Updated = %v, nil", got)
 	}
 	if got, err := r.BlobSHA("0123456789012345678901234567890123456789", "global/a.md"); err == nil {
@@ -317,7 +317,7 @@ func TestRead(t *testing.T) {
 	if !strings.HasPrefix(string(c["global/git-push.md"]), "---") || c["missing.md"] != nil || c["machines/h/y.md"] == nil {
 		t.Errorf("cat=%v", c)
 	}
-	up, _ := r.Updated([]string{"global"})
+	up, _ := r.Updated([]string{"global"}, []string{"global/git-push.md", "global/日本語.md"})
 	if up["global/git-push.md"].IsZero() || up["global/日本語.md"].IsZero() {
 		t.Errorf("updated=%v", up)
 	}
@@ -424,7 +424,7 @@ func TestReadLiteralDirs(t *testing.T) {
 		if got, _ := r.Grep([]string{"lease"}, false, dirs); len(got) != 1 || got[0] != tc.want {
 			t.Errorf("grep %s=%v", tc.dir, got)
 		}
-		up, _ := r.Updated(dirs)
+		up, _ := r.Updated(dirs, []string{tc.want})
 		if len(up) != 1 || up[tc.want].IsZero() {
 			t.Errorf("updated %s=%v", tc.dir, up)
 		}

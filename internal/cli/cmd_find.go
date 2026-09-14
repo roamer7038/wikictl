@@ -306,7 +306,7 @@ func (a *app) cmdFind(c *command, args []string) error {
 		walk(p, 0)
 	}
 	if q.needTimes {
-		if q.updated, err = a.latestUpdates(); err != nil {
+		if q.updated, err = a.latestUpdates(t, slices.Concat(paths, q.newer)); err != nil {
 			return err
 		}
 		q.now = time.Now()
