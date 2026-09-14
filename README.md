@@ -61,7 +61,7 @@ Binaries for Linux and macOS (x86_64 and arm64) are on the [releases page](https
        printf -- '---\nsummary: A push with --force-with-lease is rejected unless the remote ref still has the expected sha\n---\n# What does --force-with-lease guarantee?\n\nBody.\n' \
          | wikictl put global/git-force-with-lease.md
        wikictl search lease
-       wikictl get global/git-force-with-lease.md
+       wikictl cat global/git-force-with-lease.md
        wikictl lint
 
 ## Wiki layout
@@ -107,7 +107,9 @@ Body. Link to other pages with relative paths: [index](index.md).
 | Command | Purpose |
 |---|---|
 | `search <word>...` | Find pages containing the given words |
-| `get <path>` | Show a page with its sha, links and backlinks |
+| `cat <path>...` | Print files as stored |
+| `stat <path>...` | Show the sha, last update and attributes of files |
+| `links <path>` | List the links in a page and to it |
 | `ls` | List pages |
 | `put <path> < content` | Create or replace a page from standard input |
 | `mv <path> <newpath>` | Move or rename a page or a directory, rewriting links |
@@ -120,7 +122,7 @@ Body. Link to other pages with relative paths: [index](index.md).
 
 `wikictl help <command>` describes the flags, the behavior and the JSON output of each command. Add `--json` to any command except `help` for machine-readable output.
 
-To update an existing page, pass the `sha` printed by `get` to `put --base`. If the page changed in between, `put` exits with code 3 and prints the current content; wikictl never merges.
+To update an existing page, pass the `sha` printed by `stat` to `put --base`. If the page changed in between, `put` exits with code 3 and prints the current content; wikictl never merges.
 
 ## Configuration
 

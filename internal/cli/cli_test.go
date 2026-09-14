@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -63,7 +64,7 @@ func mustUnmarshal(t *testing.T, out string, v any) {
 	}
 }
 
-func TestSearchGetLs(t *testing.T) {
+func TestReadCommands(t *testing.T) {
 	cfg := setup(t)
 	code, out, errs := runCLI(t, cfg, "", "search", "--json", "lease")
 	if code != 0 {
@@ -89,20 +90,34 @@ func TestSearchGetLs(t *testing.T) {
 	if !strings.Contains(out, `"items":[]`) {
 		t.Errorf("empty: %s", out)
 	}
-	code, out, _ = runCLI(t, cfg, "", "get", "--json", "global/push.md")
-	var g struct {
-		Path, Sha, Title, Body string
-		Links                  []struct{ Type, Target, Note string }
-		Backlinks              []struct{ Path, Type string }
+	code, out, _ = runCLI(t, cfg, "", "stat", "--json", "global/push.md")
+	var st struct {
+		Items []struct {
+			Sha, Title, Summary, Type string
+			Tags                      []string
+		}
 	}
-	mustUnmarshal(t, out, &g)
-	if code != 0 || len(g.Sha) != 40 || g.Title != "push" || len(g.Links) != 1 || g.Links[0].Target != "global/index.md" || strings.Contains(g.Body, "## Links") {
-		t.Errorf("%s", out)
+	mustUnmarshal(t, out, &st)
+	if code != 0 || len(st.Items) != 1 || len(st.Items[0].Sha) != 40 || st.Items[0].Title != "push" || st.Items[0].Summary != "how to push" ||
+		st.Items[0].Type != "policy" || !slices.Equal(st.Items[0].Tags, []string{"git"}) {
+		t.Errorf("stat: %s", out)
 	}
-	_, out, _ = runCLI(t, cfg, "", "get", "--json", "global/index.md")
-	mustUnmarshal(t, out, &g)
-	if len(g.Backlinks) != 1 || g.Backlinks[0].Path != "global/push.md" || g.Backlinks[0].Type != "part_of" {
-		t.Errorf("backlinks: %s", out)
+	if code, out, _ = runCLI(t, cfg, "", "cat", "global/push.md", "global/index.md"); code != 0 ||
+		out != "---\nsummary: how to push\ntype: policy\ntags: [git]\n---\n# push\nuse force-with-lease. [index](index.md)\n\n## Links\n- part_of: [index](index.md)\n---\nsummary: entry point\n---\n# global\n" {
+		t.Errorf("cat: code=%d %q", code, out)
+	}
+	if _, out, _ = runCLI(t, cfg, "", "links", "global/push.md"); out != "out\tpart_of\tglobal/index.md\n" {
+		t.Errorf("links of push.md: %q", out)
+	}
+	if _, out, _ = runCLI(t, cfg, "", "links", "global/index.md"); out != "in\tpart_of\tglobal/push.md\n" {
+		t.Errorf("links of index.md: %q", out)
+	}
+	if _, out, _ = runCLI(t, cfg, "", "links", "-o", "global/index.md"); out != "" {
+		t.Errorf("links -o of index.md: %q", out)
+	}
+	code, out, errs = runCLI(t, cfg, "", "cat", "global/none.md", "global/index.md", "global")
+	if code != 1 || out != "---\nsummary: entry point\n---\n# global\n" || errs != "wikictl: global/none.md: no such file\nwikictl: global: no such file\n" {
+		t.Errorf("cat with missing paths: code=%d out=%q errs=%q", code, out, errs)
 	}
 	_, out, _ = runCLI(t, cfg, "", "ls", "--json")
 	var ls struct {
@@ -130,8 +145,10 @@ func TestSearchGetLs(t *testing.T) {
 	if code, out, _ := runCLI(t, cfg, "", "--json", "bogus"); code != 2 || !strings.HasPrefix(out, `{"error":"usage"`) {
 		t.Errorf("unknown command with --json: code=%d out=%q", code, out)
 	}
-	if code, _, _ = runCLI(t, cfg, "", "get", "global/none.md"); code != 1 {
-		t.Errorf("missing get code=%d", code)
+	for _, args := range [][]string{{"stat", "global/none.md"}, {"links", "global/none.md"}} {
+		if code, _, _ = runCLI(t, cfg, "", args...); code != 1 {
+			t.Errorf("%v: code=%d", args, code)
+		}
 	}
 	if code, _, _ = runCLI(t, cfg, "", "bogus"); code != 2 {
 		t.Errorf("unknown command code=%d", code)
@@ -198,8 +215,8 @@ func TestPutRm(t *testing.T) {
 	if code, _, errs := runCLI(t, cfg, "---\nsummary: a\n---\n", "put", "global/日本語.md"); code != 0 || !strings.Contains(errs, "name_style") {
 		t.Errorf("non-ascii name: code=%d errs=%q", code, errs)
 	}
-	if code, _, _ := runCLI(t, cfg, "", "get", "global/日本語.md"); code != 0 {
-		t.Errorf("non-ascii get code=%d", code)
+	if code, _, _ := runCLI(t, cfg, "", "cat", "global/日本語.md"); code != 0 {
+		t.Errorf("non-ascii cat code=%d", code)
 	}
 	// A broken link is only a warning; the write goes through.
 	code, _, errs := runCLI(t, cfg, "---\nsummary: w\n---\n# w\n[g](gone.md)\n", "put", "global/warn.md")
@@ -209,7 +226,7 @@ func TestPutRm(t *testing.T) {
 	if code, _, _ = runCLI(t, cfg, "", "rm", "global/new.md"); code != 0 {
 		t.Error("rm failed")
 	}
-	if code, _, _ := runCLI(t, cfg, "", "get", "global/new.md"); code != 1 {
+	if code, _, _ := runCLI(t, cfg, "", "cat", "global/new.md"); code != 1 {
 		t.Error("still exists")
 	}
 	code, out, _ = runCLI(t, cfg, "---\nsummary: z\n---\n", "put", "--json", "--base", res.Sha, "global/new.md")
@@ -271,14 +288,14 @@ func isolateGit(t *testing.T) {
 // argument make no difference, and that a path outside the wiki is rejected.
 func TestPathForms(t *testing.T) {
 	cfg := setup(t)
-	var g struct{ Path string }
+	var st struct{ Items []struct{ Path string } }
 	for _, p := range []string{"/global/push.md", "./global/push.md", "global//push.md"} {
-		code, out, errs := runCLI(t, cfg, "", "get", "--json", p)
+		code, out, errs := runCLI(t, cfg, "", "stat", "--json", p)
 		if code != 0 {
-			t.Fatalf("get %s: code=%d %s", p, code, errs)
+			t.Fatalf("stat %s: code=%d %s", p, code, errs)
 		}
-		if mustUnmarshal(t, out, &g); g.Path != "global/push.md" {
-			t.Errorf("get %s: %s", p, out)
+		if mustUnmarshal(t, out, &st); len(st.Items) != 1 || st.Items[0].Path != "global/push.md" {
+			t.Errorf("stat %s: %s", p, out)
 		}
 	}
 	if code, out, _ := runCLI(t, cfg, "", "dirs", "--json", "/projects/"); code != 0 || !strings.Contains(out, `"dir":"projects/app/"`) {
@@ -287,10 +304,10 @@ func TestPathForms(t *testing.T) {
 	if code, _, errs := runCLI(t, cfg, "---\nsummary: s\n---\n# s\n", "put", "/global/slash.md"); code != 0 {
 		t.Fatalf("put /global/slash.md: code=%d %s", code, errs)
 	}
-	if code, _, _ := runCLI(t, cfg, "", "get", "global/slash.md"); code != 0 {
+	if code, _, _ := runCLI(t, cfg, "", "cat", "global/slash.md"); code != 0 {
 		t.Error("put with a leading / must write global/slash.md")
 	}
-	for _, args := range [][]string{{"get", "../global/push.md"}, {"rm", "/../x.md"}, {"lint", "global/../../x.md"}, {"dirs", ".."}, {"mv", "global/push.md", "../push.md"}} {
+	for _, args := range [][]string{{"cat", "../global/push.md"}, {"rm", "/../x.md"}, {"lint", "global/../../x.md"}, {"dirs", ".."}, {"mv", "global/push.md", "../push.md"}} {
 		if code, _, errs := runCLI(t, cfg, "", args...); code != ExitInvalid || !strings.Contains(errs, "outside the wiki") {
 			t.Errorf("%v: code=%d errs=%q", args, code, errs)
 		}
@@ -317,8 +334,8 @@ func TestPutIntoEmptyRepository(t *testing.T) {
 	if got := gitOut(t, "--git-dir", remote, "ls-tree", "-r", "--name-only", "main"); got != "global/a.md" {
 		t.Errorf("tree of main: %q", got)
 	}
-	if code, _, _ := runCLI(t, cfg, "", "get", "global/a.md"); code != 0 {
-		t.Error("get after the first put failed")
+	if code, _, _ := runCLI(t, cfg, "", "cat", "global/a.md"); code != 0 {
+		t.Error("cat after the first put failed")
 	}
 }
 
@@ -328,24 +345,18 @@ func TestMvAndLint(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("mv code=%d %s %s", code, out, errs)
 	}
-	_, out, _ = runCLI(t, cfg, "", "get", "--json", "projects/app/push-notes.md")
-	var g struct {
-		Body        string
-		Frontmatter map[string]any
-		Links       []struct{ Target string }
+	_, out, _ = runCLI(t, cfg, "", "cat", "projects/app/push-notes.md")
+	if !strings.Contains(out, "[index](../../global/index.md)\n") || !strings.Contains(out, "- part_of: [index](../../global/index.md)\n") {
+		t.Errorf("self links not rewritten: %q", out)
 	}
-	mustUnmarshal(t, out, &g)
-	if !strings.Contains(g.Body, "](../../global/index.md)") || len(g.Links) != 1 || g.Links[0].Target != "global/index.md" {
-		t.Errorf("self links not rewritten: %s", out)
+	if _, out, _ = runCLI(t, cfg, "", "stat", "--json", "projects/app/push-notes.md"); !strings.Contains(out, `"aliases":["push"]`) {
+		t.Errorf("aliases: %s", out)
 	}
-	if al, _ := g.Frontmatter["aliases"].([]any); len(al) != 1 || al[0] != "push" {
-		t.Errorf("aliases: %v", g.Frontmatter["aliases"])
-	}
-	runCLI(t, cfg, "---\nsummary: x\n---\n# x\n[p](push-notes.md)\n", "put", "--base", getSha(t, cfg, "projects/app/x.md"), "projects/app/x.md")
+	runCLI(t, cfg, "---\nsummary: x\n---\n# x\n[p](push-notes.md)\n", "put", "--base", shaOf(t, cfg, "projects/app/x.md"), "projects/app/x.md")
 	if code, _, e := runCLI(t, cfg, "", "mv", "projects/app/push-notes.md", "global/push.md"); code != 0 {
 		t.Fatalf("mv back: %s", e)
 	}
-	_, out, _ = runCLI(t, cfg, "", "get", "--json", "projects/app/x.md")
+	_, out, _ = runCLI(t, cfg, "", "cat", "projects/app/x.md")
 	if !strings.Contains(out, "](../../global/push.md)") {
 		t.Errorf("referrer not rewritten: %s", out)
 	}
@@ -366,12 +377,13 @@ func TestMvAndLint(t *testing.T) {
 	}
 	runCLI(t, cfg, "", "mv", "global/Push.md", "global/push.md")
 	runCLI(t, cfg, "---\nsummary: b\n---\n# b\n[gone](gone.md)\n\n## Links\n- x\n* see_also: [i](index.md)\n  + index.md | untyped\n", "put", "global/broken.md")
-	_, out, _ = runCLI(t, cfg, "", "get", "--json", "global/broken.md")
+	_, out, _ = runCLI(t, cfg, "", "links", "--json", "-o", "global/broken.md")
 	var b struct {
-		Links []struct{ Type, Target, Note string }
+		Items []struct{ Direction, Type, Target, Note string }
 	}
 	mustUnmarshal(t, out, &b)
-	if len(b.Links) != 2 || b.Links[0].Type != "see_also" || b.Links[1].Type != "see_also" || b.Links[1].Target != "global/index.md" || b.Links[1].Note != "untyped" {
+	if len(b.Items) != 3 || b.Items[0].Type != "see_also" || b.Items[1].Type != "see_also" || b.Items[1].Target != "global/index.md" || b.Items[1].Note != "untyped" ||
+		b.Items[2].Type != "mentions" || b.Items[2].Target != "global/gone.md" || b.Items[2].Direction != "out" {
 		t.Errorf("tolerant links: %s", out)
 	}
 	code, out, _ = runCLI(t, cfg, "", "lint", "--json")
@@ -492,36 +504,40 @@ func TestLintNames(t *testing.T) {
 	}
 }
 
-func getSha(t *testing.T, cfg, p string) string {
+// shaOf returns the blob sha of p as stat prints it.
+func shaOf(t *testing.T, cfg, p string) string {
 	t.Helper()
-	_, out, _ := runCLI(t, cfg, "", "get", "--json", p)
-	var g struct{ Sha string }
-	mustUnmarshal(t, out, &g)
-	return g.Sha
+	_, out, _ := runCLI(t, cfg, "", "stat", "--json", p)
+	var st struct{ Items []struct{ Sha string } }
+	mustUnmarshal(t, out, &st)
+	if len(st.Items) != 1 {
+		t.Fatalf("stat %s: %s", p, out)
+	}
+	return st.Items[0].Sha
 }
 
 func TestMvDir(t *testing.T) {
 	cfg := setup(t)
 	// Set up x.md linking to global/index.md and global/ref.md linking to x.md.
-	runCLI(t, cfg, "---\nsummary: x\n---\n# x\n[i](../../global/index.md)\n", "put", "--base", getSha(t, cfg, "projects/app/x.md"), "projects/app/x.md")
+	runCLI(t, cfg, "---\nsummary: x\n---\n# x\n[i](../../global/index.md)\n", "put", "--base", shaOf(t, cfg, "projects/app/x.md"), "projects/app/x.md")
 	runCLI(t, cfg, "---\nsummary: z\n---\n# z\n[x](x.md)\n", "put", "projects/app/z.md")
 	runCLI(t, cfg, "---\nsummary: ref\n---\n# ref\n\n## Links\n- see_also: [x](../projects/app/x.md)\n", "put", "global/ref.md")
 	code, out, errs := runCLI(t, cfg, "", "mv", "--json", "projects/app/", "projects/app2/")
 	if code != 0 {
 		t.Fatalf("code=%d %s %s", code, out, errs)
 	}
-	if code, _, _ := runCLI(t, cfg, "", "get", "projects/app/x.md"); code != 1 {
+	if code, _, _ := runCLI(t, cfg, "", "cat", "projects/app/x.md"); code != 1 {
 		t.Error("old path must be gone")
 	}
-	_, out, _ = runCLI(t, cfg, "", "get", "--json", "projects/app2/x.md")
+	_, out, _ = runCLI(t, cfg, "", "cat", "projects/app2/x.md")
 	if !strings.Contains(out, "](../../global/index.md)") {
 		t.Errorf("moved page self link: %s", out)
 	}
-	_, out, _ = runCLI(t, cfg, "", "get", "--json", "projects/app2/z.md")
+	_, out, _ = runCLI(t, cfg, "", "cat", "projects/app2/z.md")
 	if !strings.Contains(out, "](x.md)") {
 		t.Errorf("intra-dir link must stay relative: %s", out)
 	}
-	_, out, _ = runCLI(t, cfg, "", "get", "--json", "global/ref.md")
+	_, out, _ = runCLI(t, cfg, "", "links", "--json", "global/ref.md")
 	if !strings.Contains(out, `"target":"projects/app2/x.md"`) {
 		t.Errorf("external referrer: %s", out)
 	}
@@ -545,7 +561,7 @@ func TestMvDir(t *testing.T) {
 			t.Errorf("mv %s x/ must be rejected: code=%d errs=%q", from, code, errs)
 		}
 	}
-	if code, _, _ := runCLI(t, cfg, "", "get", "global/index.md"); code != 0 {
+	if code, _, _ := runCLI(t, cfg, "", "cat", "global/index.md"); code != 0 {
 		t.Error("rejected dir mv must not move pages")
 	}
 	if code, _, errs := runCLI(t, cfg, "", "mv", "projects/app2/", "global/x.md"); code != 2 || !strings.Contains(errs, "both arguments") {
@@ -567,13 +583,11 @@ func TestMvRewriteScope(t *testing.T) {
 			t.Fatalf("put %s: code=%d %s", p, code, errs)
 		}
 	}
-	unrelatedSha := getSha(t, cfg, "global/unrelated.md")
+	unrelatedSha := shaOf(t, cfg, "global/unrelated.md")
 	body := func(p string) string {
 		t.Helper()
-		_, out, _ := runCLI(t, cfg, "", "get", "--json", p)
-		var g struct{ Body string }
-		mustUnmarshal(t, out, &g)
-		return g.Body
+		_, out, _ := runCLI(t, cfg, "", "cat", p)
+		return out
 	}
 
 	code, out, errs := runCLI(t, cfg, "", "mv", "--json", "global/a.md", "global/a2.md")
@@ -585,7 +599,7 @@ func TestMvRewriteScope(t *testing.T) {
 	if res.Rewritten != 1 {
 		t.Errorf("mv rewritten=%d, want 1: %s", res.Rewritten, out)
 	}
-	if got := getSha(t, cfg, "global/unrelated.md"); got != unrelatedSha {
+	if got := shaOf(t, cfg, "global/unrelated.md"); got != unrelatedSha {
 		t.Errorf("unrelated page changed: %s", body("global/unrelated.md"))
 	}
 	if b := body("global/ref.md"); !strings.Contains(b, "[r](./a2.md \"t\") `[c](a.md)` [x](../projects/app/x.md#h)") {
@@ -601,7 +615,7 @@ func TestMvRewriteScope(t *testing.T) {
 	if res.Moved != 1 || res.Rewritten != 1 {
 		t.Errorf("mv dir moved=%d rewritten=%d, want 1 and 1: %s", res.Moved, res.Rewritten, out)
 	}
-	if got := getSha(t, cfg, "global/unrelated.md"); got != unrelatedSha {
+	if got := shaOf(t, cfg, "global/unrelated.md"); got != unrelatedSha {
 		t.Errorf("unrelated page changed by dir mv: %s", body("global/unrelated.md"))
 	}
 	if b := body("global/ref.md"); !strings.Contains(b, "[x](../projects/app2/x.md#h)") {
@@ -640,25 +654,25 @@ func TestMvRmStaleMirror(t *testing.T) {
 
 	// A linking page changed: global/push.md links to global/index.md.
 	t.Setenv("XDG_CACHE_HOME", cacheB)
-	sha := getSha(t, cfg, "global/push.md")
+	sha := shaOf(t, cfg, "global/push.md")
 	t.Setenv("XDG_CACHE_HOME", cacheA)
 	edited := "---\nsummary: how to push\n---\n# push\n[index](index.md)\nEDIT BY B\n"
 	fromB(edited, "put", "--base", sha, "global/push.md")
 	code, out, _ := runCLI(t, cfg, "", "--no-fetch", "mv", "--json", "global/index.md", "global/start.md")
 	wantConflict("mv referrer", out, code, "global/push.md", "changed", "EDIT BY B", "mv")
-	if code, _, _ := runCLI(t, cfg, "", "get", "global/start.md"); code != 1 {
+	if code, _, _ := runCLI(t, cfg, "", "cat", "global/start.md"); code != 1 {
 		t.Error("mv with a conflict must not write")
 	}
 	if code, out, errs := runCLI(t, cfg, "", "mv", "global/index.md", "global/start.md"); code != 0 {
 		t.Fatalf("mv again: code=%d %s %s", code, out, errs)
 	}
-	_, out, _ = runCLI(t, cfg, "", "get", "--json", "global/push.md")
+	_, out, _ = runCLI(t, cfg, "", "cat", "global/push.md")
 	if !strings.Contains(out, "EDIT BY B") || !strings.Contains(out, "](start.md)") {
 		t.Errorf("mv again must keep the change and rewrite the link: %s", out)
 	}
 
 	// The moved page changed.
-	fromB("---\nsummary: x\n---\n# x\nEDIT BY B\n", "put", "--base", getSha(t, cfg, "projects/app/x.md"), "projects/app/x.md")
+	fromB("---\nsummary: x\n---\n# x\nEDIT BY B\n", "put", "--base", shaOf(t, cfg, "projects/app/x.md"), "projects/app/x.md")
 	code, out, _ = runCLI(t, cfg, "", "--no-fetch", "mv", "--json", "projects/app/", "projects/app2/")
 	wantConflict("mv dir source", out, code, "projects/app/x.md", "changed", "EDIT BY B", "mv")
 
@@ -666,16 +680,16 @@ func TestMvRmStaleMirror(t *testing.T) {
 	fromB("---\nsummary: d\n---\n# d\n", "put", "global/dest.md")
 	code, out, _ = runCLI(t, cfg, "", "--no-fetch", "mv", "--json", "global/push.md", "global/dest.md")
 	wantConflict("mv destination", out, code, "global/dest.md", "exists", "# d", "mv")
-	if code, _, _ := runCLI(t, cfg, "", "get", "global/push.md"); code != 0 {
+	if code, _, _ := runCLI(t, cfg, "", "cat", "global/push.md"); code != 0 {
 		t.Error("mv onto a created page must not move the source")
 	}
 
 	// rm of a page that changed.
-	sha = getSha(t, cfg, "global/push.md")
+	sha = shaOf(t, cfg, "global/push.md")
 	fromB("---\nsummary: p\n---\n# p\nEDIT 2\n", "put", "--base", sha, "global/push.md")
 	code, out, _ = runCLI(t, cfg, "", "--no-fetch", "rm", "--json", "global/push.md")
 	wantConflict("rm changed", out, code, "global/push.md", "changed", "EDIT 2", "rm")
-	if code, _, _ := runCLI(t, cfg, "", "get", "global/push.md"); code != 0 {
+	if code, _, _ := runCLI(t, cfg, "", "cat", "global/push.md"); code != 0 {
 		t.Error("rm with a conflict must not delete the page")
 	}
 }
@@ -1050,8 +1064,8 @@ func TestPutIgnoresCallerGitDir(t *testing.T) {
 	mustRun(t, proj, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "proj")
 	mustRun(t, proj, "git", "push", "-q", "origin", "HEAD:main")
 	projHead := gitOut(t, "--git-dir", projRemote, "rev-parse", "main")
-	if code, _, errs := runCLI(t, cfg, "", "get", "global/index.md"); code != 0 {
-		t.Fatalf("get code=%d %s", code, errs)
+	if code, _, errs := runCLI(t, cfg, "", "cat", "global/index.md"); code != 0 {
+		t.Fatalf("cat code=%d %s", code, errs)
 	}
 
 	t.Setenv("GIT_DIR", filepath.Join(proj, ".git"))
@@ -1110,7 +1124,7 @@ func TestWriteWithoutChange(t *testing.T) {
 		t.Fatalf("rejected mv moved the remote branch: %s -> %s", head, got)
 	}
 
-	sha := getSha(t, cfg, "global/index.md")
+	sha := shaOf(t, cfg, "global/index.md")
 	code, out, errs := runCLI(t, cfg, "---\nsummary: entry point\n---\n# global\n", "put", "--json", "--base", sha, "global/index.md")
 	var res struct{ Path, Sha, Commit string }
 	mustUnmarshal(t, out, &res)
@@ -1148,8 +1162,9 @@ func TestPageLimits(t *testing.T) {
 	if code, out, errs := runCLI(t, cfg, "", "search", "--json", "summary"); code != 0 || !strings.Contains(out, "global/large.md") {
 		t.Errorf("search: code=%d out=%q errs=%q", code, out, errs)
 	}
-	if code, out, errs := runCLI(t, cfg, "", "get", "--json", "global/deep.md"); code != 0 || !strings.Contains(out, `"frontmatter":{}`) {
-		t.Errorf("get: code=%d out=%.200q errs=%q", code, out, errs)
+	if code, out, errs := runCLI(t, cfg, "", "stat", "--json", "global/deep.md", "global/huge.md"); code != 0 ||
+		!strings.Contains(out, `"title":"deep","summary":""`) || !strings.Contains(out, `"title":"huge","summary":""`) {
+		t.Errorf("stat: code=%d out=%.300q errs=%q", code, out, errs)
 	}
 	code, out, _ := runCLI(t, cfg, "", "lint")
 	for _, w := range []string{"global/deep.md:1: frontmatter_invalid", "global/large.md:1: frontmatter_invalid", "global/huge.md:0: page_too_large"} {

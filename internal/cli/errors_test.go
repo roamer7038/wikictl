@@ -23,7 +23,7 @@ func TestErrorUnwrap(t *testing.T) {
 }
 
 func TestReport(t *testing.T) {
-	get := lookup("get")
+	links := lookup("links")
 	cf := &repo.Conflict{Path: "global/a.md", Reason: "changed", SHA: "abc", Content: []byte("# a\n")}
 	cases := []struct {
 		name       string
@@ -40,9 +40,9 @@ func TestReport(t *testing.T) {
 			`{"error":"error","message":"page not found: global/a.md"}` + "\n"},
 		{"usage", &usageError{msg: "bad flag"}, ExitUsage, "", "wikictl: bad flag\n",
 			`{"error":"usage","message":"bad flag"}` + "\n"},
-		{"command usage", &usageError{get, "missing argument"}, ExitUsage, "",
-			"wikictl: get: missing argument\nUsage: wikictl get <path>\nRun \"wikictl help get\" for details.\n",
-			`{"error":"usage","message":"get: missing argument"}` + "\n"},
+		{"command usage", &usageError{links, "missing argument"}, ExitUsage, "",
+			"wikictl: links: missing argument\nUsage: wikictl links [flags] <path>\nRun \"wikictl help links\" for details.\n",
+			`{"error":"usage","message":"links: missing argument"}` + "\n"},
 		{"invalid", &invalidError{"bad_path: x"}, ExitInvalid, "", "wikictl: bad_path: x\n",
 			`{"error":"invalid","message":"bad_path: x"}` + "\n"},
 		{"git", &gitError{errors.New("git fetch: exit status 128")}, ExitGit, "", "wikictl: git fetch: exit status 128\n",

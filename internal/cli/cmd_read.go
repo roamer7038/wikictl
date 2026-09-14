@@ -107,71 +107,193 @@ func (a *app) cmdSearch(c *command, words []string) error {
 	return nil
 }
 
-type getOut struct {
-	Path        string          `json:"path"`
-	SHA         string          `json:"sha"`
-	Frontmatter map[string]any  `json:"frontmatter"`
-	Title       string          `json:"title"`
-	Body        string          `json:"body"`
-	Links       []linkOut       `json:"links"`
-	Backlinks   []wiki.Backlink `json:"backlinks"`
-	Updated     string          `json:"updated"`
+type catItem struct {
+	Path    string `json:"path"`
+	SHA     string `json:"sha"`
+	Content string `json:"content"`
 }
 
-type linkOut struct {
-	Type   string `json:"type"`
-	Target string `json:"target"`
-	Note   string `json:"note"`
+// cmdCat prints the files as stored, in the order given. As GNU cat does, a
+// path that is not a file is reported on standard error, the other files are
+// still printed, and the command exits with 1.
+func (a *app) cmdCat(c *command, args []string) error {
+	contents, shas, err := a.repo.CatSHA(args)
+	if err != nil {
+		return &gitError{err}
+	}
+	missing, err := a.missing(args, func(p string) bool { _, ok := contents[p]; return ok })
+	if err != nil {
+		return err
+	}
+	items := []catItem{}
+	for _, p := range args {
+		if b, ok := contents[p]; ok {
+			items = append(items, catItem{p, shas[p], string(b)})
+		}
+	}
+	a.emit(map[string]any{"items": items}, func(w io.Writer) {
+		for _, it := range items {
+			io.WriteString(w, it.Content)
+		}
+	})
+	return a.reportMissing(missing)
 }
 
-func (a *app) cmdGet(c *command, args []string) error {
+type statItem struct {
+	Path    string   `json:"path"`
+	SHA     string   `json:"sha"`
+	Updated string   `json:"updated"`
+	Title   string   `json:"title"`
+	Summary string   `json:"summary"`
+	Type    string   `json:"type"`
+	Tags    []string `json:"tags"`
+	Status  string   `json:"status"`
+	Aliases []string `json:"aliases"`
+}
+
+// cmdStat shows the blob sha, the time of the last change and the attributes
+// of each file. Paths that are not files are reported as cat reports them.
+func (a *app) cmdStat(c *command, args []string) error {
+	objs, err := a.repo.Stat(args)
+	if err != nil {
+		return &gitError{err}
+	}
+	missing, err := a.missing(args, func(p string) bool { _, ok := objs[p]; return ok })
+	if err != nil {
+		return err
+	}
+	var found []string
+	for _, p := range args {
+		if _, ok := objs[p]; ok {
+			found = append(found, p)
+		}
+	}
+	pages, err := a.readPages(found)
+	if err != nil {
+		return &gitError{err}
+	}
+	updated := map[string]time.Time{}
+	if len(found) > 0 {
+		if updated, err = a.repo.Updated(found); err != nil {
+			return &gitError{err}
+		}
+	}
+	items := []statItem{}
+	for _, p := range found {
+		pg := pages.parse(p)
+		typ, _ := pg.Frontmatter["type"].(string)
+		status, _ := pg.Frontmatter["status"].(string)
+		items = append(items, statItem{Path: p, SHA: objs[p].SHA, Updated: fmtTime(updated[p]), Title: pg.Title, Summary: pg.Summary,
+			Type: typ, Tags: stringList(pg.Frontmatter["tags"]), Status: status, Aliases: stringList(pg.Frontmatter["aliases"])})
+	}
+	a.emit(map[string]any{"items": items}, func(w io.Writer) {
+		for i, it := range items {
+			if i > 0 {
+				fmt.Fprintln(w)
+			}
+			fmt.Fprintf(w, "path: %s\nsha: %s\nupdated: %s\ntitle: %s\nsummary: %s\ntype: %s\ntags: %s\nstatus: %s\naliases: %s\n",
+				escapeControl(it.Path), it.SHA, it.Updated, escapeControl(it.Title), escapeControl(it.Summary), escapeControl(it.Type),
+				escapeControl(strings.Join(it.Tags, ", ")), escapeControl(it.Status), escapeControl(strings.Join(it.Aliases, ", ")))
+		}
+	})
+	return a.reportMissing(missing)
+}
+
+// stringList returns the strings of a frontmatter value written as a YAML
+// list, or the value itself when it is a single string.
+func stringList(v any) []string {
+	out := []string{}
+	switch v := v.(type) {
+	case string:
+		out = append(out, v)
+	case []any:
+		for _, e := range v {
+			if s, ok := e.(string); ok {
+				out = append(out, s)
+			}
+		}
+	}
+	return out
+}
+
+// missing returns the paths for which found is false, after checking with
+// git that each of them is absent rather than unreadable.
+func (a *app) missing(paths []string, found func(string) bool) ([]string, error) {
+	var out []string
+	for _, p := range paths {
+		if !found(p) {
+			out = append(out, p)
+		}
+	}
+	if err := a.repo.CheckMissing(out); err != nil {
+		return nil, &gitError{err}
+	}
+	return out, nil
+}
+
+// reportMissing prints a line on standard error for each path that is not a
+// file, and returns exit status 1 when there is any.
+func (a *app) reportMissing(paths []string) error {
+	for _, p := range paths {
+		fmt.Fprintf(a.stderr, "wikictl: %s: no such file\n", escapeControl(p))
+	}
+	if len(paths) > 0 {
+		return exitStatus(ExitError)
+	}
+	return nil
+}
+
+type linkItem struct {
+	Direction string `json:"direction"`
+	Type      string `json:"type"`
+	Target    string `json:"target"`
+	Note      string `json:"note"`
+}
+
+func linksFlags(a *app, fs *pflag.FlagSet) {
+	fs.BoolVarP(&a.linksIn, "in", "i", false, "list only the links from other pages to this page")
+	fs.BoolVarP(&a.linksOut, "out", "o", false, "list only the links in this page")
+}
+
+// cmdLinks lists the links in a page ("out") and the links to it from other
+// pages ("in"). A body link to a page that the Links section also links to is
+// not listed again.
+func (a *app) cmdLinks(c *command, args []string) error {
 	p := args[0]
-	pages, err := a.readPages([]string{p})
+	pages, err := a.readPages(args)
 	if err != nil {
 		return &gitError{err}
 	}
 	if !pages.exists(p) {
 		return a.notFound(p)
 	}
-	head, err := a.repo.Head()
-	if err != nil {
-		return &gitError{err}
-	}
-	sha, err := a.repo.BlobSHA(head, p)
-	if err != nil {
-		return &gitError{err}
-	}
-	pg := pages.parse(p)
-	links := []linkOut{}
-	for _, l := range pg.Links {
-		links = append(links, linkOut{l.Type, l.Target, l.Note})
-	}
-	backlinks, err := wiki.Backlinks(a.repo, p)
-	if err != nil {
-		return &gitError{err}
-	}
-	updated, err := a.repo.Updated([]string{path.Dir(p)})
-	if err != nil {
-		return &gitError{err}
-	}
-	fm := pg.Frontmatter
-	if fm == nil {
-		fm = map[string]any{}
-	}
-	out := getOut{Path: p, SHA: sha, Frontmatter: fm, Title: pg.Title, Body: pg.Body, Links: links, Backlinks: backlinks, Updated: fmtTime(updated[p])}
-	a.emit(out, func(w io.Writer) {
-		fmt.Fprintf(w, "path: %s\nsha: %s\nupdated: %s\n\n%s", p, sha, out.Updated, pg.Body)
-		if len(links) > 0 {
-			fmt.Fprintln(w, "\nlinks:")
-			for _, l := range links {
-				fmt.Fprintf(w, "%s\n", strings.TrimRight("  "+l.Type+": "+escapeControl(l.Target)+" "+escapeControl(l.Note), " "))
+	both := a.linksIn == a.linksOut
+	items := []linkItem{}
+	if both || a.linksOut {
+		pg := pages.parse(p)
+		typed := map[string]bool{}
+		for _, l := range pg.Links {
+			items = append(items, linkItem{"out", l.Type, l.Target, l.Note})
+			typed[l.Target] = true
+		}
+		for _, m := range pg.Mentions {
+			if !typed[m.Target] {
+				items = append(items, linkItem{"out", m.Type, m.Target, ""})
 			}
 		}
-		if len(backlinks) > 0 {
-			fmt.Fprintln(w, "\nbacklinks:")
-			for _, b := range backlinks {
-				fmt.Fprintf(w, "  %s (%s)\n", b.Path, b.Type)
-			}
+	}
+	if both || a.linksIn {
+		backlinks, err := wiki.Backlinks(a.repo, p)
+		if err != nil {
+			return &gitError{err}
+		}
+		for _, b := range backlinks {
+			items = append(items, linkItem{"in", b.Type, b.Path, ""})
+		}
+	}
+	a.emit(map[string]any{"items": items}, func(w io.Writer) {
+		for _, it := range items {
+			fmt.Fprintf(w, "%s\t%s\t%s\n", it.Direction, it.Type, escapeControl(it.Target))
 		}
 	})
 	return nil

@@ -61,7 +61,7 @@ Linux と macOS（x86_64、arm64）のバイナリは [Releases ページ](https
        printf -- '---\nsummary: --force-with-lease 付きの push は、リモートの ref が期待する sha のままでなければ拒否される\n---\n# --force-with-lease は何を保証するか\n\n本文。\n' \
          | wikictl put global/git-force-with-lease.md
        wikictl search lease
-       wikictl get global/git-force-with-lease.md
+       wikictl cat global/git-force-with-lease.md
        wikictl lint
 
 ## wiki の構成
@@ -107,7 +107,9 @@ type: concept
 | コマンド | 説明 |
 |---|---|
 | `search <word>...` | 指定した語を含むページを検索する |
-| `get <path>` | ページを sha、リンク、バックリンクとともに表示する |
+| `cat <path>...` | ファイルを保存されたままの内容で表示する |
+| `stat <path>...` | ファイルの sha、最終更新日時、属性を表示する |
+| `links <path>` | ページからのリンクとページへのリンクを一覧表示する |
 | `ls` | ページを一覧表示する |
 | `put <path> < content` | 標準入力の内容でページを作成または置換する |
 | `mv <path> <newpath>` | ページまたはディレクトリを移動・名前変更し、リンクを書き換える |
@@ -120,7 +122,7 @@ type: concept
 
 各コマンドのフラグ、挙動、JSON 出力は `wikictl help <command>` で確認できます。`help` 以外のどのコマンドも、`--json` を付けるとプログラムで処理しやすい JSON を出力します。
 
-既存のページを更新するときは、`get` が表示する `sha` を `put --base` に渡します。その間にページが変更されていた場合、`put` は終了コード 3 で終了して現在の内容を出力します。wikictl が自動でマージすることはありません。
+既存のページを更新するときは、`stat` が表示する `sha` を `put --base` に渡します。その間にページが変更されていた場合、`put` は終了コード 3 で終了して現在の内容を出力します。wikictl が自動でマージすることはありません。
 
 ## 設定
 

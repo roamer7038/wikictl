@@ -49,21 +49,37 @@ when the page has no summary. Control characters other than tab are shown as
 
 Output: items[] {path, summary, title, matched, updated}.`,
 		flags: searchFlags, run: (*app).cmdSearch},
-	{name: "get", args: "<path>", minArgs: 1, maxArgs: 1, paths: true,
-		summary: "Show a page with its links and backlinks",
-		detail: `Show one page: its blob sha, frontmatter, title, body (without frontmatter
-and the Links section), typed links from the Links section, and backlinks
-from other pages: their typed links, or "mentions" for links in their body.
-Pass the sha to "put --base" when updating the page.
+	{name: "cat", args: "<path>...", minArgs: 1, maxArgs: -1, paths: true,
+		summary: "Print files as stored",
+		detail: `Print each file as stored in the wiki, in the order given. A path that is not
+a file is reported on standard error, the other files are still printed, and
+the command exits with code 1. The sha in the JSON output is the one to pass
+to "put --base" when updating the page.
 
-The page is shown as parsed, not as stored; put prints the stored content when
-it reports a conflict. Text output shows the path, sha, update time, body,
-links and backlinks; the frontmatter and title are only in JSON output.
-Control characters other than tab in the targets and notes of the links are
-shown as \xNN in text output; the body is printed as it is.
+Output: items[] {path, sha, content}.`,
+		run: (*app).cmdCat},
+	{name: "stat", args: "<path>...", minArgs: 1, maxArgs: -1, paths: true,
+		summary: "Show the sha, last update and attributes of files",
+		detail: `Show, for each file, its blob sha, the time of the last commit that changed
+it, and the attributes read from the page: title (the first heading, else the
+file name), summary (or description), type, tags, status and aliases. A path
+that is not a file is reported as cat reports it. Control characters other
+than tab are shown as \xNN in text output.
 
-Output: {path, sha, frontmatter, title, body, links[], backlinks[], updated}.`,
-		run: (*app).cmdGet},
+Output: items[] {path, sha, updated, title, summary, type, tags, status, aliases}.`,
+		run: (*app).cmdStat},
+	{name: "links", args: "<path>", minArgs: 1, maxArgs: 1, paths: true,
+		summary: "List the links in a page and to it",
+		detail: `List the links of a page, one per line as "<direction><TAB><type><TAB><target>".
+Direction "out" is a link in the page: a typed link from its Links section, or
+"mentions" for a link in its body to a page that the Links section does not
+link to. Direction "in" is a link to the page from another page: that page's
+typed link, or "mentions". With -o only the links in the page are listed,
+with -i only the links to it. Control characters other than tab in a target
+are shown as \xNN in text output.
+
+Output: items[] {direction, type, target, note}.`,
+		flags: linksFlags, run: (*app).cmdLinks},
 	{name: "ls", maxArgs: 0,
 		summary: "List pages",
 		detail: `List the pages of the wiki with their summary and type.
@@ -79,7 +95,7 @@ Output: items[] {path, summary, title, type, updated}.`,
 		summary: "Create or replace a page from standard input",
 		detail: `Read the whole page, frontmatter included, from standard input and commit it
 as <path>. Omit --base for a new page. For an existing page pass --base with
-the blob sha from get; without it, or if the page changed in the meantime, the
+the blob sha from stat; without it, or if the page changed in the meantime, the
 command exits with code 3 and prints the current content and sha. A page
 whose frontmatter is invalid, that is over the size limits, or whose path
 breaks the file name rules (see "help lint") is rejected with exit code 4. A
@@ -183,7 +199,7 @@ links_syntax.
 A page link is a relative path ending in .md, optionally followed by
 #fragment; absolute paths and paths that leave the wiki are not page links.
 Links of the form [text](path) in the body are also read, except inside code
-fences and code spans: get lists them as "mentions" backlinks, and lint
+fences and code spans: links lists them as "mentions", and lint
 reports them as broken_link when the page is missing. Code fences are never
 interpreted, so a "## Links" heading inside a fence does not start the
 Links section.
@@ -257,13 +273,15 @@ type app struct {
 	stderr  io.Writer
 
 	// Command flags, registered by the flags function of the command.
-	any  bool
-	all  bool
-	n    positiveInt
-	typ  string
-	tag  string
-	base string
-	msg  string
+	linksIn  bool
+	linksOut bool
+	any      bool
+	all      bool
+	n        positiveInt
+	typ      string
+	tag      string
+	base     string
+	msg      string
 }
 
 // globalFlags registers the flags accepted before or after the command name.
