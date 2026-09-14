@@ -24,12 +24,12 @@ func (a *app) cmdLint(c *command, args []string) error {
 	for _, p := range paths {
 		checked[p] = true
 	}
-	contents, err := a.repo.Cat(paths)
+	read, err := a.readPages(paths)
 	if err != nil {
 		return &gitError{err}
 	}
 	for _, p := range args {
-		if contents[p] == nil {
+		if !read.exists(p) {
 			return a.notFound(p)
 		}
 	}
@@ -43,7 +43,7 @@ func (a *app) cmdLint(c *command, args []string) error {
 	}
 	var pages []*page.Page
 	for _, p := range paths {
-		pg := page.Parse(p, contents[p])
+		pg := read.parse(p)
 		items = append(items, pg.Issues...)
 		pages = append(pages, pg)
 	}
@@ -84,7 +84,7 @@ func (a *app) brokenLinks(pages []*page.Page) ([]page.Issue, error) {
 	if len(targets) == 0 {
 		return nil, nil
 	}
-	found, err := a.repo.Cat(targets)
+	found, err := a.repo.Stat(targets)
 	if err != nil {
 		return nil, err
 	}

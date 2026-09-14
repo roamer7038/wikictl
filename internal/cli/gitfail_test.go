@@ -81,15 +81,21 @@ func TestGitFailure(t *testing.T) {
 		{"get/backlinks cat", gitFault{match: " cat-file --batch ", skip: 1}, "", []string{"get", "global/index.md"}, ExitGit},
 		{"get/updated", gitFault{match: " log --format="}, "", []string{"get", "global/push.md"}, ExitGit},
 		{"ls/deprecated", gitFault{match: " grep -l -E "}, "", []string{"ls", "--dirs", "global"}, ExitGit},
+		{"ls/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"ls", "--dirs", "global"}, ExitGit},
 		{"ls/cat", gitFault{match: " cat-file --batch "}, "", []string{"ls", "--dirs", "global"}, ExitGit},
 		{"ls/updated", gitFault{match: " log --format="}, "", []string{"ls", "--dirs", "global"}, ExitGit},
+		{"search/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"search", "--dirs", "global", "lease"}, ExitGit},
+		{"get/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"get", "global/push.md"}, ExitGit},
+		{"dirs/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"dirs"}, ExitGit},
+		{"lint/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"lint", "global/push.md"}, ExitGit},
 		{"lint/cat", gitFault{match: " cat-file --batch "}, "", []string{"lint", "global/push.md"}, ExitGit},
+		{"lint/link targets", gitFault{match: " cat-file --batch-check ", skip: 1}, "", []string{"lint", "global/push.md"}, ExitGit},
 		{"dirs/head", gitFault{match: head}, "", []string{"dirs"}, ExitGit},
 		{"context/head", gitFault{match: head}, "", []string{"context"}, ExitGit},
 		{"rm/cat", gitFault{match: " cat-file --batch "}, "", []string{"rm", "global/push.md"}, ExitGit},
 		{"mv/cat", gitFault{match: " cat-file --batch "}, "", []string{"mv", "global/push.md", "global/push2.md"}, ExitGit},
 		{"mv/destination directory", gitFault{match: " -- projects/app2 "}, "", []string{"mv", "projects/app/", "projects/app2/"}, ExitGit},
-		{"put/link targets", gitFault{match: " cat-file --batch "}, newPage, []string{"put", "global/new.md"}, ExitGit},
+		{"put/link targets", gitFault{match: " cat-file --batch-check "}, newPage, []string{"put", "global/new.md"}, ExitGit},
 		{"put/head", gitFault{match: head}, newPage, []string{"put", "global/new.md"}, ExitGit},
 		{"put/sha", gitFault{match: " ls-tree -z "}, newPage, []string{"put", "global/push.md"}, ExitGit},
 		{"put/conflict content", gitFault{match: " cat-file -p "}, newPage, []string{"put", "global/push.md"}, ExitGit},
@@ -264,4 +270,97 @@ func TestGitStderrNoise(t *testing.T) {
 		t.Setenv("XDG_CONFIG_HOME", conf)
 		check(t, "unreadable attributes")
 	})
+}
+
+// recordBatchInput puts a git wrapper first on PATH that appends the standard
+// input of every "cat-file --batch" call, the call that reads contents, to the
+// returned file.
+func recordBatchInput(t *testing.T) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("the git wrapper is a shell script")
+	}
+	real, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	log := filepath.Join(dir, "batch-input")
+	script := "#!/bin/sh\n" +
+		"case \" $* \" in\n" +
+		"*' cat-file --batch '*)\n" +
+		"  tee -a " + shQuote(log) + " | " + shQuote(real) + " \"$@\"\n" +
+		"  exit $?\n" +
+		"  ;;\n" +
+		"esac\n" +
+		"exec " + shQuote(real) + " \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return log
+}
+
+// TestLargeBlobNotRead pushes a page over the size limit and checks that the
+// read commands and lint report it as before without reading its content.
+func TestLargeBlobNotRead(t *testing.T) {
+	cfg := setup(t)
+	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
+	work := filepath.Join(t.TempDir(), "w")
+	mustRun(t, "", "git", "clone", "-q", remote, work)
+	huge := "---\nsummary: huge\n---\n# huge\n" + strings.Repeat("lorem ipsum\n", 100000) + "Äpfel\n[push](push.md)\n"
+	files := map[string]string{
+		"global/huge.md":  huge,
+		"global/refer.md": "---\nsummary: refer\n---\n# refer\nsee [huge](huge.md)\n",
+	}
+	for p, c := range files {
+		os.WriteFile(filepath.Join(work, p), []byte(c), 0o644)
+	}
+	mustRun(t, work, "git", "add", "-A")
+	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "huge")
+	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
+	if code, _, errs := runCLI(t, cfg, "", "ls"); code != ExitOK {
+		t.Fatalf("ls: code=%d errs=%q", code, errs)
+	}
+	sha := strings.TrimSpace(gitOut(t, "--git-dir", remote, "rev-parse", "main:global/huge.md"))
+	log := recordBatchInput(t)
+
+	var ls struct{ Items []lsItem }
+	code, out, errs := runCLI(t, cfg, "", "--json", "ls", "--dirs", "global")
+	mustUnmarshal(t, out, &ls)
+	if code != ExitOK || !slices.ContainsFunc(ls.Items, func(it lsItem) bool {
+		return it.Path == "global/huge.md" && it.Title == "huge" && it.Summary == "" && it.Type == ""
+	}) {
+		t.Errorf("ls: code=%d out=%q errs=%q", code, out, errs)
+	}
+	var search struct{ Items []hit }
+	code, out, errs = runCLI(t, cfg, "", "--json", "search", "--any", "--dirs", "global", "äpfel", "zzz-none", "lorem")
+	mustUnmarshal(t, out, &search)
+	if code != ExitOK || len(search.Items) != 1 || search.Items[0].Path != "global/huge.md" || search.Items[0].Title != "huge" ||
+		!slices.Equal(search.Items[0].Matched, []string{"äpfel", "lorem"}) {
+		t.Errorf("search: code=%d out=%q errs=%q", code, out, errs)
+	}
+	var get getOut
+	code, out, errs = runCLI(t, cfg, "", "--json", "get", "global/huge.md")
+	mustUnmarshal(t, out, &get)
+	if code != ExitOK || get.SHA != sha || get.Title != "huge" || get.Body != "" || len(get.Frontmatter) != 0 || len(get.Links) != 0 {
+		t.Errorf("get: code=%d out=%q errs=%q", code, out, errs)
+	}
+	code, out, _ = runCLI(t, cfg, "", "lint", "global/huge.md", "global/refer.md")
+	if code != ExitInvalid || out != "global/huge.md:0: page_too_large: page is larger than 1048576 bytes\n" {
+		t.Errorf("lint: code=%d out=%q", code, out)
+	}
+
+	b, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if in := string(b); strings.Contains(in, "global/huge.md") || strings.Contains(in, sha) {
+		t.Errorf("the content of the large page was read; cat-file --batch input:\n%s", in)
+	}
+
+	injectGitFault(t, gitFault{match: " cat-file blob "})
+	if code, out, errs := runCLI(t, cfg, "", "--json", "search", "--dirs", "global", "lorem"); code != ExitGit {
+		t.Errorf("search with a failing read of the large page: code=%d out=%q errs=%q", code, out, errs)
+	}
 }

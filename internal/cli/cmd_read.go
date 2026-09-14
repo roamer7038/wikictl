@@ -78,17 +78,20 @@ func (a *app) cmdSearch(c *command, args []string) error {
 	if err != nil {
 		return &gitError{err}
 	}
-	contents, err := a.repo.Cat(paths)
+	pages, err := a.readPages(paths)
 	if err != nil {
 		return &gitError{err}
 	}
 	hits := []hit{}
 	for _, p := range paths {
-		pg := page.Parse(p, contents[p])
+		pg := pages.parse(p)
+		found, err := pages.containsFolded(a.repo, p, words)
+		if err != nil {
+			return &gitError{err}
+		}
 		matched := []string{}
-		folded := repo.Fold(string(contents[p]))
-		for _, w := range words {
-			if strings.Contains(folded, repo.Fold(w)) {
+		for i, w := range words {
+			if found[i] {
 				matched = append(matched, w)
 			}
 		}
@@ -138,12 +141,11 @@ type backlinkOut struct {
 
 func (a *app) cmdGet(c *command, args []string) error {
 	p := args[0]
-	contents, err := a.repo.Cat([]string{p})
+	pages, err := a.readPages([]string{p})
 	if err != nil {
 		return &gitError{err}
 	}
-	content, ok := contents[p]
-	if !ok {
+	if !pages.exists(p) {
 		return a.notFound(p)
 	}
 	head, err := a.repo.Head()
@@ -154,7 +156,7 @@ func (a *app) cmdGet(c *command, args []string) error {
 	if err != nil {
 		return &gitError{err}
 	}
-	pg := page.Parse(p, content)
+	pg := pages.parse(p)
 	links := []linkOut{}
 	for _, l := range pg.Links {
 		links = append(links, linkOut{l.Type, l.Target, l.Note})
@@ -199,7 +201,7 @@ func (a *app) backlinks(target string) ([]backlinkOut, error) {
 	if err != nil {
 		return nil, err
 	}
-	contents, err := a.repo.Cat(cands)
+	pages, err := a.readPages(cands)
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +210,7 @@ func (a *app) backlinks(target string) ([]backlinkOut, error) {
 		if cp == target {
 			continue
 		}
-		pg := page.Parse(cp, contents[cp])
+		pg := pages.parse(cp)
 		typed := false
 		for _, l := range pg.Links {
 			if !l.IsURL && l.Target == target {
@@ -226,6 +228,56 @@ func (a *app) backlinks(target string) ([]backlinkOut, error) {
 		}
 	}
 	return out, nil
+}
+
+// pageSet is the files read by readPages.
+type pageSet struct {
+	contents map[string][]byte
+	large    map[string]repo.Object // files over page.MaxPageSize, not read
+}
+
+// readPages reads paths with one lookup of their sizes and one read of the
+// contents of the files that are not over page.MaxPageSize.
+func (a *app) readPages(paths []string) (pageSet, error) {
+	contents, large, err := a.repo.CatLimit(paths, page.MaxPageSize)
+	return pageSet{contents, large}, err
+}
+
+// exists reports whether p is a file.
+func (s pageSet) exists(p string) bool {
+	_, ok := s.contents[p]
+	_, big := s.large[p]
+	return ok || big
+}
+
+// parse returns page.Parse of p, and page.TooLarge for a file over the limit.
+func (s pageSet) parse(p string) *page.Page {
+	if _, big := s.large[p]; big {
+		return page.TooLarge(p)
+	}
+	return page.Parse(p, s.contents[p])
+}
+
+// containsFolded reports, for each word, whether the content of p contains
+// it ignoring case as repo.Fold defines. The content of a file over the limit
+// is read as a stream with repo.ContainsFolded.
+func (s pageSet) containsFolded(r *repo.Repo, p string, words []string) ([]bool, error) {
+	o, big := s.large[p]
+	if !big {
+		folded := repo.Fold(string(s.contents[p]))
+		found := make([]bool, len(words))
+		for i, w := range words {
+			found[i] = strings.Contains(folded, repo.Fold(w))
+		}
+		return found, nil
+	}
+	var found []bool
+	err := r.ReadBlob(o.SHA, func(rd io.Reader) error {
+		var err error
+		found, err = repo.ContainsFolded(rd, words)
+		return err
+	})
+	return found, err
 }
 
 type lsItem struct {
@@ -266,7 +318,7 @@ func (a *app) cmdLs(c *command, args []string) error {
 		}
 		paths = filterOut(paths, dep)
 	}
-	contents, err := a.repo.Cat(paths)
+	pages, err := a.readPages(paths)
 	if err != nil {
 		return &gitError{err}
 	}
@@ -276,7 +328,7 @@ func (a *app) cmdLs(c *command, args []string) error {
 	}
 	items := []lsItem{}
 	for _, p := range paths {
-		pg := page.Parse(p, contents[p])
+		pg := pages.parse(p)
 		t, _ := pg.Frontmatter["type"].(string)
 		if o.typ != "" && t != o.typ {
 			continue
@@ -375,15 +427,15 @@ func (a *app) cmdDirs(c *command, args []string) error {
 		indexes = append(indexes, d+"index.md")
 	}
 	sort.Strings(dirs)
-	contents, err := a.repo.Cat(indexes)
+	pages, err := a.readPages(indexes)
 	if err != nil {
 		return &gitError{err}
 	}
 	items := []dirItem{}
 	for _, d := range dirs {
 		it := dirItem{Dir: d, Pages: counts[d]}
-		if content, ok := contents[d+"index.md"]; ok {
-			it.Summary = page.Parse(d+"index.md", content).Summary
+		if pages.exists(d + "index.md") {
+			it.Summary = pages.parse(d + "index.md").Summary
 		}
 		items = append(items, it)
 	}
@@ -395,7 +447,7 @@ func (a *app) cmdDirs(c *command, args []string) error {
 		}
 		for _, it := range items {
 			s := escapeControl(it.Summary)
-			if _, ok := contents[it.Dir+"index.md"]; !ok {
+			if !pages.exists(it.Dir + "index.md") {
 				s = "(no index)"
 			}
 			fmt.Fprintf(w, "%-*s  %*d  %s\n", dw, it.Dir, nw, it.Pages, s)

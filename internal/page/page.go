@@ -27,15 +27,13 @@ const MaxPageSize = 1 << 20
 // Parse interprets a whole page. Violations are collected in Issues and the
 // parts that can still be interpreted are filled in. A page over MaxPageSize
 // is not interpreted: only its path issues, a page_too_large issue and the
-// title from the file name are set.
+// title from the file name are set, as TooLarge does.
 func Parse(p string, content []byte) *Page {
+	if len(content) > MaxPageSize {
+		return TooLarge(p)
+	}
 	pg := &Page{Path: p}
 	pg.Issues = append(pg.Issues, PathIssues(p)...)
-	if len(content) > MaxPageSize {
-		pg.Issues = append(pg.Issues, Issue{Path: p, Line: 0, Code: "page_too_large", Message: fmt.Sprintf("page is larger than %d bytes", MaxPageSize)})
-		pg.Title = strings.TrimSuffix(path.Base(p), ".md")
-		return pg
-	}
 	fm, rest, n, ok := SplitFrontmatter(content)
 	if !ok {
 		pg.Issues = append(pg.Issues, Issue{Path: p, Line: 1, Code: "missing_summary", Message: "frontmatter is missing"})
@@ -79,6 +77,16 @@ func Parse(p string, content []byte) *Page {
 	if body := strings.TrimRight(sb.String(), "\n"); body != "" {
 		pg.Body = body + "\n"
 	}
+	return pg
+}
+
+// TooLarge returns the page that Parse returns for p when its content is over
+// MaxPageSize, for a caller that knows the size without reading the content.
+func TooLarge(p string) *Page {
+	pg := &Page{Path: p}
+	pg.Issues = append(pg.Issues, PathIssues(p)...)
+	pg.Issues = append(pg.Issues, Issue{Path: p, Line: 0, Code: "page_too_large", Message: fmt.Sprintf("page is larger than %d bytes", MaxPageSize)})
+	pg.Title = strings.TrimSuffix(path.Base(p), ".md")
 	return pg
 }
 
