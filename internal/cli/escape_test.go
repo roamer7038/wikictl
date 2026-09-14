@@ -30,8 +30,8 @@ func TestTextOutputEscapesControl(t *testing.T) {
 	}
 	escaped := `ok\x1b]52;c;ZWNobyBwd24=\x07\x1b[2K\x0dfake`
 	for _, args := range [][]string{
-		{"ls", "--dirs", "global"},
-		{"search", "--dirs", "global", "lease"},
+		{"ls"},
+		{"search", "lease"},
 	} {
 		_, out, _ := runCLI(t, cfg, "", args...)
 		if strings.ContainsAny(out, "\x1b\x07\r") || !strings.Contains(out, "global/ctl.md\t"+escaped+"\n") {
@@ -58,7 +58,7 @@ func TestTextOutputEscapesControl(t *testing.T) {
 	}
 
 	runCLI(t, cfg, "# only title\x1b[2K\n", "put", "global/notitle.md")
-	_, out, _ = runCLI(t, cfg, "", "ls", "--dirs", "global")
+	_, out, _ = runCLI(t, cfg, "", "ls")
 	if !strings.Contains(out, "global/notitle.md\tonly title\\x1b[2K\n") {
 		t.Errorf("ls title: %q", out)
 	}

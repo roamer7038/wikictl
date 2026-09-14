@@ -12,7 +12,7 @@ func (a *app) cmdLint(c *command, args []string) error {
 	paths := args
 	if len(paths) == 0 {
 		var err error
-		if paths, err = a.repo.List(a.dirs); err != nil {
+		if paths, err = a.repo.List(nil); err != nil {
 			return &gitError{err}
 		}
 	}

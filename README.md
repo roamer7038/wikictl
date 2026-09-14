@@ -76,9 +76,9 @@ Each top-level directory is a scope that answers "where is this knowledge valid?
 | `projects/<name>/` | one project |
 | `machines/<name>/` | one execution environment |
 
-`search`, `ls` and `lint` look at these four directories by default. `<name>` of `projects/` is the repository name of the `origin` remote of the current directory, and `<name>` of `machines/` is the hostname up to the first `.`, both in lowercase, and the configuration can change both. When the current directory is outside a git repository or has no `origin` remote, no `projects/` directory is used. `--dirs a,b` or `dirs` in the configuration replaces the list, and `--dirs .` covers the whole wiki. `wikictl context` shows the directories in use.
+`search`, `ls` and `lint` read the whole wiki; wikictl does not choose directories from the current directory.
 
-`personal/` holds facts that an agent looks up when they become relevant; rules for every conversation belong in the agent's standing instructions, such as `CLAUDE.md`. In a wiki shared by several people, everyone searches the same `personal/`, so either do not use it or set `dirs`.
+`personal/` holds facts that an agent looks up when they become relevant; rules for every conversation belong in the agent's standing instructions, such as `CLAUDE.md`. In a wiki shared by several people, everyone reads the same `personal/`, so do not use it there.
 
 A page is a Markdown file inside a directory. Its frontmatter should have a one-line `summary`, and relations to other pages go in a `## Links` section at the end:
 
@@ -116,7 +116,7 @@ Body. Link to other pages with relative paths: [index](index.md).
 | `rm <path>` | Delete a page |
 | `lint [<path>...]` | Report pages that violate the wiki format |
 | `dirs [<dir>...]` | List the directories of the wiki with their page counts |
-| `context` | Show the resolved configuration and search directories |
+| `context` | Show the resolved configuration |
 | `help [<command>]` | Show help for a command |
 | `version` | Print the version |
 
@@ -133,9 +133,6 @@ wikictl reads the configuration from `--config <path>`, else `$WIKICTL_CONFIG`, 
 | `repo` | yes | URL or path of the wiki repository; a local path may be relative to the directory of the configuration file; may be set in a profile instead |
 | `branch` | no | Branch to use; defaults to the branch saved in the mirror, else the remote HEAD, else `main`, and the saved branch is kept (see `wikictl help context`) |
 | `author.name`, `author.email` | no | Commit author; each falls back to `git config user.name` or `user.email` |
-| `machine` | no | Name for `machines/<name>/` |
-| `dirs` | no | Search directories instead of the default four |
-| `projects` | no | Map from the repository name of `origin` to the directory name under `projects/` |
 | `profiles` | no | Named profiles that override the keys above |
 | `default_profile` | no | Profile to use when no other rule selects one |
 
@@ -161,7 +158,7 @@ profiles:
       paths: ["~/work"]
 ```
 
-The profile is chosen by `--profile`, else `$WIKICTL_PROFILE`, else `match` (the `origin` remote or the current directory), else `default_profile`. In a profile, `author.name` and `author.email` override separately, `dirs` and `projects` replace the top-level values, and `branch` is not inherited when the profile sets `repo`. `wikictl help context` describes the selection in detail.
+The profile is chosen by `--profile`, else `$WIKICTL_PROFILE`, else `match` (the `origin` remote or the current directory), else `default_profile`. In a profile, `author.name` and `author.email` override separately, and `branch` is not inherited when the profile sets `repo`. `wikictl help context` describes the selection in detail.
 
 ## Exit codes
 

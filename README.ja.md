@@ -76,9 +76,9 @@ Linux と macOS（x86_64、arm64）のバイナリは [Releases ページ](https
 | `projects/<name>/` | 特定のプロジェクト |
 | `machines/<name>/` | 特定の実行環境 |
 
-`search`、`ls`、`lint` は、既定でこの 4 つのディレクトリを対象にします。`projects/` の `<name>` はカレントディレクトリの `origin` リモートのリポジトリ名、`machines/` の `<name>` はホスト名の最初の `.` までで、どちらも小文字にし、設定で変えられます。カレントディレクトリが git リポジトリの外にあるか `origin` リモートが無ければ、`projects/` のディレクトリは使いません。`--dirs a,b` または設定の `dirs` で一覧を置き換えられ、`--dirs .` は wiki 全体を対象にします。使われるディレクトリは `wikictl context` で確認できます。
+`search`、`ls`、`lint` は wiki 全体を対象にします。wikictl がカレントディレクトリから対象のディレクトリを選ぶことはありません。
 
-`personal/` には、エージェントが必要になったときに検索して参照する事実を置きます。すべての会話に適用すべきルールは、`CLAUDE.md` などエージェントに常に読み込まれる指示に書きます。複数人で共有する wiki では全員が同じ `personal/` を検索するため、`personal/` を使わないか、`dirs` を設定してください。
+`personal/` には、エージェントが必要になったときに検索して参照する事実を置きます。すべての会話に適用すべきルールは、`CLAUDE.md` などエージェントに常に読み込まれる指示に書きます。複数人で共有する wiki では全員が同じ `personal/` を読むため、`personal/` は使わないでください。
 
 ページは、いずれかのディレクトリの中に置く Markdown ファイルです。フロントマターには 1 行の `summary` を書き、他のページとの関係は末尾の `## Links` セクションに書きます。
 
@@ -116,7 +116,7 @@ type: concept
 | `rm <path>` | ページを削除する |
 | `lint [<path>...]` | wiki の形式に違反するページを報告する |
 | `dirs [<dir>...]` | wiki のディレクトリをページ数とともに一覧表示する |
-| `context` | 解決済みの設定と検索対象ディレクトリを表示する |
+| `context` | 解決済みの設定を表示する |
 | `help [<command>]` | コマンドのヘルプを表示する |
 | `version` | バージョンを表示する |
 
@@ -133,9 +133,6 @@ wikictl は、`--config <path>`、`$WIKICTL_CONFIG`、`$XDG_CONFIG_HOME/wikictl/
 | `repo` | 必須 | wiki リポジトリの URL またはパス。ローカルのパスは設定ファイルのあるディレクトリからの相対パスでもよい。プロファイル側で設定してもよい |
 | `branch` | 任意 | 使うブランチ。省略時はミラーに保存したブランチ、なければリモートの HEAD、なければ `main` で、保存したブランチに固定される（`wikictl help context` を参照） |
 | `author.name`, `author.email` | 任意 | コミットの author。それぞれ `git config user.name`、`user.email` にフォールバックする |
-| `machine` | 任意 | `machines/<name>/` の `<name>` |
-| `dirs` | 任意 | 既定の 4 つの代わりに使う検索対象ディレクトリ |
-| `projects` | 任意 | `origin` のリポジトリ名から `projects/` 配下のディレクトリ名への対応表 |
 | `profiles` | 任意 | 上記のキーを上書きする名前付きプロファイル |
 | `default_profile` | 任意 | 他の規則でプロファイルが決まらないときに使うプロファイル |
 
@@ -161,7 +158,7 @@ profiles:
       paths: ["~/work"]
 ```
 
-プロファイルは、`--profile`、`$WIKICTL_PROFILE`、`match`（`origin` リモートまたはカレントディレクトリ）、`default_profile` の順に最初に当てはまるもので決まります。プロファイル内の `author.name` と `author.email` は個別に上書きされ、`dirs` と `projects` は最上位の値を丸ごと置き換えます。プロファイルが `repo` を設定した場合、`branch` は継承されません。選択の詳細は `wikictl help context` で確認できます。
+プロファイルは、`--profile`、`$WIKICTL_PROFILE`、`match`（`origin` リモートまたはカレントディレクトリ）、`default_profile` の順に最初に当てはまるもので決まります。プロファイル内の `author.name` と `author.email` は個別に上書きされます。プロファイルが `repo` を設定した場合、`branch` は継承されません。選択の詳細は `wikictl help context` で確認できます。
 
 ## 終了コード
 

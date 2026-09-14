@@ -34,7 +34,7 @@ func setup(t *testing.T) (cfgPath string) {
 	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(d, "cache"))
 	cfgPath = filepath.Join(d, "config.yaml")
-	os.WriteFile(cfgPath, []byte("repo: "+remote+"\nauthor: {name: agent, email: a@a}\nmachine: h1\n"), 0o600)
+	os.WriteFile(cfgPath, []byte("repo: "+remote+"\nauthor: {name: agent, email: a@a}\n"), 0o600)
 	return cfgPath
 }
 
@@ -65,7 +65,7 @@ func mustUnmarshal(t *testing.T, out string, v any) {
 
 func TestSearchGetLs(t *testing.T) {
 	cfg := setup(t)
-	code, out, errs := runCLI(t, cfg, "", "search", "--json", "--dirs", "global,projects/app,machines/h1", "lease")
+	code, out, errs := runCLI(t, cfg, "", "search", "--json", "lease")
 	if code != 0 {
 		t.Fatalf("code=%d %s", code, errs)
 	}
@@ -79,12 +79,12 @@ func TestSearchGetLs(t *testing.T) {
 	if len(res.Items) != 2 {
 		t.Errorf("%s", out)
 	}
-	_, out, _ = runCLI(t, cfg, "", "search", "--json", "--all", "--dirs", "global,projects/app,machines/h1", "lease")
+	_, out, _ = runCLI(t, cfg, "", "search", "--json", "--all", "lease")
 	mustUnmarshal(t, out, &res)
 	if len(res.Items) != 3 {
 		t.Errorf("--all: %s", out)
 	}
-	_, out, _ = runCLI(t, cfg, "", "search", "--json", "--dirs", "global", "zzz-none")
+	_, out, _ = runCLI(t, cfg, "", "search", "--json", "zzz-none")
 	mustUnmarshal(t, out, &res)
 	if !strings.Contains(out, `"items":[]`) {
 		t.Errorf("empty: %s", out)
@@ -104,24 +104,18 @@ func TestSearchGetLs(t *testing.T) {
 	if len(g.Backlinks) != 1 || g.Backlinks[0].Path != "global/push.md" || g.Backlinks[0].Type != "part_of" {
 		t.Errorf("backlinks: %s", out)
 	}
-	_, out, _ = runCLI(t, cfg, "", "ls", "--json", "--dirs", "global")
+	_, out, _ = runCLI(t, cfg, "", "ls", "--json")
 	var ls struct {
 		Items []struct{ Path, Summary, Type string }
 	}
 	mustUnmarshal(t, out, &ls)
-	if len(ls.Items) != 2 {
+	if len(ls.Items) != 3 {
 		t.Errorf("ls: %s", out)
 	}
-	code, out, _ = runCLI(t, cfg, "", "context", "--json")
-	if code != 0 || !strings.Contains(out, "machines/h1") || !strings.Contains(out, `"machine":"h1"`) {
+	if code, out, _ = runCLI(t, cfg, "", "context", "--json"); code != 0 {
 		t.Errorf("context: %s", out)
 	}
-	var cx struct{ Dirs []string }
-	mustUnmarshal(t, out, &cx)
-	if len(cx.Dirs) < 2 || cx.Dirs[0] != "global" || cx.Dirs[1] != "personal" {
-		t.Errorf("context dirs: %v", cx.Dirs)
-	}
-	_, out, _ = runCLI(t, cfg, "", "ls", "--json", "--dirs", "global", "--tag", "git")
+	_, out, _ = runCLI(t, cfg, "", "ls", "--json", "--tag", "git")
 	mustUnmarshal(t, out, &ls)
 	if len(ls.Items) != 1 || ls.Items[0].Path != "global/push.md" {
 		t.Errorf("ls --tag: %s", out)
@@ -152,37 +146,9 @@ func TestSearchLimit(t *testing.T) {
 			t.Errorf("-n %s: code=%d errs=%q", n, code, errs)
 		}
 	}
-	code, out, errs := runCLI(t, cfg, "", "search", "--json", "-n", "1", "--dirs", "global,projects/app", "lease")
+	code, out, errs := runCLI(t, cfg, "", "search", "--json", "-n", "1", "lease")
 	if code != ExitOK || strings.Count(out, `"path"`) != 1 {
 		t.Errorf("-n 1: code=%d out=%s errs=%s", code, out, errs)
-	}
-}
-
-func TestPersonalScope(t *testing.T) {
-	cfg := setup(t)
-	// personal/ is a default directory even before anything is put there,
-	// so reads on a wiki without it must succeed with no matches.
-	var res struct {
-		Items []struct{ Path string }
-	}
-	code, out, errs := runCLI(t, cfg, "", "search", "--json", "conventional-commits")
-	mustUnmarshal(t, out, &res)
-	if code != 0 || len(res.Items) != 0 {
-		t.Fatalf("search without personal/: code=%d out=%s %s", code, out, errs)
-	}
-	if code, out, errs := runCLI(t, cfg, "", "ls", "--json", "--dirs", "personal"); code != 0 || out != `{"items":[]}`+"\n" {
-		t.Fatalf("ls without personal/: code=%d out=%q %s", code, out, errs)
-	}
-	if code, _, errs := runCLI(t, cfg, "---\nsummary: commit style\n---\n# commits\nconventional-commits\n", "put", "personal/commits.md"); code != 0 {
-		t.Fatalf("put: code=%d %s", code, errs)
-	}
-	code, out, errs = runCLI(t, cfg, "", "search", "--json", "conventional-commits")
-	if code != 0 {
-		t.Fatalf("search: code=%d %s", code, errs)
-	}
-	mustUnmarshal(t, out, &res)
-	if len(res.Items) != 1 || res.Items[0].Path != "personal/commits.md" {
-		t.Errorf("search: %s", out)
 	}
 }
 
@@ -372,7 +338,7 @@ func TestMvAndLint(t *testing.T) {
 	if len(b.Links) != 2 || b.Links[0].Type != "see_also" || b.Links[1].Type != "see_also" || b.Links[1].Target != "global/index.md" || b.Links[1].Note != "untyped" {
 		t.Errorf("tolerant links: %s", out)
 	}
-	code, out, _ = runCLI(t, cfg, "", "lint", "--json", "--dirs", "global")
+	code, out, _ = runCLI(t, cfg, "", "lint", "--json")
 	var li struct {
 		Items []struct {
 			Path, Code string
@@ -387,8 +353,8 @@ func TestMvAndLint(t *testing.T) {
 	if code != 4 || codes["broken_link"] != 1 || codes["links_syntax"] != 1 {
 		t.Errorf("code=%d %s", code, out)
 	}
-	if code, _, _ := runCLI(t, cfg, "", "lint", "--dirs", "projects/app"); code != 0 {
-		t.Error("clean dir must pass")
+	if code, _, _ := runCLI(t, cfg, "", "lint", "projects/app/x.md"); code != 0 {
+		t.Error("clean page must pass")
 	}
 }
 
@@ -463,7 +429,7 @@ func TestLintNames(t *testing.T) {
 	runCLI(t, cfg, "---\nsummary: i\n---\n", "put", "global/Index.md")
 	runCLI(t, cfg, "---\nsummary: s\n---\n", "put", "global/style_name.md")
 	runCLI(t, cfg, "---\nsummary: d\n---\n", "put", "projects/App/d.md")
-	code, out, _ := runCLI(t, cfg, "", "lint", "--json", "--dirs", "global,projects")
+	code, out, _ := runCLI(t, cfg, "", "lint", "--json")
 	var li struct {
 		Items []struct {
 			Path, Code, Message string
@@ -523,7 +489,7 @@ func TestMvDir(t *testing.T) {
 	if !strings.Contains(out, `"target":"projects/app2/x.md"`) {
 		t.Errorf("external referrer: %s", out)
 	}
-	if code, _, _ := runCLI(t, cfg, "", "lint", "--dirs", "global,projects"); code != 0 {
+	if code, _, _ := runCLI(t, cfg, "", "lint"); code != 0 {
 		t.Error("lint must pass after dir mv")
 	}
 	if code, _, _ := runCLI(t, cfg, "", "mv", "projects/app2/", "global/"); code != 1 {
@@ -692,7 +658,7 @@ func TestOptionalSummary(t *testing.T) {
 		}
 		return m
 	}
-	code, out, errs := runCLI(t, cfg, "", "search", "--json", "--dirs", "global", "lease")
+	code, out, errs := runCLI(t, cfg, "", "search", "--json", "lease")
 	if code != 0 {
 		t.Fatalf("code=%d %s", code, errs)
 	}
@@ -710,13 +676,13 @@ func TestOptionalSummary(t *testing.T) {
 	if it := got["global/push.md"]; it.Summary != "how to push" || it.Title != "push" {
 		t.Errorf("search push: %+v", it)
 	}
-	_, out, _ = runCLI(t, cfg, "", "search", "--dirs", "global", "lease")
+	_, out, _ = runCLI(t, cfg, "", "search", "lease")
 	for _, want := range []string{"global/nosum.md\tHeading Title\n", "global/desc.md\tfrom description\n", "global/nofm.md\tnofm\n", "global/push.md\thow to push\n"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("search text missing %q in %q", want, out)
 		}
 	}
-	_, out, _ = runCLI(t, cfg, "", "ls", "--json", "--dirs", "global")
+	_, out, _ = runCLI(t, cfg, "", "ls", "--json")
 	mustUnmarshal(t, out, &res)
 	got = byPath(res.Items)
 	if it := got["global/nosum.md"]; it.Summary != "" || it.Title != "Heading Title" {
@@ -725,7 +691,7 @@ func TestOptionalSummary(t *testing.T) {
 	if it := got["global/desc.md"]; it.Summary != "from description" {
 		t.Errorf("ls desc: %+v", it)
 	}
-	_, out, _ = runCLI(t, cfg, "", "ls", "--dirs", "global")
+	_, out, _ = runCLI(t, cfg, "", "ls")
 	for _, want := range []string{"global/nosum.md\tHeading Title\n", "global/nofm.md\tnofm\n", "global/index.md\tentry point\n"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("ls text missing %q in %q", want, out)
@@ -783,10 +749,6 @@ func TestDirs(t *testing.T) {
 	if len(res.Items) != 2 || res.Items[0].Dir != "global/" || res.Items[1].Dir != "machines/h1/" {
 		t.Errorf("dirs with two args: %s", out)
 	}
-	_, out, _ = runCLI(t, cfg, "", "dirs", "--json", "--dirs", "global")
-	if res = decode(out); len(res.Items) != len(want) {
-		t.Errorf("dirs must ignore --dirs: %s", out)
-	}
 	if code, out, _ := runCLI(t, cfg, "", "dirs", "--json", "none"); code != 0 || !strings.Contains(out, `"items":[]`) {
 		t.Errorf("dirs none: code=%d out=%s", code, out)
 	}
@@ -828,80 +790,11 @@ func TestDirs(t *testing.T) {
 	}
 }
 
-func TestContextPages(t *testing.T) {
-	cfg := setup(t)
-	code, out, _ := runCLI(t, cfg, "", "context", "--json", "--dirs", "global,projects/app,machines/h1,projects/none")
-	var res struct {
-		Dirs  []string
-		Pages map[string]int
-	}
-	if err := json.Unmarshal([]byte(out), &res); err != nil {
-		t.Fatalf("unmarshal %q: %v", out, err)
-	}
-	want := map[string]int{"global": 2, "projects/app": 1, "machines/h1": 1, "projects/none": 0}
-	if code != 0 || len(res.Dirs) != 4 || len(res.Pages) != 4 {
-		t.Fatalf("context: code=%d %s", code, out)
-	}
-	for d, n := range want {
-		if res.Pages[d] != n {
-			t.Errorf("pages[%s]=%d want %d: %s", d, res.Pages[d], n, out)
-		}
-	}
-	_, out, _ = runCLI(t, cfg, "", "context", "--dirs", "global,projects/app,projects/none")
-	if !strings.Contains(out, "dirs: global (2 pages), projects/app (1 page), projects/none (0 pages)\n") {
-		t.Errorf("context text: %s", out)
-	}
-}
-
-func TestContextPagesRecursive(t *testing.T) {
-	cfg := setup(t)
-	code, out, _ := runCLI(t, cfg, "", "context", "--json", "--dirs", "projects,.,./,projects/,./global,projects/none")
-	var res struct {
-		Pages map[string]int
-	}
-	if err := json.Unmarshal([]byte(out), &res); err != nil {
-		t.Fatalf("unmarshal %q: %v", out, err)
-	}
-	if code != 0 {
-		t.Fatalf("context: code=%d %s", code, out)
-	}
-	want := map[string]int{"projects": 1, ".": 4, "./": 4, "projects/": 1, "./global": 2, "projects/none": 0}
-	for d, n := range want {
-		if res.Pages[d] != n {
-			t.Errorf("pages[%s]=%d want %d: %s", d, res.Pages[d], n, out)
-		}
-	}
-	_, out, _ = runCLI(t, cfg, "", "context", "--dirs", ".")
-	if !strings.Contains(out, "dirs: . (4 pages)\n") {
-		t.Errorf("context text: %s", out)
-	}
-}
-
-func TestDirsDotCoversWholeWiki(t *testing.T) {
-	cfg := setup(t)
-	var ls struct {
-		Items []struct{ Path string }
-	}
-	_, out, _ := runCLI(t, cfg, "", "ls", "--json", "--all", "--dirs", ".")
-	if err := json.Unmarshal([]byte(out), &ls); err != nil || len(ls.Items) != 4 {
-		t.Errorf("ls --dirs .: %s", out)
-	}
-	_, out, _ = runCLI(t, cfg, "", "search", "--json", "--all", "--dirs", ".", "lease")
-	ls.Items = nil
-	if err := json.Unmarshal([]byte(out), &ls); err != nil || len(ls.Items) != 3 {
-		t.Errorf("search --dirs .: %s", out)
-	}
-	runCLI(t, cfg, "---\nsummary: bad\n---\n# bad\n[x](none.md)\n", "put", "projects/app/bad.md")
-	if code, out, _ := runCLI(t, cfg, "", "lint", "--json", "--dirs", "."); code != ExitInvalid || !strings.Contains(out, "projects/app/bad.md") {
-		t.Errorf("lint --dirs .: code=%d out=%s", code, out)
-	}
-}
-
 func TestProfile(t *testing.T) {
 	cfg := setup(t)
 	b, _ := os.ReadFile(cfg)
 	remote := strings.TrimPrefix(strings.SplitN(string(b), "\n", 2)[0], "repo: ")
-	os.WriteFile(cfg, []byte("author: {name: agent, email: a@a}\nmachine: h1\nprofiles:\n  home: {repo: "+remote+"}\n  work: {repo: /nonexistent/work.git}\n"), 0o600)
+	os.WriteFile(cfg, []byte("author: {name: agent, email: a@a}\nprofiles:\n  home: {repo: "+remote+"}\n  work: {repo: /nonexistent/work.git}\n"), 0o600)
 
 	code, out, errs := runCLI(t, cfg, "", "context", "--json", "--profile", "home")
 	if code != 0 || !strings.Contains(out, `"profile":"home"`) || !strings.Contains(out, `"profile_source":"flag"`) || !strings.Contains(out, `"repo":"`+remote+`"`) {
@@ -936,7 +829,6 @@ func TestProfileMatch(t *testing.T) {
 	other := filepath.Join(d, "other")
 	os.MkdirAll(other, 0o755)
 	os.WriteFile(cfg, []byte(`author: {name: agent, email: a@a}
-machine: h1
 default_profile: home
 profiles:
   home: {repo: `+home+`}
@@ -1008,7 +900,6 @@ func TestMirrorPerRepo(t *testing.T) {
 	mustRun(t, "", "git", "clone", "-q", "--bare", seed, work)
 	mustRun(t, "", "git", "clone", "-q", "--bare", seed, private)
 	os.WriteFile(cfg, []byte(`author: {name: agent, email: a@a}
-machine: h1
 profiles:
   work: {repo: `+work+`}
   private: {repo: `+private+`}
@@ -1054,16 +945,16 @@ func TestCredentialsRedacted(t *testing.T) {
 	mustRun(t, app, "git", "remote", "add", "origin", "https://bob:ghp_remote@example.com/team/app.git")
 	t.Chdir(app)
 
-	os.WriteFile(cfg, []byte("repo: nope://alice:ghp_repo@example.com/wiki.git\nbranch: main\nauthor: {name: agent, email: a@a}\nmachine: h1\n"), 0o600)
+	os.WriteFile(cfg, []byte("repo: nope://alice:ghp_repo@example.com/wiki.git\nbranch: main\nauthor: {name: agent, email: a@a}\n"), 0o600)
 	code, out, errs := runCLI(t, cfg, "", "--no-fetch", "context", "--json")
 	if code != 0 {
 		t.Fatalf("context: code=%d %s %s", code, out, errs)
 	}
 	var cx struct {
-		Repo, Remote, Project string
+		Repo, Remote string
 	}
 	mustUnmarshal(t, out, &cx)
-	if cx.Repo != "nope://***@example.com/wiki.git" || cx.Remote != "https://***@example.com/team/app.git" || cx.Project != "app" {
+	if cx.Repo != "nope://***@example.com/wiki.git" || cx.Remote != "https://***@example.com/team/app.git" {
 		t.Errorf("context json: %+v", cx)
 	}
 	_, out, _ = runCLI(t, cfg, "", "--no-fetch", "context")
@@ -1078,7 +969,7 @@ func TestCredentialsRedacted(t *testing.T) {
 
 	// Without branch, the remote HEAD is read with ls-remote, which fails for
 	// the unknown scheme; the arguments of the git command are in the message.
-	os.WriteFile(cfg, []byte("repo: nope://alice:ghp_repo@example.com/other.git\nauthor: {name: agent, email: a@a}\nmachine: h1\n"), 0o600)
+	os.WriteFile(cfg, []byte("repo: nope://alice:ghp_repo@example.com/other.git\nauthor: {name: agent, email: a@a}\n"), 0o600)
 	code, out, errs = runCLI(t, cfg, "", "ls")
 	if code != ExitGit || !strings.Contains(errs, "ls-remote --symref nope://***@example.com/other.git HEAD") || strings.Contains(out+errs, "ghp_") {
 		t.Errorf("ls: code=%d %s %s", code, out, errs)
@@ -1217,16 +1108,16 @@ func TestPageLimits(t *testing.T) {
 	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "limits")
 	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
 
-	if code, out, errs := runCLI(t, cfg, "", "ls", "--json", "--dirs", "global"); code != 0 || !strings.Contains(out, "global/deep.md") || !strings.Contains(out, "global/huge.md") {
+	if code, out, errs := runCLI(t, cfg, "", "ls", "--json"); code != 0 || !strings.Contains(out, "global/deep.md") || !strings.Contains(out, "global/huge.md") {
 		t.Errorf("ls: code=%d out=%q errs=%q", code, out, errs)
 	}
-	if code, out, errs := runCLI(t, cfg, "", "search", "--json", "--dirs", "global", "summary"); code != 0 || !strings.Contains(out, "global/large.md") {
+	if code, out, errs := runCLI(t, cfg, "", "search", "--json", "summary"); code != 0 || !strings.Contains(out, "global/large.md") {
 		t.Errorf("search: code=%d out=%q errs=%q", code, out, errs)
 	}
 	if code, out, errs := runCLI(t, cfg, "", "get", "--json", "global/deep.md"); code != 0 || !strings.Contains(out, `"frontmatter":{}`) {
 		t.Errorf("get: code=%d out=%.200q errs=%q", code, out, errs)
 	}
-	code, out, _ := runCLI(t, cfg, "", "lint", "--dirs", "global")
+	code, out, _ := runCLI(t, cfg, "", "lint")
 	for _, w := range []string{"global/deep.md:1: frontmatter_invalid", "global/large.md:1: frontmatter_invalid", "global/huge.md:0: page_too_large"} {
 		if !strings.Contains(out, w) {
 			t.Errorf("lint: missing %q in %q", w, out)
@@ -1258,13 +1149,13 @@ func TestSearchNonASCIICase(t *testing.T) {
 			Matched []string
 		}
 	}
-	_, out, _ := runCLI(t, cfg, "", "search", "--json", "--dirs", "global", "äpfel", "οδος")
+	_, out, _ := runCLI(t, cfg, "", "search", "--json", "äpfel", "οδος")
 	mustUnmarshal(t, out, &res)
 	if len(res.Items) != 1 || res.Items[0].Path != "global/both.md" || len(res.Items[0].Matched) != 2 {
 		t.Errorf("search: %s", out)
 	}
 	res.Items = nil
-	_, out, _ = runCLI(t, cfg, "", "search", "--json", "--any", "--dirs", "global", "äpfel", "οδος")
+	_, out, _ = runCLI(t, cfg, "", "search", "--json", "--any", "äpfel", "οδος")
 	mustUnmarshal(t, out, &res)
 	if len(res.Items) != 2 || res.Items[0].Path != "global/both.md" || len(res.Items[0].Matched) != 2 ||
 		res.Items[1].Path != "global/one.md" || len(res.Items[1].Matched) != 1 || res.Items[1].Matched[0] != "äpfel" {
@@ -1282,7 +1173,7 @@ func TestRelativeRepo(t *testing.T) {
 	mustRun(t, "", "git", "init", "-q", "--bare", "-b", "main", filepath.Join(d, "wiki", "remote.git"))
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(d, "cache"))
 	cfg := filepath.Join(d, "wiki", "config.yaml")
-	os.WriteFile(cfg, []byte("repo: ./remote.git\nauthor: {name: a, email: a@a}\nmachine: h1\n"), 0o600)
+	os.WriteFile(cfg, []byte("repo: ./remote.git\nauthor: {name: a, email: a@a}\n"), 0o600)
 	elsewhere := filepath.Join(d, "elsewhere")
 	os.MkdirAll(elsewhere, 0o755)
 	t.Chdir(elsewhere)
