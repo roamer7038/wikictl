@@ -115,13 +115,19 @@ Only links of the form [text](path) are rewritten. A bare path in a Links line,
 such as "- part_of: index.md" or "- index.md", is left unchanged and becomes
 a broken link; write page targets as [text](path).
 
+If a page that mv changes or deletes changed since mv read it, or the new path
+was created, the command exits with code 3, writes nothing and prints the
+current content and sha of that page, as put does; run it again.
+
 Output: {path, commit, rewritten} or {path, commit, moved, rewritten}.`,
 		flags: func(fs *flag.FlagSet) { msgFlag(fs) }, run: (*app).cmdMv},
 	{name: "rm", args: "<path>", minArgs: 1, maxArgs: 1,
 		summary: "Delete a page",
 		detail: `Delete a page. Pages that link to it are left unchanged; lint reports them
 as broken_link. A path that is not a page path (see "help lint"), such as a
-file at the wiki root, is rejected with exit code 4.
+file at the wiki root, is rejected with exit code 4. If the page changed since
+rm read it, the command exits with code 3, deletes nothing and prints the
+current content and sha, as put does; run it again.
 
 Output: {path, commit}.`,
 		flags: func(fs *flag.FlagSet) { msgFlag(fs) }, run: (*app).cmdRm},

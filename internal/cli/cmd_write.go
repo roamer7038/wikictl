@@ -22,8 +22,10 @@ type conflictOut struct {
 }
 
 // commit writes changes as one commit and reports conflicts and git failures.
+// rerun names the command to run again on a conflict; it is empty for put,
+// whose conflicts are resolved by reapplying the change.
 // The second result is the exit code; it is ExitOK when the first result is set.
-func (a *app) commit(changes []repo.Change, msg string) (*repo.Result, int) {
+func (a *app) commit(changes []repo.Change, msg, rerun string) (*repo.Result, int) {
 	au, err := a.author()
 	if err != nil {
 		return nil, a.fail(ExitUsage, "usage", err.Error())
@@ -33,7 +35,7 @@ func (a *app) commit(changes []repo.Change, msg string) (*repo.Result, int) {
 		var cf *repo.Conflict
 		if errors.As(err, &cf) {
 			if a.json {
-				a.emit(conflictOut{"conflict", cf.Reason, cf.Path, cf.SHA, string(cf.Content), conflictMessage(cf)}, nil)
+				a.emit(conflictOut{"conflict", cf.Reason, cf.Path, cf.SHA, string(cf.Content), conflictMessage(cf, rerun)}, nil)
 			} else {
 				fmt.Fprintf(a.stderr, "wikictl: conflict (%s): %s sha=%s\n", cf.Reason, cf.Path, cf.SHA)
 				a.stdout.Write(cf.Content)
@@ -46,7 +48,17 @@ func (a *app) commit(changes []repo.Change, msg string) (*repo.Result, int) {
 }
 
 // conflictMessage returns the "message" of a conflict for its reason.
-func conflictMessage(cf *repo.Conflict) string {
+func conflictMessage(cf *repo.Conflict, rerun string) string {
+	if rerun != "" {
+		switch {
+		case cf.Reason == "exists":
+			return "the page was created since it was read; re-read the wiki and run " + rerun + " again with another path"
+		case cf.SHA == "":
+			return "the page was deleted since it was read; re-read the wiki and run " + rerun + " again"
+		default:
+			return "the page changed since it was read; re-read the wiki and run " + rerun + " again"
+		}
+	}
 	switch {
 	case cf.Reason == "exists":
 		return "the page already exists; pass its sha with --base to replace it, or choose another path"
@@ -105,7 +117,7 @@ func (a *app) cmdPut(c *command, args []string) int {
 		msg = "wikictl: put " + p
 	}
 	base := o.base
-	res, code := a.commit([]repo.Change{{Path: p, Content: content, Base: &base}}, msg)
+	res, code := a.commit([]repo.Change{{Path: p, Content: content, Base: &base}}, msg, "")
 	if code != ExitOK {
 		return code
 	}
@@ -130,13 +142,15 @@ func (a *app) cmdRm(c *command, args []string) int {
 	if err := page.CheckPath(p); err != nil {
 		return a.fail(ExitInvalid, "invalid", "bad_path: "+err.Error())
 	}
-	if contents, _ := a.repo.Cat([]string{p}); contents[p] == nil {
+	contents, shas, _ := a.repo.CatSHA([]string{p})
+	if contents[p] == nil {
 		return a.fail(ExitError, "error", "page not found: "+p)
 	}
 	if *msg == "" {
 		*msg = "wikictl: rm " + p
 	}
-	res, code := a.commit([]repo.Change{{Path: p, Delete: true}}, *msg)
+	base := shas[p]
+	res, code := a.commit([]repo.Change{{Path: p, Delete: true, Base: &base}}, *msg, "rm")
 	if code != ExitOK {
 		return code
 	}
@@ -194,7 +208,7 @@ func (a *app) cmdMv(c *command, args []string) int {
 	if *msg == "" {
 		*msg = "wikictl: mv " + from + " " + to
 	}
-	res, code := a.commit(changes, *msg)
+	res, code := a.commit(changes, *msg, "mv")
 	if code != ExitOK {
 		return code
 	}
@@ -250,7 +264,7 @@ func (a *app) mvDir(from, to, msg string) int {
 	if msg == "" {
 		msg = "wikictl: mv " + from + "/ " + to + "/"
 	}
-	res, code := a.commit(changes, msg)
+	res, code := a.commit(changes, msg, "mv")
 	if code != ExitOK {
 		return code
 	}
@@ -262,27 +276,30 @@ func (a *app) mvDir(from, to, msg string) int {
 // relocate walks every page of the wiki and builds one change set for
 // mapping (old path -> new path): moved pages get their own links re-based
 // at the new location, and pages that refer to a moved page get those links
-// rewritten.
+// rewritten. Every change carries the blob sha read here as its Base, and
+// every new path requires that the path does not exist, so that a page
+// changed or created since it was read makes the commit a conflict.
 func (a *app) relocate(mapping map[string]string) ([]repo.Change, error) {
 	all, err := a.repo.List(nil)
 	if err != nil {
 		return nil, err
 	}
-	contents, err := a.repo.Cat(all)
+	contents, shas, err := a.repo.CatSHA(all)
 	if err != nil {
 		return nil, err
 	}
+	none := ""
 	mapper := func(target string) (string, bool) { nt, ok := mapping[target]; return nt, ok }
 	var changes []repo.Change
 	for _, p := range all {
-		content := contents[p]
+		content, base := contents[p], shas[p]
 		if np, moved := mapping[p]; moved {
 			nc, _ := page.Relocate(content, p, np, mapper)
-			changes = append(changes, repo.Change{Path: np, Content: nc}, repo.Change{Path: p, Delete: true})
+			changes = append(changes, repo.Change{Path: np, Content: nc, Base: &none}, repo.Change{Path: p, Delete: true, Base: &base})
 			continue
 		}
 		if nc, n := page.Relocate(content, p, p, mapper); n > 0 {
-			changes = append(changes, repo.Change{Path: p, Content: nc})
+			changes = append(changes, repo.Change{Path: p, Content: nc, Base: &base})
 		}
 	}
 	return changes, nil
@@ -306,7 +323,7 @@ func (a *app) cmdInit(c *command, args []string) int {
 		{Path: "README.md", Content: []byte(initReadme), Base: &empty},
 		{Path: "global/index.md", Content: []byte("---\nsummary: Entry point for knowledge that does not depend on any project, machine or user\n---\n# global\n"), Base: &empty},
 	}
-	res, code := a.commit(changes, "wikictl: init")
+	res, code := a.commit(changes, "wikictl: init", "")
 	if code != ExitOK {
 		return code
 	}

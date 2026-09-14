@@ -517,6 +517,77 @@ func TestMvDir(t *testing.T) {
 	}
 }
 
+// TestMvRmStaleMirror checks that mv and rm report a conflict and write
+// nothing when a page they read was changed from another mirror in between.
+func TestMvRmStaleMirror(t *testing.T) {
+	cfg := setup(t)
+	d := filepath.Dir(cfg)
+	cacheA, cacheB := filepath.Join(d, "cache"), filepath.Join(d, "cache-b")
+	if code, _, errs := runCLI(t, cfg, "", "ls"); code != 0 {
+		t.Fatalf("ls: code=%d %s", code, errs)
+	}
+	// fromB runs a command with another mirror, leaving mirror A stale.
+	fromB := func(stdin string, args ...string) {
+		t.Helper()
+		t.Setenv("XDG_CACHE_HOME", cacheB)
+		defer t.Setenv("XDG_CACHE_HOME", cacheA)
+		if code, _, errs := runCLI(t, cfg, stdin, args...); code != 0 {
+			t.Fatalf("%v: code=%d %s", args, code, errs)
+		}
+	}
+	type conflict struct{ Error, Reason, Path, Sha, Content, Message string }
+	wantConflict := func(name, out string, code int, path, reason, content, cmd string) {
+		t.Helper()
+		var cf conflict
+		mustUnmarshal(t, out, &cf)
+		if code != ExitConflict || cf.Error != "conflict" || cf.Reason != reason || cf.Path != path ||
+			!strings.Contains(cf.Content, content) || !strings.Contains(cf.Message, "run "+cmd+" again") {
+			t.Errorf("%s: code=%d %s", name, code, out)
+		}
+	}
+
+	// A linking page changed: global/push.md links to global/index.md.
+	t.Setenv("XDG_CACHE_HOME", cacheB)
+	sha := getSha(t, cfg, "global/push.md")
+	t.Setenv("XDG_CACHE_HOME", cacheA)
+	edited := "---\nsummary: how to push\n---\n# push\n[index](index.md)\nEDIT BY B\n"
+	fromB(edited, "put", "--base", sha, "global/push.md")
+	code, out, _ := runCLI(t, cfg, "", "--no-fetch", "mv", "--json", "global/index.md", "global/start.md")
+	wantConflict("mv referrer", out, code, "global/push.md", "changed", "EDIT BY B", "mv")
+	if code, _, _ := runCLI(t, cfg, "", "get", "global/start.md"); code != 1 {
+		t.Error("mv with a conflict must not write")
+	}
+	if code, out, errs := runCLI(t, cfg, "", "mv", "global/index.md", "global/start.md"); code != 0 {
+		t.Fatalf("mv again: code=%d %s %s", code, out, errs)
+	}
+	_, out, _ = runCLI(t, cfg, "", "get", "--json", "global/push.md")
+	if !strings.Contains(out, "EDIT BY B") || !strings.Contains(out, "](start.md)") {
+		t.Errorf("mv again must keep the change and rewrite the link: %s", out)
+	}
+
+	// The moved page changed.
+	fromB("---\nsummary: x\n---\n# x\nEDIT BY B\n", "put", "--base", getSha(t, cfg, "projects/app/x.md"), "projects/app/x.md")
+	code, out, _ = runCLI(t, cfg, "", "--no-fetch", "mv", "--json", "projects/app/", "projects/app2/")
+	wantConflict("mv dir source", out, code, "projects/app/x.md", "changed", "EDIT BY B", "mv")
+
+	// The destination was created.
+	fromB("---\nsummary: d\n---\n# d\n", "put", "global/dest.md")
+	code, out, _ = runCLI(t, cfg, "", "--no-fetch", "mv", "--json", "global/push.md", "global/dest.md")
+	wantConflict("mv destination", out, code, "global/dest.md", "exists", "# d", "mv")
+	if code, _, _ := runCLI(t, cfg, "", "get", "global/push.md"); code != 0 {
+		t.Error("mv onto a created page must not move the source")
+	}
+
+	// rm of a page that changed.
+	sha = getSha(t, cfg, "global/push.md")
+	fromB("---\nsummary: p\n---\n# p\nEDIT 2\n", "put", "--base", sha, "global/push.md")
+	code, out, _ = runCLI(t, cfg, "", "--no-fetch", "rm", "--json", "global/push.md")
+	wantConflict("rm changed", out, code, "global/push.md", "changed", "EDIT 2", "rm")
+	if code, _, _ := runCLI(t, cfg, "", "get", "global/push.md"); code != 0 {
+		t.Error("rm with a conflict must not delete the page")
+	}
+}
+
 func TestOptionalSummary(t *testing.T) {
 	cfg := setup(t)
 	runCLI(t, cfg, "---\ntype: note\n---\n# Heading Title\nlease\n", "put", "global/nosum.md")
