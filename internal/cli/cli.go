@@ -169,39 +169,48 @@ in the same way.
 Output: {path, sha, commit}; with -v, text output is
 "<path><TAB><sha><TAB><commit>".`,
 		flags: putFlags, run: (*app).cmdPut},
-	{name: "mv", args: "<path> <newpath> | <dir>/ <newdir>/", minArgs: 2, maxArgs: 2,
-		summary: "Move or rename a page or a directory, rewriting links",
-		detail: `Move or rename a page. Links to it from other pages, and relative links inside
-it whose destination changes with the move, are rewritten in the same commit,
-and the old file name (without .md) is added to aliases when it changes. Other
-links and links inside code spans and code fences are left as written. Only
-the path of a rewritten link changes; a leading "./", angle brackets, a query,
-a fragment and a title are kept. The alias is added only when the frontmatter
-is empty or a block-style mapping and aliases is absent, a sequence (block or
-flow style), or null; otherwise, such as when aliases is a string or there is
-no frontmatter, no alias is added and no warning is printed. When both
-arguments end with a slash, every page under <dir>/ is moved to <newdir>/
-instead; file names do not change, so no alias is added. A path or new path
-that breaks the file name rules (see "help lint") is rejected with exit code 4.
-A rewritten page keeps its BOM, and all its lines get the line ending (CRLF or
-LF) of its first line. If <newpath> already exists, or any page exists under
-<newdir>/, the command fails with exit code 1. The default commit message is
-"wikictl: mv <path> <newpath>". Warnings are printed as for put.
+	{name: "mv", args: "<src>... <dst>", minArgs: 1, maxArgs: -1,
+		summary: "Move or rename files and directories, rewriting links",
+		detail: `Move files and directories as mv does. With one source and a destination that
+is not a directory of the wiki, rename the source to the destination;
+otherwise move every source into the destination directory, keeping its name.
+-T renames even when the destination is a directory, and -t moves every
+argument into the directory given. Files that are not pages move with their
+directory. A destination that exists is never replaced: it is reported on
+standard error as "not replacing". A source that does not exist, a
+destination below a file or ending with "/" that is not a directory ("not a
+directory"), and a directory moved into itself are reported too; the other
+sources are still moved, and the command exits with code 1. A file at the root
+of the wiki, the root itself, or a destination that breaks the file name rules
+(see "help lint") is rejected with exit code 4, and nothing is moved. The
+default commit message is "wikictl: mv <src>... <dst>". Nothing is
+printed on success unless -v is given.
+
+Links to a moved page from other pages, and relative links inside a moved page
+whose destination changes with the move, are rewritten in the same commit.
+Other links, links to files that are not pages, and links inside code spans
+and code fences are left as written. Only the path of a rewritten link
+changes; a leading "./", angle brackets, a query, a fragment and a title are
+kept. When the name of a page changes, the old name (without .md) is added to
+aliases if the frontmatter is empty or a block-style mapping and aliases is
+absent, a sequence (block or flow style), or null; otherwise no alias is added
+and no warning is printed. Warnings are printed as for put.
 
 Only links of the form [text](path) are rewritten. A bare path in a Links line,
 such as "- part_of: index.md" or "- index.md", is left unchanged and becomes
 a broken link; write page targets as [text](path).
 
-If a page that mv changes or deletes changed since mv read it, or the new path
+If a file that mv changes or deletes changed since mv read it, or a new path
 was created, the command exits with code 3, writes nothing and prints the
-current content and sha of that page, as put does; run it again. With
+current content and sha of that file, as put does; run it again. With
 --no-fetch, mv builds the change from the unfetched mirror, so a page that
 changed since the last fetch is reported as a conflict.
 
-Output: {path, commit, rewritten} or {path, commit, moved, rewritten}; moved is
-the number of pages moved, and rewritten counts only the other pages whose
-links were rewritten.`,
-		flags: msgFlag, run: (*app).cmdMv},
+Output: {moved[] {from, to}, rewritten, commit}; moved lists every moved file,
+rewritten counts the other pages whose links were rewritten, and commit is
+empty when nothing was moved. With -v, text output is
+"<from><TAB><to><TAB><commit>" for each moved file.`,
+		flags: mvFlags, check: (*app).checkMv, run: (*app).cmdMv},
 	{name: "rm", args: "<path>...", minArgs: 1, maxArgs: -1, paths: true,
 		summary: "Delete files or directories",
 		detail: `Delete files, and with -r directories with every file under them, in one
@@ -341,6 +350,9 @@ type app struct {
 	msg       string
 	verbose   bool
 	force     bool
+
+	noTargetDir bool
+	targetDir   string
 
 	ignoreCase   bool
 	filesWith    bool
