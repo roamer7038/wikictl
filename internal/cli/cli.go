@@ -31,6 +31,7 @@ type command struct {
 	detail  string                                        // description shown by "help <command>"
 	flags   func(a *app, fs *pflag.FlagSet)               // registers command flags into fields of a; nil when there are none
 	paths   bool                                          // the positional arguments are paths in the wiki, cleaned by wiki.Clean
+	expr    bool                                          // the arguments are an expression for check to parse; only -h and arguments starting with "--" are flags
 	check   func(a *app, c *command, args []string) error // validates the arguments before the configuration is read; nil when there is nothing to check
 	run     func(a *app, c *command, args []string) error
 }
@@ -95,14 +96,40 @@ dot and pages whose frontmatter has status: deprecated are hidden unless -a is
 given. With -l, a line shows the type from the frontmatter, the time of the
 last commit that changed the entry (for a directory, any file under it), the
 name, and the summary, or the title when the page has no summary; "-" marks an
-empty type or time. --tag matches tags written as a YAML list. A path that
-does not exist is reported on standard error, also with --json, the others
-are still listed, and the command exits with code 1. Control characters other
-than tab are shown as \xNN in text output.
+empty type or time. A path that does not exist is reported on standard error,
+also with --json, the others are still listed, and the command exits with code
+1. Control characters other than tab are shown as \xNN in text output.
 
 Output: items[] {path, kind, type, summary, title, updated}; kind is "file"
 or "dir".`,
 		flags: lsFlags, run: (*app).cmdLs},
+	{name: "find", args: "[<path>...] [<expression>]", maxArgs: -1, expr: true,
+		summary: "Find files and directories by name, type, update time or frontmatter",
+		detail: `Print the path of each file and directory under each path, or under the root
+of the wiki without paths, that matches the expression, one per line, starting
+with the path itself, as "find" does. Pages with status: deprecated and names
+starting with a dot are included. The expression is a list of primaries that
+must all be true; "!" negates the primary that follows it.
+
+  -name PATTERN    the last element of the path matches the shell pattern
+  -path PATTERN    the path matches the shell pattern; * and ? also match "/"
+  -type f|d        the entry is a file or a directory
+  -maxdepth N      descend at most N levels below the paths
+  -mindepth N      print no entry less than N levels below the paths
+  -mtime [+|-]N    the last commit that changed the entry (for a directory, any
+                   file under it) is N days old, more than N days (+N) or less
+                   (-N); the age is rounded down to whole days
+  -newer PATH      the entry changed later than PATH
+  -meta KEY=VALUE  the frontmatter value of KEY is VALUE, or a list with the
+                   element VALUE; a directory never matches
+
+Only -h and the arguments starting with "--", such as --json, are flags. A
+path that does not exist is reported on standard error, the other paths are
+still searched, and the command exits with code 1. Control characters other
+than tab are shown as \xNN in text output.
+
+Output: items[] {path, kind}; kind is "file" or "dir".`,
+		check: (*app).checkFind, run: (*app).cmdFind},
 	{name: "put", args: "<path> < content", minArgs: 1, maxArgs: 1, paths: true,
 		summary: "Create or replace a page from standard input",
 		detail: `Read the whole page, frontmatter included, from standard input and commit it
@@ -292,8 +319,6 @@ type app struct {
 	dirsOnly  bool
 	level     positiveInt
 	all       bool
-	typ       string
-	tag       string
 	base      string
 	msg       string
 
@@ -309,6 +334,8 @@ type app struct {
 	fixed        bool
 	allMatch     bool
 	patterns     []string
+
+	find *findQuery
 }
 
 // globalFlags registers the flags accepted before or after the command name.
@@ -383,7 +410,11 @@ func (a *app) run(args []string) error {
 	}
 	// Flags and the argument count are validated before the configuration is
 	// read, so that usage errors never depend on the environment.
-	if err := fs.Parse(cargs); err != nil {
+	args, expr := cargs, []string(nil)
+	if c.expr {
+		args, expr = splitExpr(fs, cargs)
+	}
+	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, pflag.ErrHelp) {
 			printCommandHelp(a.stdout, c)
 			return nil
@@ -394,7 +425,7 @@ func (a *app) run(args []string) error {
 	if a.version {
 		return a.cmdVersion()
 	}
-	pos := fs.Args()
+	pos := append(fs.Args(), expr...)
 	if len(pos) < c.minArgs {
 		return &usageError{c, "missing argument"}
 	}

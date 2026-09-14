@@ -36,6 +36,8 @@ func TestJSONContract(t *testing.T) {
 		{"context", "", "", []string{"context"}, ExitOK,
 			[]string{"author", "branch", "config", "mirror", "profile", "profile_source", "remote", "repo"}},
 		{"tree", "", "", []string{"tree"}, ExitOK, []string{"directories", "files", "items", "items[].kind", "items[].path"}},
+		{"find", "", "", []string{"find"}, ExitOK, []string{"items", "items[].kind", "items[].path"}},
+		{"find/usage", "", "", []string{"find", "-bogus"}, ExitUsage, errKeys},
 		{"put", "", newPage, []string{"put", "global/new.md"}, ExitOK, []string{"commit", "path", "sha"}},
 		{"put/conflict", "", newPage, []string{"put", "global/new.md"}, ExitConflict,
 			[]string{"content", "error", "message", "path", "reason", "sha"}},

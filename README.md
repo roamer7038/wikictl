@@ -110,6 +110,7 @@ Body. Link to other pages with relative paths: [index](index.md).
 | `stat <path>...` | Show the sha, last update and attributes of files |
 | `links <path>` | List the links in a page and to it |
 | `ls [<path>...]` | List the entries of directories |
+| `find [<path>...] [<expression>]` | Find files and directories by name, type, update time or frontmatter |
 | `put <path> < content` | Create or replace a page from standard input |
 | `mv <path> <newpath>` | Move or rename a page or a directory, rewriting links |
 | `rm <path>` | Delete a page |
