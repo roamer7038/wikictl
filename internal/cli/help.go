@@ -35,8 +35,10 @@ const outputHelp = `Output:
   standard error as "wikictl: <message>", or with --json to standard output
   as {"error": "<kind>", "message": "..."}, where <kind> is error, usage,
   conflict, invalid or git. Warnings go to standard error as
-  "wikictl: warning: <path>:<line>: <code>: <message>". Text output shows
-  control characters other than tab as \xNN, except in the body shown by get.
+  "wikictl: warning: <path>:<line>: <code>: <message>". In text output,
+  control characters other than tab in summaries, titles, lint messages,
+  warnings and the links shown by get are printed as \xNN; everything else
+  is printed as is.
 `
 
 const mirrorHelp = `Mirror:

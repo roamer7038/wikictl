@@ -102,6 +102,21 @@ func TestHelpDescribesNameRules(t *testing.T) {
 	}
 }
 
+func TestHelpDescribesOutput(t *testing.T) {
+	_, out, _ := runNoConfig(t, "help")
+	for _, w := range []string{"summaries, titles, lint messages", "links shown by get", "printed as is"} {
+		if !strings.Contains(out, w) {
+			t.Errorf("help must say which text output is escaped (%s): %q", w, out)
+		}
+	}
+	_, out, _ = runNoConfig(t, "help", "mv")
+	for _, w := range []string{"moved is", "rewritten counts"} {
+		if !strings.Contains(out, w) {
+			t.Errorf("help mv must describe the output fields (%s): %q", w, out)
+		}
+	}
+}
+
 func TestHelpFitsIn80Columns(t *testing.T) {
 	outs := [][]string{{"help"}, {"help", "help"}, {"help", "version"}}
 	for _, c := range commands {

@@ -99,7 +99,9 @@ Fails with exit code 4 for a path that breaks the file name rules (see
 "help lint"), 1 if the destination exists, and 3 if a page changed since it
 was read (as for put; run it again).
 
-Output: {path, commit, rewritten} or {path, commit, moved, rewritten}.`,
+Output: {path, commit, rewritten} or {path, commit, moved, rewritten}; moved is
+the number of pages moved, and rewritten counts only the other pages whose
+links were rewritten.`,
 		flags: func(fs *flag.FlagSet) { msgFlag(fs) }, run: (*app).cmdMv},
 	{name: "rm", args: "<path>", minArgs: 1, maxArgs: 1,
 		summary: "Delete a page",
