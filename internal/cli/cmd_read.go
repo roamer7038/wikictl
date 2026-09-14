@@ -102,7 +102,7 @@ func (a *app) cmdStat(c *command, args []string) error {
 	}
 	updated := map[string]time.Time{}
 	if len(found) > 0 {
-		if updated, err = a.repo.Updated(found, found); err != nil {
+		if updated, err = a.repo.Updated(found); err != nil {
 			return &gitError{err}
 		}
 	}

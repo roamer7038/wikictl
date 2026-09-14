@@ -238,11 +238,7 @@ func (a *app) latestUpdates(t *fileTree, roots []string) (map[string]time.Time, 
 			files = append(files, f)
 		}
 	}
-	dirs := roots
-	if slices.Contains(roots, ".") {
-		dirs = nil
-	}
-	updated, err := a.repo.Updated(dirs, files)
+	updated, err := a.repo.Updated(files)
 	if err != nil {
 		return nil, &gitError{err}
 	}

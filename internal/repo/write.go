@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"os"
-	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -97,21 +97,18 @@ func (r *Repo) Commit(changes []Change, msg string, au Author) (*Result, error) 
 	return nil, last
 }
 
-// baseSHAs returns the blob sha at commit head of each file in the
-// directories of the changes that have a Base, from one "ls-tree -r". A path
-// that is absent or not a blob has no entry. ls-tree fails when a tree on the
-// way cannot be read.
+// baseSHAs returns the blob sha at commit head of each path of the changes
+// that have a Base, from one "ls-tree". A path that is absent or not a blob
+// has no entry. ls-tree fails when a tree on the way to a path cannot be read.
 func (r *Repo) baseSHAs(head string, changes []Change) (map[string]string, error) {
 	res := map[string]string{}
-	args := []string{"ls-tree", "-r", "-z", head, "--"}
-	dirs := map[string]bool{}
+	args := []string{"ls-tree", "-z", head, "--"}
 	for _, c := range changes {
-		if d := path.Dir(c.Path); c.Base != nil && !dirs[d] {
-			dirs[d] = true
-			args = append(args, d)
+		if c.Base != nil && !slices.Contains(args[4:], c.Path) {
+			args = append(args, c.Path)
 		}
 	}
-	if head == "" || len(dirs) == 0 {
+	if head == "" || len(args) == 4 {
 		return res, nil
 	}
 	out, err := r.Git(args...)
