@@ -6,6 +6,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/pflag"
 
@@ -26,9 +27,9 @@ func join(dir, name string) string {
 	return dir + "/" + name
 }
 
-// readTree lists every file of the wiki and, unless -a is given, finds the
-// pages with status: deprecated, which ls and tree hide.
-func (a *app) readTree() (*fileTree, error) {
+// readTree lists every file of the wiki and, with hide, finds the pages with
+// status: deprecated, which ls and tree hide.
+func (a *app) readTree(hide bool) (*fileTree, error) {
 	files, err := a.repo.Files(nil)
 	if err != nil {
 		return nil, &gitError{err}
@@ -45,7 +46,7 @@ func (a *app) readTree() (*fileTree, error) {
 			dir = join(dir, name)
 		}
 	}
-	if !a.all {
+	if hide {
 		if t.hidden, err = wiki.Deprecated(a.repo); err != nil {
 			return nil, &gitError{err}
 		}
@@ -89,8 +90,6 @@ func lsFlags(a *app, fs *pflag.FlagSet) {
 	fs.BoolVarP(&a.recursive, "recursive", "R", false, "list subdirectories recursively")
 	fs.BoolVarP(&a.all, "all", "a", false, "include names starting with a dot and pages with status: deprecated")
 	fs.BoolVarP(&a.byTime, "time", "t", false, "sort by last update, newest first")
-	fs.StringVar(&a.typ, "type", "", "list only the pages with this `type` in the frontmatter")
-	fs.StringVar(&a.tag, "tag", "", "list only the pages tagged `tag`")
 }
 
 // lsSection is the entries listed under the heading of dir; dir is "" for
@@ -101,7 +100,7 @@ type lsSection struct {
 }
 
 func (a *app) cmdLs(c *command, args []string) error {
-	t, err := a.readTree()
+	t, err := a.readTree(!a.all)
 	if err != nil {
 		return err
 	}
@@ -184,8 +183,8 @@ func (a *app) cmdLs(c *command, args []string) error {
 	return a.reportMissing(missing)
 }
 
-// lsDetails fills in the attributes of the items that the output needs,
-// removes the pages that --type or --tag leave out, and sorts by time for -t.
+// lsDetails fills in the attributes of the items that the output needs and
+// sorts by time for -t.
 func (a *app) lsDetails(sections []lsSection) error {
 	var paths []string
 	for _, s := range sections {
@@ -195,43 +194,29 @@ func (a *app) lsDetails(sections []lsSection) error {
 			}
 		}
 	}
-	if a.long || a.json || a.typ != "" || a.tag != "" {
+	if a.long || a.json {
 		pages, err := a.readPages(paths)
 		if err != nil {
 			return &gitError{err}
 		}
-		for i := range sections {
-			kept := sections[i].items[:0]
-			for _, it := range sections[i].items {
+		for _, s := range sections {
+			for i, it := range s.items {
 				if it.Kind == "file" {
 					pg := pages.parse(it.Path)
-					it.Type, _ = pg.Frontmatter["type"].(string)
-					it.Summary, it.Title = pg.Summary, pg.Title
-					if (a.typ != "" && it.Type != a.typ) || (a.tag != "" && !hasTag(pg.Frontmatter, a.tag)) {
-						continue
-					}
+					s.items[i].Type, _ = pg.Frontmatter["type"].(string)
+					s.items[i].Summary, s.items[i].Title = pg.Summary, pg.Title
 				}
-				kept = append(kept, it)
 			}
-			sections[i].items = kept
 		}
 	}
 	if a.long || a.json || a.byTime {
-		updated, err := a.repo.Updated(nil)
+		latest, err := a.latestUpdates()
 		if err != nil {
-			return &gitError{err}
-		}
-		// A directory was last updated when any file under it was.
-		latest := map[string]string{}
-		for p, tm := range updated {
-			s := fmtTime(tm)
-			for d := p; d != "."; d = path.Dir(d) {
-				latest[d] = max(latest[d], s)
-			}
+			return err
 		}
 		for _, s := range sections {
 			for i := range s.items {
-				s.items[i].Updated = latest[s.items[i].Path]
+				s.items[i].Updated = fmtTime(latest[s.items[i].Path])
 			}
 			if a.byTime {
 				sort.SliceStable(s.items, func(i, j int) bool { return s.items[i].Updated > s.items[j].Updated })
@@ -239,6 +224,27 @@ func (a *app) lsDetails(sections []lsSection) error {
 		}
 	}
 	return nil
+}
+
+// latestUpdates returns the time of the last commit that changed each file
+// and, for each directory, "." included, the latest time of the files under it.
+func (a *app) latestUpdates() (map[string]time.Time, error) {
+	updated, err := a.repo.Updated(nil)
+	if err != nil {
+		return nil, &gitError{err}
+	}
+	latest := map[string]time.Time{}
+	for p, tm := range updated {
+		for d := p; ; d = path.Dir(d) {
+			if tm.After(latest[d]) {
+				latest[d] = tm
+			}
+			if d == "." {
+				break
+			}
+		}
+	}
+	return latest, nil
 }
 
 // writeLs writes the names of rows, or with long every column, aligned.
@@ -280,7 +286,7 @@ func treeFlags(a *app, fs *pflag.FlagSet) {
 }
 
 func (a *app) cmdTree(c *command, args []string) error {
-	t, err := a.readTree()
+	t, err := a.readTree(!a.all)
 	if err != nil {
 		return err
 	}

@@ -358,7 +358,7 @@ func (r *Repo) catFile(names []string, withContent bool) ([]catEntry, error) {
 }
 
 // Updated returns the last commit time of every file under dirs, from one
-// pass over "git log --name-only". Renames are not followed.
+// pass over "git log -z --name-only". Renames are not followed.
 func (r *Repo) Updated(dirs []string) (map[string]time.Time, error) {
 	res := map[string]time.Time{}
 	head, err := r.Head()
@@ -368,22 +368,25 @@ func (r *Repo) Updated(dirs []string) (map[string]time.Time, error) {
 	if head == "" {
 		return res, nil
 	}
-	args := append([]string{"log", "--format=%x00%cI", "--name-only", r.readRef()}, pathspec(dirs)...)
+	args := append([]string{"log", "-z", "--format=%x00%x01%cI", "--name-only", r.readRef()}, pathspec(dirs)...)
 	out, err := r.Git(args...)
 	if err != nil {
 		return nil, err
 	}
+	// Each commit is "\x00\x01<time>\x00", then a newline and its paths, each
+	// ending with NUL. Paths are not quoted, and none is empty.
 	var cur time.Time
-	for _, l := range strings.Split(out, "\n") {
-		if strings.HasPrefix(l, "\x00") {
-			cur, _ = time.Parse(time.RFC3339, strings.TrimPrefix(l, "\x00"))
+	toks := strings.Split(out, "\x00")
+	for i, tok := range toks {
+		if i > 0 && toks[i-1] == "" && strings.HasPrefix(tok, "\x01") {
+			cur, _ = time.Parse(time.RFC3339, tok[1:])
 			continue
 		}
-		if l == "" {
-			continue
+		if i > 0 && strings.HasPrefix(toks[i-1], "\x01") {
+			tok = strings.TrimPrefix(tok, "\n")
 		}
-		if _, seen := res[l]; !seen {
-			res[l] = cur
+		if _, seen := res[tok]; tok != "" && !seen {
+			res[tok] = cur
 		}
 	}
 	return res, nil

@@ -175,12 +175,6 @@ func TestReadCommands(t *testing.T) {
 	if code, out, _ = runCLI(t, cfg, "", "context", "--json"); code != 0 {
 		t.Errorf("context: %s", out)
 	}
-	ls.Items = nil
-	_, out, _ = runCLI(t, cfg, "", "ls", "--json", "--tag", "git", "global")
-	mustUnmarshal(t, out, &ls)
-	if len(ls.Items) != 1 || ls.Items[0].Path != "global/push.md" {
-		t.Errorf("ls --tag: %s", out)
-	}
 	if code, _, errs = runCLI(t, cfg, "", "ls", "global/none", "global"); code != 1 || errs != "wikictl: global/none: no such file\n" {
 		t.Errorf("ls of a missing path: code=%d errs=%q", code, errs)
 	}

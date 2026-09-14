@@ -279,16 +279,6 @@ func summaryOrTitle(summary, title string) string {
 	return title
 }
 
-func hasTag(fm map[string]any, tag string) bool {
-	ts, _ := fm["tags"].([]any)
-	for _, t := range ts {
-		if s, _ := t.(string); s == tag {
-			return true
-		}
-	}
-	return false
-}
-
 func fmtTime(t time.Time) string {
 	if t.IsZero() {
 		return ""
