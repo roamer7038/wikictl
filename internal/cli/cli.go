@@ -40,17 +40,19 @@ var commands = []*command{
 given by repo in the config file or its selected profile. The repository
 itself must already exist; it may be on a Git host, on a server reached over
 SSH, or a local bare repository. Fails with exit code 1 if the branch already
-exists.`,
+exists. The branch is the one shown by "wikictl context"; in an empty
+repository without branch in the config file, it is main.`,
 		run: (*app).cmdInit},
 	{name: "search", args: "<word>...", minArgs: 1, maxArgs: -1,
 		summary: "Find pages containing the given words",
 		detail: `Find pages that contain all of the words (fixed strings, ignoring case,
-non-ASCII letters included).
-Pages with "status: deprecated" are skipped unless --all is given. Results
-are ordered by last update, newest first; with --any, pages matching more
-words come first. Text output shows the summary of each page, or its title
-(first heading, else the file name) when the page has no summary.
-Control characters other than tab are shown as \xNN in text output.
+non-ASCII letters included) anywhere in the file, frontmatter included.
+Pages with a line "status: deprecated" (unquoted, anywhere in the file) are
+skipped unless --all is given. Results are ordered by last update, newest
+first; with --any, pages matching more words come first. Text output shows
+the summary of each page, or its title (first heading, else the file name)
+when the page has no summary. Control characters other than tab are shown as
+\xNN in text output.
 
 Output: items[] {path, summary, title, matched, updated}.`,
 		flags: func(fs *flag.FlagSet) { searchFlags(fs) }, run: (*app).cmdSearch},
@@ -61,12 +63,19 @@ and the Links section), typed links from the Links section, and backlinks
 from other pages: their typed links, or "mentions" for links in their body.
 Pass the sha to "put --base" when updating the page.
 
+The page is shown as parsed, not as stored; put prints the stored content when
+it reports a conflict. Text output shows the path, sha, update time, body,
+links and backlinks; the frontmatter and title are only in JSON output.
+Control characters other than tab in the targets and notes of the links are
+shown as \xNN in text output; the body is printed as it is.
+
 Output: {path, sha, frontmatter, title, body, links[], backlinks[], updated}.`,
 		run: (*app).cmdGet},
 	{name: "ls", maxArgs: 0,
 		summary: "List pages",
 		detail: `List the pages under the search directories with their summary and type.
-Pages with "status: deprecated" are skipped unless --all is given. Text
+Pages with a line "status: deprecated" (unquoted, anywhere in the file) are
+skipped unless --all is given. --tag matches tags written as a YAML list. Text
 output shows the summary of each page, or its title (first heading, else the
 file name) when the page has no summary. Control characters other than tab
 are shown as \xNN in text output.
@@ -84,8 +93,20 @@ breaks the file name rules (see "help lint") is rejected with exit code 4. A
 missing summary, Links lines that do not parse, links to files missing from
 the wiki and names outside the recommended form only produce warnings on
 standard error; "description" in the frontmatter is read as a synonym of
-"summary". When the content equals the current page, no commit is created and
-commit is the current commit.
+"summary", and "summary" wins when it is not blank. When the content equals
+the current page, no commit is created and commit is the current commit. The
+default commit message is "wikictl: put <path>".
+
+Warnings are printed as "wikictl: warning: <path>:<line>: <code>: <message>";
+control characters other than tab in the message are shown as \xNN.
+
+On a conflict, text output prints "wikictl: conflict (<reason>): <path>
+sha=<sha>" on standard error and the current content on standard output. With
+--json the output is {error, reason, path, sha, content, message} with error
+"conflict". reason is "exists" when the page (or the destination of mv)
+already exists, or "changed" when it no longer has the expected sha; sha and
+content are empty when the page has been deleted. mv and rm report conflicts
+in the same way.
 
 Output: {path, sha, commit}.`,
 		flags: func(fs *flag.FlagSet) { putFlags(fs) }, run: (*app).cmdPut},
@@ -104,7 +125,9 @@ arguments end with a slash, every page under <dir>/ is moved to <newdir>/
 instead; file names do not change, so no alias is added. A path or new path
 that breaks the file name rules (see "help lint") is rejected with exit code 4.
 A rewritten page keeps its BOM, and all its lines get the line ending (CRLF or
-LF) of its first line.
+LF) of its first line. If <newpath> already exists, or any page exists under
+<newdir>/, the command fails with exit code 1. The default commit message is
+"wikictl: mv <path> <newpath>". Warnings are printed as for put.
 
 Only links of the form [text](path) are rewritten. A bare path in a Links line,
 such as "- part_of: index.md" or "- index.md", is left unchanged and becomes
@@ -112,9 +135,13 @@ a broken link; write page targets as [text](path).
 
 If a page that mv changes or deletes changed since mv read it, or the new path
 was created, the command exits with code 3, writes nothing and prints the
-current content and sha of that page, as put does; run it again.
+current content and sha of that page, as put does; run it again. With
+--no-fetch, mv builds the change from the unfetched mirror, so a page that
+changed since the last fetch is reported as a conflict.
 
-Output: {path, commit, rewritten} or {path, commit, moved, rewritten}.`,
+Output: {path, commit, rewritten} or {path, commit, moved, rewritten}; moved is
+the number of pages moved, and rewritten counts only the other pages whose
+links were rewritten.`,
 		flags: func(fs *flag.FlagSet) { msgFlag(fs) }, run: (*app).cmdMv},
 	{name: "rm", args: "<path>", minArgs: 1, maxArgs: 1,
 		summary: "Delete a page",
@@ -122,7 +149,10 @@ Output: {path, commit, rewritten} or {path, commit, moved, rewritten}.`,
 as broken_link. A path that is not a page path (see "help lint"), such as a
 file at the wiki root, is rejected with exit code 4. If the page changed since
 rm read it, the command exits with code 3, deletes nothing and prints the
-current content and sha, as put does; run it again.
+current content and sha, as put does; run it again. With --no-fetch, a page
+that changed since the last fetch is reported as a conflict. To delete a file
+that is not a page, clone the wiki repository and use git. The default commit
+message is "wikictl: rm <path>".
 
 Output: {path, commit}.`,
 		flags: func(fs *flag.FlagSet) { msgFlag(fs) }, run: (*app).cmdRm},
@@ -130,7 +160,13 @@ Output: {path, commit}.`,
 		summary: "Report pages that violate the wiki format",
 		detail: `Check pages for missing_summary, frontmatter_invalid, links_syntax, broken_link,
 page_too_large and the file name rules. Without arguments every page under the
-search directories is checked. Exits with code 4 when violations are found.
+search directories is checked; "wikictl --dirs . lint" checks the whole wiki.
+Exits with code 4 when violations are found. Each finding is printed as
+"<path>:<line>: <code>: <message>"; line 0 means the whole file.
+
+missing_summary: no summary or description, or no frontmatter.
+links_syntax: a line in the Links section is not a valid Links line.
+broken_link: a link to a page that does not exist in the wiki repository.
 
 Size limits: a page over 1 MiB is not parsed and is reported as
 page_too_large. Frontmatter over 64 KiB, or with collections nested more than
@@ -150,6 +186,25 @@ see_also relation (an untyped URL must be "<scheme>://..."); the bullet may
 be "-", "*" or "+" and may be indented. The "## Links" heading must be the last
 heading of the page; one followed by another heading is reported as
 links_syntax.
+
+A page link is a relative path ending in .md, optionally followed by
+#fragment; absolute paths and paths that leave the wiki are not page links.
+Links of the form [text](path) in the body are also read, except inside code
+fences and code spans: get lists them as "mentions" backlinks, and lint
+reports them as broken_link when the page is missing. Code fences are never
+interpreted, so a "## Links" heading inside a fence does not start the
+Links section.
+
+Code fences follow CommonMark. A fence opens with a line of three or more
+backticks or tildes indented by up to three spaces (after backticks, the rest
+of the line must not contain a backtick), and closes only with a line of the
+same character, at least as many times, followed by nothing but spaces and
+tabs; a line such as "` + "```bash" + `" inside a fence does not close it. A fence
+that is never closed runs to the end of the page.
+
+The title of a page is the text of its first heading outside code fences and
+before the Links section, else the file name. A closing sequence of # is
+removed only when a space or a tab precedes it, so "# C#" has the title "C#".
 
 Control characters other than tab in a message are shown as \xNN in text
 output.
@@ -179,9 +234,24 @@ directories that other commands use by default: up to four of global/,
 personal/, projects/<name>/ and machines/<name>/. Each is shown with the
 number of pages at any depth under it ("." counts the whole wiki); 0 means the
 directory has no page yet. Unlike dirs, which counts only the pages directly in
-each directory, pages in subdirectories are included. The user information
-(user:token@) of an HTTPS or other URL in repo and remote is shown as ***@; an SSH user
-name without a password, such as git@, is shown as it is.
+each directory, pages in subdirectories are included.
+
+The branch is branch in the config file, else the branch saved in the mirror,
+else the remote HEAD, else main. The saved branch is kept, so a change of the
+remote default branch is not followed until branch is set or the mirror is
+deleted.
+
+A profile is selected by --profile, else $WIKICTL_PROFILE, else match, else
+default_profile. A profile matches when one of its match.remotes globs matches
+the origin remote, normalised to lowercase host/path without scheme, user,
+port and .git, or when the current directory is one of match.paths (absolute
+or starting with ~) or below one. In a glob, * matches one path element and a
+trailing /* matches any depth below. When several profiles match, the command
+fails with exit code 2.
+
+The user information (user:token@) of an HTTPS or other URL in repo and
+remote is shown as ***@; an SSH user name without a password, such as git@, is
+shown as it is.
 
 Output: {config, profile, profile_source, repo, mirror, branch, author, machine, project, remote, dirs, pages}.`,
 		run: (*app).cmdContext},
