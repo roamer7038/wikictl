@@ -408,8 +408,8 @@ func (a *app) cmdMv(c *command, args []string) error {
 	return nil
 }
 
-// checkFilePath checks a path that a file is moved to: CheckPath for a page,
-// CheckFilePath for any other file.
+// checkFilePath checks the path of a file that is written or moved to:
+// CheckPath for a page, CheckFilePath for any other file.
 func checkFilePath(p string) error {
 	if strings.HasSuffix(p, ".md") {
 		return page.CheckPath(p)

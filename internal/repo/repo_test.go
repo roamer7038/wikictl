@@ -399,8 +399,8 @@ func TestCommitEmptyRemote(t *testing.T) {
 func TestReadLiteralDirs(t *testing.T) {
 	remote := newRemote(t, true)
 	seedRemote(t, remote, map[string]string{
-		"projects/a*/p.md":   "---\nsummary: p\nstatus: deprecated\n---\n# p\nlease\n",
-		"projects/app/x.md":  "---\nsummary: x\nstatus: deprecated\n---\n# x\nlease\n",
+		"projects/a*/p.md":   "---\nsummary: p\n---\n# p\nlease\n",
+		"projects/app/x.md":  "---\nsummary: x\n---\n# x\nlease\n",
 		"projects/[ab]/q.md": "---\nsummary: q\n---\n# q\nlease\n",
 		"projects/a/y.md":    "---\nsummary: y\n---\n# y\nlease\n",
 	})
@@ -420,6 +420,9 @@ func TestReadLiteralDirs(t *testing.T) {
 		if len(up) != 1 || up[tc.want].IsZero() {
 			t.Errorf("updated %s=%v", tc.dir, up)
 		}
+	}
+	if got, err := r.Files([]string{"nope", "projects/a*"}); err != nil || len(got) != 1 {
+		t.Errorf("a directory that does not exist must be ignored: %v %v", got, err)
 	}
 }
 

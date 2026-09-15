@@ -447,8 +447,8 @@ func (r *Repo) treeEntry(head, path string) (typ, sha string, err error) {
 // CheckMissing is called for paths that CatSHA or CatLimit did not return. It
 // returns an error when git cannot tell whether a path exists at the commit
 // that reads use, or when a path is a blob there that the mirror cannot read;
-// cat-file --batch reports both as "missing". A path that does not exist or is not a
-// file is not an error.
+// cat-file --batch reports both as "missing". A path that does not exist or is
+// not a file is not an error.
 func (r *Repo) CheckMissing(paths []string) error {
 	head, err := r.Head()
 	if err != nil || head == "" {
