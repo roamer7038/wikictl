@@ -41,40 +41,11 @@ func pathspec(dirs []string) []string {
 	return out
 }
 
-// stripRef takes the output of "git grep -l -z", removes the "<ref>:" prefix
-// of each path, and drops non-pages.
-func stripRef(r *Repo, out string) []string {
-	var res []string
-	prefix := r.readRef() + ":"
-	for rec := range strings.SplitSeq(out, "\x00") {
-		if p := strings.TrimPrefix(rec, prefix); IsPagePath(p) {
-			res = append(res, p)
-		}
-	}
-	return res
-}
-
-// List returns the paths of all pages.
-func (r *Repo) List() ([]string, error) {
-	files, err := r.Files(nil)
-	return slices.DeleteFunc(files, func(p string) bool { return !IsPagePath(p) }), err
-}
-
 // Entry is a file of the tree: its path, mode, object type and object sha.
 type Entry struct{ Path, Mode, Type, SHA string }
 
-// Entries returns the files under dirs, or of the whole tree when dirs is nil,
-// pages or not. Directories that do not exist are ignored.
-func (r *Repo) Entries(dirs []string) ([]Entry, error) {
-	head, err := r.Head()
-	if err != nil || head == "" {
-		return nil, err
-	}
-	args := append([]string{"ls-tree", "-r", "-z", r.readRef()}, pathspec(dirs)...)
-	out, err := r.Git(args...)
-	if err != nil {
-		return nil, err
-	}
+// parseTree returns the entries of the output of "ls-tree -z".
+func parseTree(out string) []Entry {
 	var res []Entry
 	for rec := range strings.SplitSeq(out, "\x00") {
 		meta, p, ok := strings.Cut(rec, "\t")
@@ -82,7 +53,20 @@ func (r *Repo) Entries(dirs []string) ([]Entry, error) {
 			res = append(res, Entry{p, f[0], f[1], f[2]})
 		}
 	}
-	return res, nil
+	return res
+}
+
+// Entries returns the files under dirs, or of the whole tree when dirs is nil,
+// pages or not. Directories that do not exist are ignored.
+func (r *Repo) Entries(dirs []string) ([]Entry, error) {
+	if r.snapshot == "" {
+		return nil, nil
+	}
+	out, err := r.Git(append([]string{"ls-tree", "-r", "-z", r.snapshot}, pathspec(dirs)...)...)
+	if err != nil {
+		return nil, err
+	}
+	return parseTree(out), nil
 }
 
 // Files returns the paths of Entries.
@@ -118,42 +102,20 @@ func FoldPattern(word string) string {
 	return b.String()
 }
 
-// Grep returns the pages that contain every one of words as fixed strings,
-// ignoring case as FoldPattern does.
-func (r *Repo) Grep(words []string) ([]string, error) {
-	head, err := r.Head()
-	if err != nil || head == "" || len(words) == 0 {
-		return nil, err
-	}
-	args := []string{"grep", "-E", "-l", "-z", "--all-match"}
-	for _, w := range words {
-		args = append(args, "-e", FoldPattern(w))
-	}
-	out, err := r.gitStrict(append(args, r.readRef())...)
-	if noResult(err) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return stripRef(r, out), nil
-}
-
-// GrepRecords runs "git grep -I -z" with flags and the patterns, each given
-// with -e, on the files under dirs at the commit that reads use, and returns
-// one record per entry of the output: a path with -l or -L, a path and a count
+// GrepRecords runs "git grep -z" with flags and the patterns, each given with
+// -e, on the files under dirs at the commit that reads use, and returns one
+// record per entry of the output: a path with -l or -L, a path and a count
 // with -c, and otherwise a path, a line number and the line. Column output is
 // turned off whatever the git configuration says. No match is not an error.
 func (r *Repo) GrepRecords(flags, patterns, dirs []string) ([][]string, error) {
-	head, err := r.Head()
-	if err != nil || head == "" {
-		return nil, err
+	if r.snapshot == "" {
+		return nil, nil
 	}
-	args := append([]string{"grep", "-I", "-z", "--no-column"}, flags...)
+	args := append([]string{"grep", "-z", "--no-column"}, flags...)
 	for _, p := range patterns {
 		args = append(args, "-e", p)
 	}
-	args = append(append(args, r.readRef()), pathspec(dirs)...)
+	args = append(append(args, r.snapshot), pathspec(dirs)...)
 	out, err := r.gitStrict(args...)
 	if noResult(err) {
 		return nil, nil
@@ -170,7 +132,7 @@ func (r *Repo) GrepRecords(flags, patterns, dirs []string) ([][]string, error) {
 	case slices.Contains(flags, "-c"):
 		fields = 2
 	}
-	prefix := r.readRef() + ":"
+	prefix := r.snapshot + ":"
 	var res [][]string
 	for out != "" {
 		f := make([]string, fields)
@@ -183,31 +145,6 @@ func (r *Repo) GrepRecords(flags, patterns, dirs []string) ([][]string, error) {
 		}
 		f[0] = strings.TrimPrefix(f[0], prefix)
 		res = append(res, f)
-	}
-	return res, nil
-}
-
-// GrepDeprecated returns the set of pages that contain the word "deprecated":
-// the candidates whose frontmatter wiki.Deprecated reads. Any way of writing
-// status: deprecated in YAML contains the word.
-func (r *Repo) GrepDeprecated() (map[string]bool, error) {
-	res := map[string]bool{}
-	head, err := r.Head()
-	if err != nil {
-		return nil, err
-	}
-	if head == "" {
-		return res, nil
-	}
-	out, err := r.gitStrict("grep", "-l", "-z", "-F", "-e", "deprecated", r.readRef())
-	if noResult(err) {
-		return res, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	for _, p := range stripRef(r, out) {
-		res[p] = true
 	}
 	return res, nil
 }
@@ -263,17 +200,17 @@ func (r *Repo) Stat(paths []string) (map[string]Object, error) {
 	return res, nil
 }
 
-// CatLimit returns the contents of the files of at most max bytes. It finds
-// the sizes with Stat first; the files over max are returned in large, and
-// their contents are not read. Paths that do not exist or are not files are
-// absent from the result; a path that is a blob the mirror cannot read is an
-// error, as CheckMissing reports it.
-func (r *Repo) CatLimit(paths []string, max int64) (contents map[string][]byte, large map[string]Object, err error) {
-	objs, err := r.Stat(paths)
+// CatLimit returns the contents of the files of at most max bytes, and the
+// sha and size of every file as Stat returns them; the contents of the files
+// over max are not read. Paths that do not exist or are not files are absent
+// from the result; a path that is a blob the mirror cannot read is an error,
+// as CheckMissing reports it.
+func (r *Repo) CatLimit(paths []string, max int64) (contents map[string][]byte, objs map[string]Object, err error) {
+	objs, err = r.Stat(paths)
 	if err != nil {
 		return nil, nil, err
 	}
-	contents, large = map[string][]byte{}, map[string]Object{}
+	contents = map[string][]byte{}
 	var small, shas, absent []string
 	for _, p := range paths {
 		o, ok := objs[p]
@@ -281,7 +218,6 @@ func (r *Repo) CatLimit(paths []string, max int64) (contents map[string][]byte, 
 		case !ok:
 			absent = append(absent, p)
 		case o.Size > max:
-			large[p] = o
 		default:
 			small = append(small, p)
 			shas = append(shas, o.SHA)
@@ -299,7 +235,7 @@ func (r *Repo) CatLimit(paths []string, max int64) (contents map[string][]byte, 
 			contents[p] = e.content
 		}
 	}
-	return contents, large, nil
+	return contents, objs, nil
 }
 
 // refPaths turns paths into object names at the commit that reads use, for
@@ -311,19 +247,15 @@ func (r *Repo) refPaths(paths []string) ([]string, error) {
 	names := make([]string, len(paths))
 	var odd []string
 	for i, p := range paths {
-		names[i] = r.readRef() + ":" + p
+		names[i] = r.snapshot + ":" + p
 		if strings.ContainsAny(p, "\n\r") {
 			odd = append(odd, p)
 		}
 	}
-	if len(odd) == 0 || r.pinned && r.snapshot == "" {
+	if len(odd) == 0 || r.snapshot == "" {
 		return names, nil
 	}
-	head, err := r.Head()
-	if err != nil || head == "" {
-		return names, err
-	}
-	ents, err := r.treeEntries(head, odd)
+	ents, err := r.treeEntries(odd)
 	if err != nil {
 		return nil, err
 	}
@@ -354,7 +286,7 @@ type catEntry struct {
 // carriage return; see refPaths.
 func (r *Repo) catFile(names []string, withContent bool) ([]catEntry, error) {
 	res := make([]catEntry, len(names))
-	if len(names) == 0 || r.pinned && r.snapshot == "" {
+	if len(names) == 0 || r.snapshot == "" {
 		return res, nil
 	}
 	args := []string{"cat-file", "--batch-check"}
@@ -365,7 +297,7 @@ func (r *Repo) catFile(names []string, withContent bool) ([]catEntry, error) {
 	for _, n := range names {
 		in.WriteString(n + "\n")
 	}
-	out, err := r.GitIn(in.Bytes(), args...)
+	out, err := r.runGit(false, nil, in.Bytes(), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -400,9 +332,8 @@ func (r *Repo) catFile(names []string, withContent bool) ([]catEntry, error) {
 // given. Renames are not followed.
 func (r *Repo) Updated(files []string) (map[string]time.Time, error) {
 	res := map[string]time.Time{}
-	head, err := r.Head()
-	if err != nil || head == "" || len(files) == 0 {
-		return res, err
+	if r.snapshot == "" || len(files) == 0 {
+		return res, nil
 	}
 	want := map[string]bool{}
 	var dirs []string
@@ -415,7 +346,7 @@ func (r *Repo) Updated(files []string) (map[string]time.Time, error) {
 	if len(dirs) > 8 || slices.Contains(dirs, ".") {
 		dirs = nil
 	}
-	args := append([]string{"log", "-z", "--format=%x00%x01%cI", "--name-only", "--full-history", r.readRef()}, pathspec(dirs)...)
+	args := append([]string{"log", "-z", "--format=%x00%x01%cI", "--name-only", "--full-history", r.snapshot}, pathspec(dirs)...)
 	c := r.command(nil, args)
 	var errb bytes.Buffer
 	c.Stderr = &errb
@@ -466,12 +397,12 @@ func (r *Repo) Updated(files []string) (map[string]time.Time, error) {
 // treeEntries, which keeps the command line within the limits of Windows.
 const maxTreeArgs = 8 << 10
 
-// treeEntries returns the entry at commit head of each of paths that exists.
-// It uses ls-tree, which fails when a tree on the way cannot be read, unlike
-// "rev-parse <commit>:<path>", which then exits with 1 and nothing on stderr
-// as it does for an absent path. The paths are split among as few calls as
-// maxTreeArgs allows.
-func (r *Repo) treeEntries(head string, paths []string) (map[string]Entry, error) {
+// treeEntries returns the entry at the commit that reads use of each of paths
+// that exists. It uses ls-tree, which fails when a tree on the way cannot be
+// read, unlike "rev-parse <commit>:<path>", which then exits with 1 and
+// nothing on stderr as it does for an absent path. The paths are split among
+// as few calls as maxTreeArgs allows.
+func (r *Repo) treeEntries(paths []string) (map[string]Entry, error) {
 	paths = slices.Compact(slices.Sorted(slices.Values(paths)))
 	want := map[string]bool{}
 	for _, p := range paths {
@@ -479,7 +410,7 @@ func (r *Repo) treeEntries(head string, paths []string) (map[string]Entry, error
 	}
 	res := map[string]Entry{}
 	for len(paths) > 0 {
-		args, n := []string{"ls-tree", "-z", head, "--"}, 0
+		args, n := []string{"ls-tree", "-z", r.snapshot, "--"}, 0
 		for len(paths) > 0 && (n == 0 || n+len(paths[0]) <= maxTreeArgs) {
 			args = append(args, paths[0])
 			n += len(paths[0]) + 1
@@ -489,10 +420,9 @@ func (r *Repo) treeEntries(head string, paths []string) (map[string]Entry, error
 		if err != nil {
 			return nil, err
 		}
-		for rec := range strings.SplitSeq(out, "\x00") {
-			meta, p, ok := strings.Cut(rec, "\t")
-			if f := strings.Fields(meta); ok && want[p] && len(f) == 3 {
-				res[p] = Entry{p, f[0], f[1], f[2]}
+		for _, e := range parseTree(out) {
+			if want[e.Path] {
+				res[e.Path] = e
 			}
 		}
 	}
@@ -505,14 +435,10 @@ func (r *Repo) treeEntries(head string, paths []string) (map[string]Entry, error
 // cat-file --batch reports both as "missing". A path that does not exist or is
 // not a file is not an error. git is not run when paths is empty.
 func (r *Repo) CheckMissing(paths []string) error {
-	if len(paths) == 0 {
+	if len(paths) == 0 || r.snapshot == "" {
 		return nil
 	}
-	head, err := r.Head()
-	if err != nil || head == "" {
-		return err
-	}
-	ents, err := r.treeEntries(head, paths)
+	ents, err := r.treeEntries(paths)
 	if err != nil {
 		return err
 	}

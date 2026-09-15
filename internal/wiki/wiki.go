@@ -5,7 +5,6 @@
 package wiki
 
 import (
-	"errors"
 	"fmt"
 	"path"
 	"slices"
@@ -18,71 +17,96 @@ import (
 
 // Store reads the files of one state of the wiki. *repo.Repo implements it.
 type Store interface {
-	// Entries returns the files under dirs, or of the whole tree when dirs
-	// is nil, pages or not, with their object types.
-	Entries(dirs []string) ([]repo.Entry, error)
-	// Grep returns the pages that contain every one of words as fixed strings
-	// ignoring case.
-	Grep(words []string) ([]string, error)
+	// GrepRecords runs git grep with flags and patterns on the files under
+	// dirs and returns one record per entry of the output.
+	GrepRecords(flags, patterns, dirs []string) ([][]string, error)
 	// Stat returns the sha and size of every path that is a file.
 	Stat(paths []string) (map[string]repo.Object, error)
 	// CatSHA returns the contents and blob shas of the paths that are files.
 	CatSHA(paths []string) (map[string][]byte, map[string]string, error)
 	// CatLimit returns the contents of the files of at most max bytes, and
-	// the sha and size of the larger ones.
+	// the sha and size of every file.
 	CatLimit(paths []string, max int64) (map[string][]byte, map[string]repo.Object, error)
-	// GrepDeprecated returns the pages that may have status: deprecated in
-	// their frontmatter.
-	GrepDeprecated() (map[string]bool, error)
 	// CheckMissing returns an error for paths that Stat or CatSHA did not
 	// return when one of them is a file that cannot be read, or when it
 	// cannot be told whether they exist.
 	CheckMissing(paths []string) error
 }
 
+// grepPages returns the pages that have a line matching pattern, given to
+// "git grep -l" with flags.
+func grepPages(s Store, flags []string, pattern string) ([]string, error) {
+	records, err := s.GrepRecords(append(flags, "-l"), []string{pattern}, nil)
+	var out []string
+	for _, rec := range records {
+		if repo.IsPagePath(rec[0]) {
+			out = append(out, rec[0])
+		}
+	}
+	return out, err
+}
+
+// Pages is the files read by ReadPages.
+type Pages struct {
+	contents map[string][]byte      // files of at most page.MaxPageSize bytes
+	Objects  map[string]repo.Object // sha and size of every file
+}
+
+// ReadPages reads paths with one lookup of their sizes and one read of the
+// contents of the files that are not over page.MaxPageSize. A path that is a
+// file the store cannot read is an error.
+func ReadPages(s Store, paths []string) (Pages, error) {
+	contents, objs, err := s.CatLimit(paths, page.MaxPageSize)
+	return Pages{contents, objs}, err
+}
+
+// Exists reports whether p is a file.
+func (ps Pages) Exists(p string) bool {
+	_, ok := ps.Objects[p]
+	return ok
+}
+
+// Parse returns page.Parse of p, and page.TooLarge for a file over the limit.
+func (ps Pages) Parse(p string) *page.Page {
+	if ps.Objects[p].Size > page.MaxPageSize {
+		return page.TooLarge(p)
+	}
+	return page.Parse(p, ps.contents[p])
+}
+
 // Deprecated returns the set of pages whose frontmatter has status:
-// deprecated. The frontmatter of each candidate found by GrepDeprecated
+// deprecated. The candidates are the pages that contain the word, which any
+// way of writing status: deprecated in YAML does; the frontmatter of each
 // decides, so that such a line in the body does not count and a quoted value
 // does.
 func Deprecated(s Store) (map[string]bool, error) {
-	cands, err := s.GrepDeprecated()
+	paths, err := grepPages(s, []string{"-F"}, "deprecated")
 	if err != nil {
 		return nil, err
 	}
-	paths := make([]string, 0, len(cands))
-	for p := range cands {
-		paths = append(paths, p)
-	}
-	contents, large, err := s.CatLimit(paths, page.MaxPageSize)
+	pages, err := ReadPages(s, paths)
 	if err != nil {
 		return nil, err
 	}
 	out := map[string]bool{}
 	for _, p := range paths {
-		if status, _ := parse(p, contents, large).Frontmatter["status"].(string); status == "deprecated" {
+		if status, _ := pages.Parse(p).Frontmatter["status"].(string); status == "deprecated" {
 			out[p] = true
 		}
 	}
 	return out, nil
 }
 
-// ErrOutside is the error of Clean for a path that leaves the wiki.
-var ErrOutside = errors.New("path is outside the wiki")
-
-// ErrControl is the error of Clean for a path that contains a control
-// character.
-var ErrControl = errors.New("path contains a control character")
-
 // Clean turns a path given on the command line into a path relative to the
 // wiki root. A leading "/" or "./" and a trailing "/" make no difference, and
 // the root itself is ".". Wildcards are not interpreted.
 func Clean(p string) (string, error) {
 	if strings.ContainsFunc(p, unicode.IsControl) {
-		return "", fmt.Errorf("%w: %q", ErrControl, p)
+		return "", fmt.Errorf("path contains a control character: %q", p)
 	}
 	c := path.Clean(strings.TrimLeft(p, "/"))
 	if c == ".." || strings.HasPrefix(c, "../") {
-		return "", fmt.Errorf("%w: %s", ErrOutside, p)
+		return "", fmt.Errorf("path is outside the wiki: %s", p)
 	}
 	return c, nil
 }
@@ -94,15 +118,16 @@ type Backlink struct {
 	Type string `json:"type"`
 }
 
-// Backlinks greps the wiki for the file name of target to find candidate
-// pages, then parses each candidate and keeps those whose links resolve to
-// target. Typed links win over body mentions.
+// Backlinks greps the wiki for the file name of target, ignoring case as
+// repo.FoldPattern does, to find candidate pages, then parses each candidate
+// and keeps those whose links resolve to target. Typed links win over body
+// mentions.
 func Backlinks(s Store, target string) ([]Backlink, error) {
-	cands, err := s.Grep([]string{path.Base(target)})
+	cands, err := grepPages(s, []string{"-E"}, repo.FoldPattern(path.Base(target)))
 	if err != nil {
 		return nil, err
 	}
-	contents, large, err := s.CatLimit(cands, page.MaxPageSize)
+	pages, err := ReadPages(s, cands)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +136,7 @@ func Backlinks(s Store, target string) ([]Backlink, error) {
 		if cp == target {
 			continue
 		}
-		pg := parse(cp, contents, large)
+		pg := pages.Parse(cp)
 		typed := false
 		for _, l := range pg.Links {
 			if !l.IsURL && l.Target == target {
@@ -173,8 +198,8 @@ func BrokenLinks(s Store, pages []*page.Page) ([]page.Issue, error) {
 	return items, nil
 }
 
-// Relocate walks every page of the wiki and builds one change set for
-// mapping (old path -> new path): moved pages get their own links re-based
+// Relocate builds, from the files of the whole tree in entries, one change set
+// for mapping (old path -> new path): moved pages get their own links re-based
 // at the new location, and pages that refer to a moved page get those links
 // rewritten. Every change carries the blob sha read here as its Base, and
 // every new path requires that the path does not exist, so that a page
@@ -182,13 +207,9 @@ func BrokenLinks(s Store, pages []*page.Page) ([]page.Issue, error) {
 // that cannot be read is an error, so that no link to a moved page is left
 // unchanged. Pages that are not blobs, such as submodules, have no links and
 // are not read.
-func Relocate(s Store, mapping map[string]string) ([]repo.Change, error) {
-	ents, err := s.Entries(nil)
-	if err != nil {
-		return nil, err
-	}
+func Relocate(s Store, entries []repo.Entry, mapping map[string]string) ([]repo.Change, error) {
 	var all []string
-	for _, e := range ents {
+	for _, e := range entries {
 		if e.Type == "blob" && repo.IsPagePath(e.Path) {
 			all = append(all, e.Path)
 		}
@@ -221,13 +242,4 @@ func Relocate(s Store, mapping map[string]string) ([]repo.Change, error) {
 		}
 	}
 	return changes, nil
-}
-
-// parse returns page.Parse of p, or page.TooLarge when p is over the size
-// limit and its content was not read.
-func parse(p string, contents map[string][]byte, large map[string]repo.Object) *page.Page {
-	if _, big := large[p]; big {
-		return page.TooLarge(p)
-	}
-	return page.Parse(p, contents[p])
 }

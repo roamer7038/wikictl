@@ -84,7 +84,7 @@ func (r *Repo) Commit(changes []Change, msg string, au Author) (*Result, error) 
 			if c.Base == nil {
 				continue
 			}
-			cur := ents[c.Path].sha
+			cur := ents[c.Path].SHA
 			if *c.Base == "" && cur != "" {
 				return nil, r.conflict(c.Path, "exists", cur)
 			} else if *c.Base != "" && cur != *c.Base {
@@ -94,7 +94,7 @@ func (r *Repo) Commit(changes []Change, msg string, au Author) (*Result, error) 
 		written := slices.Clone(changes)
 		for i, c := range written {
 			if c.Mode == "" {
-				written[i].Mode = cmp.Or(ents[c.Path].mode, "100644")
+				written[i].Mode = cmp.Or(ents[c.Path].Mode, "100644")
 			}
 		}
 		res, retry, err := r.buildAndPush(head, written, msg, au)
@@ -116,22 +116,22 @@ type PathError struct{ Path, Reason string }
 
 func (e *PathError) Error() string { return e.Path + ": " + e.Reason }
 
-type treeEntry struct{ mode, typ, sha string }
-
 // entries returns the type and object sha at commit head of the path of every
 // change and of every directory above a written path, from one "ls-tree" of
 // the directories that hold them; ls-tree reads no blob, and fails when a
 // tree it lists cannot be read. An absent path has no entry. A directory that
 // ls-tree descends into instead of listing is known as a tree by the entries
-// below it. A path with a newline or NUL, which ls-tree and update-index
-// cannot take, is an error.
-func (r *Repo) entries(head string, changes []Change) (map[string]treeEntry, error) {
+// below it. A path with a newline or NUL is an error. The CLI rejects such
+// paths before, and git takes a newline in the -z input of update-index, so
+// the check is defence in depth (#64) against a path adding entries of its
+// own to the tree.
+func (r *Repo) entries(head string, changes []Change) (map[string]Entry, error) {
 	for _, c := range changes {
 		if strings.ContainsAny(c.Path, "\n\x00") {
 			return nil, fmt.Errorf("path %q contains a newline or NUL", c.Path)
 		}
 	}
-	res := map[string]treeEntry{}
+	res := map[string]Entry{}
 	if head == "" || len(changes) == 0 {
 		return res, nil
 	}
@@ -161,15 +161,10 @@ func (r *Repo) entries(head string, changes []Change) (map[string]treeEntry, err
 	if err != nil {
 		return nil, err
 	}
-	for entry := range strings.SplitSeq(out, "\x00") {
-		meta, p, ok := strings.Cut(entry, "\t")
-		f := strings.Fields(meta)
-		if !ok || len(f) != 3 {
-			continue
-		}
-		res[p] = treeEntry{f[0], f[1], f[2]}
-		for d := path.Dir(p); d != "." && res[d].typ == ""; d = path.Dir(d) {
-			res[d] = treeEntry{typ: "tree"}
+	for _, e := range parseTree(out) {
+		res[e.Path] = e
+		for d := path.Dir(e.Path); d != "." && res[d].Type == ""; d = path.Dir(d) {
+			res[d] = Entry{Path: d, Type: "tree"}
 		}
 	}
 	return res, nil
@@ -178,7 +173,7 @@ func (r *Repo) entries(head string, changes []Change) (map[string]treeEntry, err
 // checkReplace returns a PathError for a written path that is a directory, a
 // submodule or a symbolic link, or that is below a file the changes do not
 // delete.
-func checkReplace(changes []Change, ents map[string]treeEntry) error {
+func checkReplace(changes []Change, ents map[string]Entry) error {
 	deleted := map[string]bool{}
 	for _, c := range changes {
 		deleted[c.Path] = deleted[c.Path] || c.Delete
@@ -188,15 +183,15 @@ func checkReplace(changes []Change, ents map[string]treeEntry) error {
 			continue
 		}
 		switch e := ents[c.Path]; {
-		case e.typ == "tree":
+		case e.Type == "tree":
 			return &PathError{c.Path, "is a directory"}
-		case e.typ == "commit":
+		case e.Type == "commit":
 			return &PathError{c.Path, "is a submodule"}
-		case e.mode == "120000":
+		case e.Mode == "120000":
 			return &PathError{c.Path, "is a symbolic link"}
 		}
 		for d := path.Dir(c.Path); d != "."; d = path.Dir(d) {
-			if t := ents[d].typ; t != "" && t != "tree" && !deleted[d] {
+			if t := ents[d].Type; t != "" && t != "tree" && !deleted[d] {
 				return &PathError{c.Path, d + " is a file"}
 			}
 		}
@@ -243,13 +238,9 @@ func (r *Repo) buildAndPush(head string, changes []Change, msg string, au Author
 	env := []string{"GIT_INDEX_FILE=" + filepath.Join(idxDir, "index"),
 		"GIT_AUTHOR_NAME=" + au.Name, "GIT_AUTHOR_EMAIL=" + au.Email,
 		"GIT_COMMITTER_NAME=" + au.Name, "GIT_COMMITTER_EMAIL=" + au.Email}
-	git := func(stdin []byte, args ...string) (string, error) { return r.run(env, stdin, args...) }
+	git := func(stdin []byte, args ...string) (string, error) { return r.runGit(false, env, stdin, args...) }
 
-	if head != "" {
-		if _, err := git(nil, "read-tree", head); err != nil {
-			return nil, false, err
-		}
-	} else if _, err := git(nil, "read-tree", "--empty"); err != nil {
+	if _, err := git(nil, "read-tree", cmp.Or(head, "--empty")); err != nil {
 		return nil, false, err
 	}
 	// The contents are written to files so that one hash-object stores them
@@ -315,12 +306,8 @@ func (r *Repo) buildAndPush(head string, changes []Change, msg string, au Author
 		return nil, false, err
 	}
 	commit := strings.TrimSpace(out)
-	lease := head
-	if lease == "" {
-		lease = zeroSHA
-	}
 	pout, perr := r.Git("push", "--porcelain", "origin", commit+":refs/heads/"+r.Branch,
-		"--force-with-lease=refs/heads/"+r.Branch+":"+lease)
+		"--force-with-lease=refs/heads/"+r.Branch+":"+cmp.Or(head, zeroSHA))
 	switch pushStatus(pout) {
 	case pushOK:
 		if err := r.updateTrackingRef(head, commit); err != nil {
@@ -381,10 +368,9 @@ func (r *Repo) remoteMoved(head, pout string, perr error) bool {
 type pushResult int
 
 const (
-	pushNone     pushResult = iota // no refspec line, e.g. a connection or authentication failure
-	pushOK                         // the ref was updated or already up to date
-	pushStale                      // the lease failed
-	pushRejected                   // rejected for another reason
+	pushFailed pushResult = iota // rejected for another reason, or no refspec line, e.g. a connection or authentication failure
+	pushOK                       // the ref was updated or already up to date
+	pushStale                    // the lease failed
 )
 
 // pushStatus classifies the refspec line of "push --porcelain" output.
@@ -400,8 +386,8 @@ func pushStatus(out string) pushResult {
 			if strings.Contains(l, "stale info") {
 				return pushStale
 			}
-			return pushRejected
+			return pushFailed
 		}
 	}
-	return pushNone
+	return pushFailed
 }

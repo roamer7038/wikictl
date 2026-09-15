@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"cmp"
 	"errors"
 	"os"
 	"path/filepath"
@@ -13,8 +14,7 @@ type Repo struct {
 	Remote string // URL of the wiki repository
 	Branch string // branch read and written
 
-	snapshot string // commit fixed by Snapshot; "" when the branch did not exist
-	pinned   bool   // Snapshot was called
+	snapshot string // commit that reads use, fixed by Snapshot; "" when the branch did not exist
 }
 
 // Open prepares the mirror at mirrorDir, creating it with create when it does
@@ -41,10 +41,9 @@ func Open(mirrorDir, remote, branch string) (*Repo, error) {
 	if out, _ := r.Git("config", "--get", "remote.origin.partialclonefilter"); strings.TrimSpace(out) != "" {
 		return nil, errors.New("mirror " + mirrorDir + " is a partial clone; delete it and run the command again")
 	}
-	if branch == "" {
-		out, _ := r.Git("config", "--get", "wikictl.branch")
-		branch = strings.TrimSpace(out)
-	}
+	out, _ := r.Git("config", "--get", "wikictl.branch")
+	saved := strings.TrimSpace(out)
+	branch = cmp.Or(branch, saved)
 	if branch == "" {
 		out, err := r.Git("ls-remote", "--symref", remote, "HEAD")
 		if err != nil {
@@ -63,7 +62,7 @@ func Open(mirrorDir, remote, branch string) (*Repo, error) {
 	}
 	// Save the branch only when it changed, under the mirror lock: concurrent
 	// processes writing the same config file would fail to lock it.
-	if out, _ := r.Git("config", "--get", "wikictl.branch"); strings.TrimSpace(out) != branch {
+	if saved != branch {
 		unlock, err := r.lock()
 		if err != nil {
 			return nil, err
@@ -172,34 +171,13 @@ func (r *Repo) Fetch() error {
 
 // Snapshot fixes the commit that the reads of r use to the current commit of
 // the tracking ref, so that a command reads one state of the wiki even when
-// another process fetches in the meantime. Commit still fetches and builds on
-// the latest commit of the branch.
+// another process fetches in the meantime. Reads find no file before Snapshot
+// is called, as when the branch does not exist. Commit still fetches and
+// builds on the latest commit of the branch.
 func (r *Repo) Snapshot() error {
 	head, err := r.trackingHead()
-	if err != nil {
-		return err
-	}
-	r.snapshot, r.pinned = head, true
-	return nil
-}
-
-// Head returns the commit that reads use: the commit fixed by Snapshot, or
-// else the commit of the tracking ref. It is "" when the branch does not
-// exist. A failure of git is an error.
-func (r *Repo) Head() (string, error) {
-	if r.pinned {
-		return r.snapshot, nil
-	}
-	return r.trackingHead()
-}
-
-// readRef returns what reads resolve paths against: the commit fixed by
-// Snapshot, or else the tracking ref.
-func (r *Repo) readRef() string {
-	if r.pinned && r.snapshot != "" {
-		return r.snapshot
-	}
-	return r.trackingRef()
+	r.snapshot = head
+	return err
 }
 
 // trackingHead returns the commit sha of the tracking ref, or "" when the

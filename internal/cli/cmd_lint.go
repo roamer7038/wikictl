@@ -3,36 +3,27 @@ package cli
 import (
 	"fmt"
 	"io"
-	"path"
 	"slices"
 	"sort"
 	"strings"
 
 	"github.com/roamer7038/wikictl/internal/page"
+	"github.com/roamer7038/wikictl/internal/repo"
 	"github.com/roamer7038/wikictl/internal/wiki"
 )
 
 func (a *app) cmdLint(c *command, args []string) error {
-	all, err := a.repo.List()
+	t, err := a.readTree(false)
 	if err != nil {
-		return &gitError{err}
+		return err
 	}
+	all := slices.DeleteFunc(slices.Clone(t.files), func(p string) bool { return !repo.IsPagePath(p) })
 	paths := all
 	var files []string // the arguments that are not directories
 	if len(args) > 0 {
-		tree, err := a.repo.Files(args)
-		if err != nil {
-			return &gitError{err}
-		}
-		isDir := map[string]bool{".": true}
-		for _, f := range tree {
-			for d := path.Dir(f); d != "."; d = path.Dir(d) {
-				isDir[d] = true
-			}
-		}
 		var dirs []string
 		for _, p := range args {
-			if isDir[p] {
+			if t.isDir(p) {
 				dirs = append(dirs, p)
 			} else {
 				files = append(files, p)
@@ -47,14 +38,11 @@ func (a *app) cmdLint(c *command, args []string) error {
 		slices.Sort(paths)
 		paths = slices.Compact(paths)
 	}
-	read, err := a.readPages(paths)
+	read, err := wiki.ReadPages(a.repo, paths)
 	if err != nil {
 		return &gitError{err}
 	}
-	missing, err := a.missing(files, read.exists)
-	if err != nil {
-		return err
-	}
+	missing := slices.DeleteFunc(slices.Clone(files), read.Exists)
 	paths = slices.DeleteFunc(paths, func(p string) bool { return slices.Contains(missing, p) })
 	checked := map[string]bool{}
 	for _, p := range paths {
@@ -70,7 +58,7 @@ func (a *app) cmdLint(c *command, args []string) error {
 	}
 	var pages []*page.Page
 	for _, p := range paths {
-		pg := read.parse(p)
+		pg := read.Parse(p)
 		items = append(items, pg.Issues...)
 		pages = append(pages, pg)
 	}

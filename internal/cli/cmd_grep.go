@@ -81,7 +81,7 @@ func (a *app) cmdGrep(c *command, args []string) error {
 	if err != nil {
 		return err
 	}
-	var flags []string
+	flags := []string{"-I"}
 	switch {
 	case a.fixed && a.ignoreCase:
 		// git grep -i ignores the case of ASCII letters only in the C locale.
