@@ -81,7 +81,7 @@ func DefaultPath() string {
 // Load reads the configuration from explicit, or $WIKICTL_CONFIG, or
 // DefaultPath, and applies the profile chosen by sel: --profile, then
 // $WIKICTL_PROFILE, then match, then default_profile.
-// When the file is read but the configuration is invalid, the returned
+// When the file is parsed but the configuration is invalid, the returned
 // Config is not nil and holds the warnings, which may explain the error.
 func Load(explicit string, sel Selector) (*Config, error) {
 	p := explicit
