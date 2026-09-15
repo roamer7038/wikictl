@@ -22,10 +22,7 @@ import (
 type Config struct {
 	Repo   string `yaml:"repo"`   // URL or path of the wiki repository; a relative local path is resolved against the directory of the config file
 	Branch string `yaml:"branch"` // branch to use; detected from the remote when empty
-	Author struct {
-		Name  string `yaml:"name"`
-		Email string `yaml:"email"`
-	} `yaml:"author"` // commit author; falls back to git config user.*
+	Author Author `yaml:"author"` // commit author; falls back to git config user.*
 
 	DefaultProfile string              `yaml:"default_profile"` // profile used when no other rule selects one
 	Profiles       map[string]*Profile `yaml:"profiles"`        // named overrides of the top-level keys
@@ -33,7 +30,13 @@ type Config struct {
 	Path          string   `yaml:"-"` // file the configuration was read from
 	Warnings      []string `yaml:"-"` // one line for each unknown key, which is ignored
 	Profile       string   `yaml:"-"` // name of the selected profile; empty when none is selected
-	ProfileSource string   `yaml:"-"` // how the profile was selected: one of the Source* constants
+	ProfileSource string   `yaml:"-"` // how the profile was selected: flag, env, match, default or none
+}
+
+// Author is the commit author.
+type Author struct {
+	Name  string `yaml:"name"`
+	Email string `yaml:"email"`
 }
 
 // Profile overrides the top-level keys of Config. Empty keys inherit the
@@ -41,11 +44,8 @@ type Config struct {
 type Profile struct {
 	Repo   string `yaml:"repo"`
 	Branch string `yaml:"branch"` // not inherited when the profile sets repo
-	Author struct {
-		Name  string `yaml:"name"`
-		Email string `yaml:"email"`
-	} `yaml:"author"`
-	Match Match `yaml:"match"`
+	Author Author `yaml:"author"`
+	Match  Match  `yaml:"match"`
 }
 
 // Match selects a profile automatically from the current directory.
@@ -56,11 +56,11 @@ type Match struct {
 
 // Values of Config.ProfileSource.
 const (
-	SourceFlag    = "flag"    // --profile
-	SourceEnv     = "env"     // $WIKICTL_PROFILE
-	SourceMatch   = "match"   // match.remotes or match.paths
-	SourceDefault = "default" // default_profile
-	SourceNone    = "none"    // no profile; top-level keys only
+	sourceFlag    = "flag"    // --profile
+	sourceEnv     = "env"     // $WIKICTL_PROFILE
+	sourceMatch   = "match"   // match.remotes or match.paths
+	sourceDefault = "default" // default_profile
+	sourceNone    = "none"    // no profile; top-level keys only
 )
 
 // Selector holds what profile selection depends on besides the file.
@@ -70,9 +70,9 @@ type Selector struct {
 	Remote  string // origin URL of the current directory, compared with match.remotes
 }
 
-// DefaultPath returns $XDG_CONFIG_HOME/wikictl/config.yaml, or
+// defaultPath returns $XDG_CONFIG_HOME/wikictl/config.yaml, or
 // ~/.config/wikictl/config.yaml.
-func DefaultPath() string {
+func defaultPath() string {
 	if x := os.Getenv("XDG_CONFIG_HOME"); x != "" {
 		return filepath.Join(x, "wikictl", "config.yaml")
 	}
@@ -81,7 +81,7 @@ func DefaultPath() string {
 }
 
 // Load reads the configuration from explicit, or $WIKICTL_CONFIG, or
-// DefaultPath, and applies the profile chosen by sel: --profile, then
+// defaultPath, and applies the profile chosen by sel: --profile, then
 // $WIKICTL_PROFILE, then match, then default_profile.
 // When the file is parsed but the configuration is invalid, the returned
 // Config is not nil and holds the warnings, which may explain the error.
@@ -91,7 +91,7 @@ func Load(explicit string, sel Selector) (*Config, error) {
 		p = os.Getenv("WIKICTL_CONFIG")
 	}
 	if p == "" {
-		p = DefaultPath()
+		p = defaultPath()
 	}
 	b, err := os.ReadFile(p)
 	if errors.Is(err, os.ErrNotExist) {
@@ -256,9 +256,9 @@ func isRelativeLocal(repo string) bool {
 
 // selectProfile picks the profile and merges it into the top-level keys.
 func (c *Config) selectProfile(sel Selector) error {
-	name, source := sel.Profile, SourceFlag
+	name, source := sel.Profile, sourceFlag
 	if name == "" {
-		name, source = os.Getenv("WIKICTL_PROFILE"), SourceEnv
+		name, source = os.Getenv("WIKICTL_PROFILE"), sourceEnv
 	}
 	if name == "" {
 		matched, err := c.matching(sel)
@@ -268,21 +268,21 @@ func (c *Config) selectProfile(sel Selector) error {
 		switch len(matched) {
 		case 0:
 		case 1:
-			name, source = matched[0], SourceMatch
+			name, source = matched[0], sourceMatch
 		default:
 			return fmt.Errorf("the current directory matches profiles %s; pass --profile to choose one", strings.Join(matched, ", "))
 		}
 	}
 	if name == "" {
-		name, source = c.DefaultProfile, SourceDefault
+		name, source = c.DefaultProfile, sourceDefault
 	}
 	if name == "" {
-		c.ProfileSource = SourceNone
+		c.ProfileSource = sourceNone
 		return nil
 	}
 	pr, ok := c.Profiles[name]
 	if !ok {
-		from := map[string]string{SourceFlag: "--profile", SourceEnv: "WIKICTL_PROFILE", SourceDefault: "default_profile"}[source]
+		from := map[string]string{sourceFlag: "--profile", sourceEnv: "WIKICTL_PROFILE", sourceDefault: "default_profile"}[source]
 		return fmt.Errorf("profile %s given by %s is not defined", name, from)
 	}
 	c.Profile, c.ProfileSource = name, source
@@ -310,7 +310,7 @@ func (c *Config) apply(pr *Profile) {
 // matching returns the names of the profiles whose match rules accept the
 // current directory, sorted.
 func (c *Config) matching(sel Selector) ([]string, error) {
-	remote := NormalizeRemote(sel.Remote)
+	remote := normalizeRemote(sel.Remote)
 	dir := resolvePath(sel.Dir)
 	var out []string
 	for name, pr := range c.Profiles {
@@ -376,10 +376,10 @@ func below(parent, remote string) bool {
 	return ok
 }
 
-// NormalizeRemote rewrites a remote URL as host/path in lowercase, without
+// normalizeRemote rewrites a remote URL as host/path in lowercase, without
 // scheme, user, port and trailing .git, so that the SSH and HTTPS forms of
 // the same repository compare equal.
-func NormalizeRemote(remote string) string {
+func normalizeRemote(remote string) string {
 	r := strings.TrimSpace(remote)
 	if r == "" {
 		return ""

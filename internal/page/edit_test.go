@@ -21,8 +21,8 @@ func TestAddAlias(t *testing.T) {
 	// Any name that put and mv accept must stay a string alias in valid YAML.
 	for _, a := range []string{"[x]", "'q", "a:b", "*star", "&x", "!x", "%x", "@x", "{x}", "日本語", "Foo_bar", "true", "12", "-x", "?x", "a'b"} {
 		out := AddAlias([]byte(in2), a)
-		fm, _, _, _ := SplitFrontmatter(out)
-		m, err := ParseFrontmatter(fm)
+		fm, _, _, _ := splitFrontmatter(out)
+		m, err := parseFrontmatter(fm)
 		if err != nil {
 			t.Errorf("alias %q: %v in %q", a, err, out)
 			continue
@@ -111,14 +111,14 @@ func TestAddAliasFrontmatterForms(t *testing.T) {
 }
 
 func TestRelDest(t *testing.T) {
-	if RelDest("projects/a/x.md", "global/y.md") != "../../global/y.md" {
-		t.Error(RelDest("projects/a/x.md", "global/y.md"))
+	if relDest("projects/a/x.md", "global/y.md") != "../../global/y.md" {
+		t.Error(relDest("projects/a/x.md", "global/y.md"))
 	}
-	if RelDest("global/x.md", "global/y.md") != "y.md" {
-		t.Error(RelDest("global/x.md", "global/y.md"))
+	if relDest("global/x.md", "global/y.md") != "y.md" {
+		t.Error(relDest("global/x.md", "global/y.md"))
 	}
-	if RelDest("global/x.md", "projects/a/y.md") != "../projects/a/y.md" {
-		t.Error(RelDest("global/x.md", "projects/a/y.md"))
+	if relDest("global/x.md", "projects/a/y.md") != "../projects/a/y.md" {
+		t.Error(relDest("global/x.md", "projects/a/y.md"))
 	}
 }
 
@@ -126,12 +126,7 @@ func TestRelocateRewritesReferences(t *testing.T) {
 	// A page that stays in place: only links to mapped targets change, and
 	// links inside code fences are left alone.
 	in := "---\nsummary: a\n---\n# t\nsee [y](y.md) and [z](../../global/z.md)\n```\n[y](y.md)\n```\n## Links\n- part_of: [y](y.md) | n\n"
-	out, n := Relocate([]byte(in), "projects/a/x.md", "projects/a/x.md", func(target string) (string, bool) {
-		if target == "projects/a/y.md" {
-			return "projects/b/y2.md", true
-		}
-		return "", false
-	})
+	out, n := Relocate([]byte(in), "projects/a/x.md", "projects/a/x.md", map[string]string{"projects/a/y.md": "projects/b/y2.md"})
 	want := "---\nsummary: a\n---\n# t\nsee [y](../b/y2.md) and [z](../../global/z.md)\n```\n[y](y.md)\n```\n## Links\n- part_of: [y](../b/y2.md) | n\n"
 	if n != 2 || string(out) != want {
 		t.Errorf("n=%d\n%s", n, out)
@@ -152,12 +147,7 @@ func TestRelocateMovedPage(t *testing.T) {
 func TestRelocateWithMapper(t *testing.T) {
 	// global/p.md moves to projects/a/p.md while global/q.md moves along with it.
 	in := "---\nsummary: a\n---\n# t\n[q](q.md) [i](index.md)\n"
-	out, n := Relocate([]byte(in), "global/p.md", "projects/a/p.md", func(target string) (string, bool) {
-		if target == "global/q.md" {
-			return "projects/a/q.md", true
-		}
-		return "", false
-	})
+	out, n := Relocate([]byte(in), "global/p.md", "projects/a/p.md", map[string]string{"global/q.md": "projects/a/q.md"})
 	want := "---\nsummary: a\n---\n# t\n[q](q.md) [i](../../global/index.md)\n"
 	if n != 1 || string(out) != want {
 		t.Errorf("n=%d\n%s", n, out)
@@ -242,8 +232,7 @@ func TestRelocateKeepsForm(t *testing.T) {
 			"[q](./q.md \"t\") [i](index.md)\n", "[q](./q.md \"t\") [i](../../global/index.md)\n", 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			mapper := func(target string) (string, bool) { nt, ok := tc.mapping[target]; return nt, ok }
-			out, n := Relocate([]byte(fm+tc.in), tc.from, tc.to, mapper)
+			out, n := Relocate([]byte(fm+tc.in), tc.from, tc.to, tc.mapping)
 			if string(out) != fm+tc.want || n != tc.n {
 				t.Errorf("n=%d (want %d)\ngot  %q\nwant %q", n, tc.n, out, fm+tc.want)
 			}

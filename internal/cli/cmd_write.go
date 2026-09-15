@@ -340,7 +340,7 @@ func (a *app) cmdMv(c *command, args []string) error {
 					return &invalidError{"bad_path: " + err.Error()}
 				}
 				if !page.Recommended(seg) {
-					a.warn(page.Issue{Path: target + "/", Code: "name_style", Message: fmt.Sprintf("name %q: lowercase ASCII letters, digits and hyphens are recommended", seg)})
+					a.warn(page.NameStyle(target+"/", seg))
 				}
 			}
 		case modes[src] != "":

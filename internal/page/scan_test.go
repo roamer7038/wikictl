@@ -5,7 +5,7 @@ import "testing"
 const sample = "# Title\n\nbody [x](a.md)\n\n```\n## Links\n# not heading\n```\n\n## Section\n\n## Links\n- part_of: [parent](../global/p.md)\n"
 
 func TestScanFence(t *testing.T) {
-	ls := ScanLines([]byte(sample), 4)
+	ls := scanLines([]byte(sample), 4)
 	if ls[0].N != 4 || ls[0].InFence {
 		t.Errorf("first line: %+v", ls[0])
 	}
@@ -14,22 +14,20 @@ func TestScanFence(t *testing.T) {
 	}
 }
 
-func TestLinksStartAndTitle(t *testing.T) {
-	ls := ScanLines([]byte(sample), 4)
-	i := LinksStart(ls)
-	if i < 0 || ls[i].Text != "## Links" || ls[i].InFence {
-		t.Fatalf("LinksStart=%d", i)
+func TestHeadings(t *testing.T) {
+	ls := scanLines([]byte(sample), 4)
+	i, notLast, title := headings(ls)
+	if i < 0 || ls[i].Text != "## Links" || ls[i].InFence || len(notLast) != 0 || title != 0 {
+		t.Fatalf("headings = %d, %v, %d", i, notLast, title)
 	}
-	title, ok := Title(ls, i)
-	if !ok || title != "Title" {
-		t.Errorf("title=%q ok=%v", title, ok)
-	}
-	ls2 := ScanLines([]byte("# t\n## Links\n- a: [b](b.md)\n## after\n"), 1)
-	if LinksStart(ls2) != -1 {
+	if i, notLast, _ := headings(scanLines([]byte("# t\n## Links\n- a: [b](b.md)\n## after\n"), 1)); i != -1 || len(notLast) != 1 {
 		t.Error("Links followed by a heading must not be a Links section")
 	}
-	if LinksStart(ScanLines([]byte("# t\nbody\n"), 1)) != -1 {
+	if i, _, _ := headings(scanLines([]byte("# t\nbody\n"), 1)); i != -1 {
 		t.Error("no Links section")
+	}
+	if _, _, title := headings(scanLines([]byte("## Links\n- a: [b](b.md)\n"), 1)); title != -1 {
+		t.Error("the Links heading is not a title")
 	}
 }
 
@@ -43,9 +41,8 @@ func TestTitleClosingSequence(t *testing.T) {
 		"# x # y":       "x # y",
 		"# F# and C# #": "F# and C#",
 	} {
-		ls := ScanLines([]byte(in+"\n"), 1)
-		if got, ok := Title(ls, LinksStart(ls)); !ok || got != want {
-			t.Errorf("%q: title=%q ok=%v, want %q", in, got, ok, want)
+		if got := Parse("d/p.md", []byte(in+"\n")).Title; got != want {
+			t.Errorf("%q: title=%q, want %q", in, got, want)
 		}
 	}
 }
@@ -67,7 +64,7 @@ func TestScanFenceRules(t *testing.T) {
 		{"two backticks is not a fence", "``\nafter\n", []bool{false, false}},
 		{"unclosed fence runs to the end", "```\n~~~\nafter\n", []bool{true, true, true}},
 	} {
-		ls := ScanLines([]byte(tc.body), 1)
+		ls := scanLines([]byte(tc.body), 1)
 		if len(ls) != len(tc.in) {
 			t.Fatalf("%s: %d lines", tc.name, len(ls))
 		}

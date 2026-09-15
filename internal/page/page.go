@@ -32,14 +32,13 @@ func Parse(p string, content []byte) *Page {
 	if len(content) > MaxPageSize {
 		return TooLarge(p)
 	}
-	pg := &Page{Path: p}
-	pg.Issues = append(pg.Issues, PathIssues(p)...)
-	fm, rest, n, ok := SplitFrontmatter(content)
+	pg := named(p)
+	fm, rest, n, ok := splitFrontmatter(content)
 	if !ok {
 		pg.Issues = append(pg.Issues, Issue{Path: p, Line: 1, Code: "missing_summary", Message: "frontmatter is missing"})
 		rest = content
 	} else {
-		m, err := ParseFrontmatter(fm)
+		m, err := parseFrontmatter(fm)
 		if err != nil {
 			pg.Issues = append(pg.Issues, Issue{Path: p, Line: 1, Code: "frontmatter_invalid", Message: err.Error()})
 		} else {
@@ -51,24 +50,24 @@ func Parse(p string, content []byte) *Page {
 			}
 		}
 	}
-	lines := ScanLines(rest, n+1)
-	ls := LinksStart(lines)
-	for _, i := range LinksNotLast(lines, ls) {
+	lines := scanLines(rest, n+1)
+	ls, notLast, title := headings(lines)
+	for _, i := range notLast {
 		pg.Issues = append(pg.Issues, Issue{Path: p, Line: lines[i].N, Code: "links_syntax", Message: `"## Links" is not the last heading, so the lines after it are not read as links`})
 	}
-	if t, ok := Title(lines, ls); ok {
-		pg.Title = t
-	} else {
-		pg.Title = strings.TrimSuffix(path.Base(p), ".md")
+	// A closing sequence of "#" is removed only when a space or tab precedes
+	// it, so "# C#" has the title "C#".
+	if title >= 0 {
+		pg.Title = reHeading.FindStringSubmatch(lines[title].Text)[1]
 	}
 	bodyLines := lines
 	if ls >= 0 {
 		bodyLines = lines[:ls]
 		var iss []Issue
-		pg.Links, iss = ParseLinks(lines[ls:], p)
+		pg.Links, iss = parseLinks(lines[ls:], p)
 		pg.Issues = append(pg.Issues, iss...)
 	}
-	pg.Mentions = BodyLinks(bodyLines, p)
+	pg.Mentions = bodyLinks(bodyLines, p)
 	var sb strings.Builder
 	for _, l := range bodyLines {
 		sb.WriteString(l.Text)
@@ -83,11 +82,15 @@ func Parse(p string, content []byte) *Page {
 // TooLarge returns the page that Parse returns for p when its content is over
 // MaxPageSize, for a caller that knows the size without reading the content.
 func TooLarge(p string) *Page {
-	pg := &Page{Path: p}
-	pg.Issues = append(pg.Issues, PathIssues(p)...)
+	pg := named(p)
 	pg.Issues = append(pg.Issues, Issue{Path: p, Line: 0, Code: "page_too_large", Message: fmt.Sprintf("page is larger than %d bytes", MaxPageSize)})
-	pg.Title = strings.TrimSuffix(path.Base(p), ".md")
 	return pg
+}
+
+// named returns the page p with only its path issues and the title from the
+// file name.
+func named(p string) *Page {
+	return &Page{Path: p, Title: strings.TrimSuffix(path.Base(p), ".md"), Issues: PathIssues(p)}
 }
 
 // summaryOf returns the summary from the frontmatter. "description" is

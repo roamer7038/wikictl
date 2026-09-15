@@ -13,7 +13,7 @@ func TestLoad(t *testing.T) {
 	p := filepath.Join(d, "c.yaml")
 	os.WriteFile(p, []byte("repo: https://h/r.git\nauthor: {name: n, email: e}\n"), 0o600)
 	c, err := Load(p, Selector{})
-	if err != nil || c.Repo != "https://h/r.git" || c.Author.Name != "n" || c.Path != p || c.ProfileSource != SourceNone {
+	if err != nil || c.Repo != "https://h/r.git" || c.Author.Name != "n" || c.Path != p || c.ProfileSource != sourceNone {
 		t.Fatalf("%+v %v", c, err)
 	}
 	t.Setenv("WIKICTL_CONFIG", p)
@@ -57,14 +57,14 @@ func TestProfileSelection(t *testing.T) {
 	p := writeProfiles(t, work)
 
 	c, err := Load(p, Selector{Dir: t.TempDir()})
-	if err != nil || c.Profile != "personal" || c.ProfileSource != SourceDefault || c.Repo != "git@github.com:me/wiki.git" || c.Branch != "trunk" {
+	if err != nil || c.Profile != "personal" || c.ProfileSource != sourceDefault || c.Repo != "git@github.com:me/wiki.git" || c.Branch != "trunk" {
 		t.Fatalf("default: %+v %v", c, err)
 	}
 
 	sub := filepath.Join(work, "sub")
 	os.Mkdir(sub, 0o755)
 	c, err = Load(p, Selector{Dir: sub})
-	if err != nil || c.Profile != "work" || c.ProfileSource != SourceMatch {
+	if err != nil || c.Profile != "work" || c.ProfileSource != sourceMatch {
 		t.Fatalf("paths: %+v %v", c, err)
 	}
 	// Merge: repo replaces and drops the inherited branch, author merges per
@@ -74,17 +74,17 @@ func TestProfileSelection(t *testing.T) {
 	}
 
 	c, err = Load(p, Selector{Remote: "git@GIT.example.com:team/app.git"})
-	if err != nil || c.Profile != "work" || c.ProfileSource != SourceMatch {
+	if err != nil || c.Profile != "work" || c.ProfileSource != sourceMatch {
 		t.Errorf("remotes: %+v %v", c, err)
 	}
 
 	t.Setenv("WIKICTL_PROFILE", "personal")
 	c, err = Load(p, Selector{Dir: work})
-	if err != nil || c.Profile != "personal" || c.ProfileSource != SourceEnv {
+	if err != nil || c.Profile != "personal" || c.ProfileSource != sourceEnv {
 		t.Errorf("env beats match: %+v %v", c, err)
 	}
 	c, err = Load(p, Selector{Profile: "work", Dir: t.TempDir()})
-	if err != nil || c.Profile != "work" || c.ProfileSource != SourceFlag {
+	if err != nil || c.Profile != "work" || c.ProfileSource != sourceFlag {
 		t.Errorf("flag beats env: %+v %v", c, err)
 	}
 	t.Setenv("WIKICTL_PROFILE", "")
@@ -276,7 +276,7 @@ func TestNormalizeRemote(t *testing.T) {
 		"/srv/git/wiki.git":               "/srv/git/wiki",
 		"":                                "",
 	} {
-		if got := NormalizeRemote(in); got != want {
+		if got := normalizeRemote(in); got != want {
 			t.Errorf("%s: %s", in, got)
 		}
 	}

@@ -1,7 +1,6 @@
 package page
 
 import (
-	"errors"
 	"path"
 	"regexp"
 	"sort"
@@ -34,37 +33,34 @@ var (
 	reURL    = regexp.MustCompile(`^[a-z][a-z0-9+.-]*://\S`)
 )
 
-// ErrBadDest is returned for link destinations that cannot refer to a page:
-// absolute paths, paths outside the wiki root, and files other than .md.
-var ErrBadDest = errors.New("bad link destination")
-
-// ResolveDest normalizes a link destination written in pagePath to a path
+// resolveDest normalizes a link destination written in pagePath to a path
 // relative to the wiki root. dest is the destination without angle brackets
 // and title. URLs are returned unchanged with isURL set. A query and a
-// fragment are dropped.
-func ResolveDest(pagePath, dest string) (target string, isURL bool, err error) {
+// fragment are dropped. ok is false for destinations that cannot refer to a
+// page: absolute paths, paths outside the wiki root, and files other than .md.
+func resolveDest(pagePath, dest string) (target string, isURL, ok bool) {
 	if reScheme.MatchString(dest) {
-		return dest, true, nil
+		return dest, true, true
 	}
 	dest = destPath(dest)
 	if dest == "" || strings.HasPrefix(dest, "/") || !strings.HasSuffix(dest, ".md") {
-		return "", false, ErrBadDest
+		return "", false, false
 	}
 	p := path.Join(path.Dir(pagePath), dest)
 	if strings.HasPrefix(p, "../") || p == ".." {
-		return "", false, ErrBadDest
+		return "", false, false
 	}
-	return p, false, nil
+	return p, false, true
 }
 
-// ParseLinks interprets the Links section. lines starts with the heading line.
+// parseLinks interprets the Links section. lines starts with the heading line.
 // A line is a bullet ("-", "*" or "+", possibly indented) followed by
 // "<type>: <target> | <note>"; a bullet holding only "<target> | <note>" is
 // an untyped relation of type "see_also". In an untyped line, a target that
 // starts with "<word>:" must be a URL of the form "<scheme>://...", so that a
 // mistyped "<type>:<target>" is reported instead of being taken as a URL.
 // A target that starts with a scheme is taken as a URL as it is written.
-func ParseLinks(lines []Line, pagePath string) ([]Link, []Issue) {
+func parseLinks(lines []Line, pagePath string) ([]Link, []Issue) {
 	var links []Link
 	var issues []Issue
 	if len(lines) == 0 {
@@ -101,8 +97,8 @@ func ParseLinks(lines []Line, pagePath string) ([]Link, []Issue) {
 			issues = append(issues, Issue{Path: pagePath, Line: l.N, Code: "links_syntax", Message: syntaxMsg})
 			continue
 		}
-		got, isURL, err := ResolveDest(pagePath, dest)
-		if err != nil {
+		got, isURL, ok := resolveDest(pagePath, dest)
+		if !ok {
 			msg := syntaxMsg
 			if typ != "" {
 				msg = "invalid link destination: " + target
@@ -118,16 +114,16 @@ func ParseLinks(lines []Line, pagePath string) ([]Link, []Issue) {
 	return links, issues
 }
 
-// BodyLinks returns the page references in the body (outside code fences and
+// bodyLinks returns the page references in the body (outside code fences and
 // code spans) as links of type "mentions", one per distinct target. The line
 // of a link is the line where its destination starts.
-func BodyLinks(lines []Line, pagePath string) []Link {
+func bodyLinks(lines []Line, pagePath string) []Link {
 	var out []Link
 	seen := map[string]bool{}
 	eachParagraph(lines, -1, func(from, _ int, text string, offsets []int) {
 		for _, m := range findLinks(text) {
-			got, isURL, err := ResolveDest(pagePath, text[m.destStart:m.destEnd])
-			if err != nil || isURL || seen[got] {
+			got, isURL, ok := resolveDest(pagePath, text[m.destStart:m.destEnd])
+			if !ok || isURL || seen[got] {
 				continue
 			}
 			seen[got] = true

@@ -18,7 +18,7 @@ var (
 	reLinksH  = regexp.MustCompile(`^## Links\s*$`)
 )
 
-// ScanLines splits body into lines and marks those inside code fences.
+// scanLines splits body into lines and marks those inside code fences.
 // firstLine is the line number of the first line of body.
 //
 // Fences follow CommonMark: a fence is a line of three or more backticks or
@@ -26,7 +26,7 @@ var (
 // must not contain a backtick. The closing fence uses the same character, at
 // least as many times as the opening one, followed only by spaces and tabs.
 // A fence that is never closed runs to the end of the body.
-func ScanLines(body []byte, firstLine int) []Line {
+func scanLines(body []byte, firstLine int) []Line {
 	s := strings.TrimSuffix(string(body), "\n")
 	if s == "" {
 		return nil
@@ -61,45 +61,32 @@ func isHeading(l Line) bool {
 	return !l.InFence && strings.HasPrefix(l.Text, "#") && reHeading.MatchString(l.Text)
 }
 
-// LinksStart returns the index of the "## Links" heading when it is the last
-// heading outside code fences, or -1 when the page has no Links section.
-func LinksStart(lines []Line) int {
+// headings reads the headings outside code fences. linksStart is the index of
+// the "## Links" heading when it is the last heading, or -1 when the page has
+// no Links section. notLast holds the indexes of the other "## Links"
+// headings, which do not start the Links section because another heading
+// follows. title is the index of the first heading when it precedes the Links
+// section, or -1.
+func headings(lines []Line) (linksStart int, notLast []int, title int) {
+	linksStart, title = -1, -1
 	last := -1
 	for i, l := range lines {
-		if isHeading(l) {
-			last = i
+		if !isHeading(l) {
+			continue
+		}
+		if title < 0 {
+			title = i
+		}
+		last = i
+		if reLinksH.MatchString(l.Text) {
+			notLast = append(notLast, i)
 		}
 	}
-	if last >= 0 && reLinksH.MatchString(lines[last].Text) {
-		return last
+	if n := len(notLast); n > 0 && notLast[n-1] == last {
+		linksStart, notLast = last, notLast[:n-1]
 	}
-	return -1
-}
-
-// LinksNotLast returns the indexes of the "## Links" headings outside code
-// fences that do not start the Links section because another heading follows.
-func LinksNotLast(lines []Line, linksStart int) []int {
-	var out []int
-	for i, l := range lines {
-		if i != linksStart && isHeading(l) && reLinksH.MatchString(l.Text) {
-			out = append(out, i)
-		}
+	if title == linksStart {
+		title = -1
 	}
-	return out
-}
-
-// Title returns the text of the first heading outside code fences that
-// precedes the Links section. A closing sequence of "#" is removed only when
-// a space or tab precedes it, so "# C#" has the title "C#".
-func Title(lines []Line, linksStart int) (string, bool) {
-	end := len(lines)
-	if linksStart >= 0 {
-		end = linksStart
-	}
-	for _, l := range lines[:end] {
-		if isHeading(l) {
-			return reHeading.FindStringSubmatch(l.Text)[1], true
-		}
-	}
-	return "", false
+	return linksStart, notLast, title
 }
