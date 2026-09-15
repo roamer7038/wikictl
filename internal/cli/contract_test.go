@@ -53,6 +53,7 @@ func TestJSONContract(t *testing.T) {
 		{"links/not_found", "", "", []string{"links", "global/none.md"}, ExitError, errKeys},
 		{"lint", "", "", []string{"lint"}, ExitInvalid,
 			[]string{"items", "items[].code", "items[].line", "items[].message", "items[].path"}},
+		{"lint/dir", "", "", []string{"lint", "projects"}, ExitOK, []string{"items"}},
 		{"mv", "", "", []string{"mv", "global/new.md", "global/new2.md"}, ExitOK, []string{"commit", "moved", "moved[].from", "moved[].to", "rewritten"}},
 		{"mv/dir", "", "", []string{"mv", "projects/app", "projects/app2"}, ExitOK, []string{"commit", "moved", "moved[].from", "moved[].to", "rewritten"}},
 		{"mv/not_replacing", "", "", []string{"mv", "global/push.md", "global/index.md"}, ExitError, []string{"commit", "moved", "rewritten"}},

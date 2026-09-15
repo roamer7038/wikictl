@@ -3,23 +3,49 @@ package cli
 import (
 	"fmt"
 	"io"
+	"path"
+	"slices"
 	"sort"
+	"strings"
 
 	"github.com/roamer7038/wikictl/internal/page"
 	"github.com/roamer7038/wikictl/internal/wiki"
 )
 
 func (a *app) cmdLint(c *command, args []string) error {
-	paths := args
-	if len(paths) == 0 {
-		var err error
-		if paths, err = a.repo.List(nil); err != nil {
-			return &gitError{err}
-		}
-	}
 	all, err := a.repo.List(nil)
 	if err != nil {
 		return &gitError{err}
+	}
+	paths := all
+	var files []string // the arguments that are not directories
+	if len(args) > 0 {
+		tree, err := a.repo.Files(args)
+		if err != nil {
+			return &gitError{err}
+		}
+		isDir := map[string]bool{".": true}
+		for _, f := range tree {
+			for d := path.Dir(f); d != "."; d = path.Dir(d) {
+				isDir[d] = true
+			}
+		}
+		var dirs []string
+		for _, p := range args {
+			if isDir[p] {
+				dirs = append(dirs, p)
+			} else {
+				files = append(files, p)
+			}
+		}
+		paths = slices.Clone(files)
+		for _, p := range all {
+			if slices.ContainsFunc(dirs, func(d string) bool { return d == "." || strings.HasPrefix(p, d+"/") }) {
+				paths = append(paths, p)
+			}
+		}
+		slices.Sort(paths)
+		paths = slices.Compact(paths)
 	}
 	checked := map[string]bool{}
 	for _, p := range paths {
@@ -29,7 +55,7 @@ func (a *app) cmdLint(c *command, args []string) error {
 	if err != nil {
 		return &gitError{err}
 	}
-	for _, p := range args {
+	for _, p := range files {
 		if !read.exists(p) {
 			return a.notFound(p)
 		}

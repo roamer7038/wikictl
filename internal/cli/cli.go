@@ -251,11 +251,12 @@ each deleted file.`,
 		flags: rmFlags, run: (*app).cmdRm},
 	{name: "lint", args: "[<path>...]", maxArgs: -1, paths: true,
 		summary: "Report pages that violate the wiki format",
-		detail: `Check pages for missing_summary, frontmatter_invalid, links_syntax, broken_link,
-page_too_large and the file name rules. Without arguments every page of the
-wiki is checked. Exits with code 4 when violations are found. Each finding is
-printed as
-"<path>:<line>: <code>: <message>"; line 0 means the whole file.
+		detail: `Check pages for missing_summary, frontmatter_invalid, links_syntax,
+broken_link, page_too_large and the file name rules. Each path is a page or a
+directory; for a directory every page under it is checked. Without arguments
+every page of the wiki is checked. Exits with code 4 when violations are found.
+Each finding is printed as "<path>:<line>: <code>: <message>"; line 0 means the
+whole file.
 
 missing_summary: no summary or description, or no frontmatter.
 links_syntax: a line in the Links section is not a valid Links line.
