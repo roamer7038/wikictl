@@ -1294,6 +1294,76 @@ func TestGrepGitConfig(t *testing.T) {
 	}
 }
 
+// TestReadGitConfig checks that color, attributes, template and log encoding
+// settings in the git configuration change neither the backlinks, the pages
+// that ls hides as deprecated, the pages grep finds, nor the update time. Each
+// command runs in a new mirror, which a template directory would populate.
+func TestReadGitConfig(t *testing.T) {
+	for name, conf := range map[string]string{
+		"color.ui":          "[color]\n\tui = always\n",
+		"color.grep":        "[color]\n\tgrep = always\n",
+		"attributesFile":    "[core]\n\tattributesFile = DIR/attributes\n",
+		"templateDir":       "[init]\n\ttemplateDir = DIR/template\n",
+		"logOutputEncoding": "[i18n]\n\tlogOutputEncoding = UTF-16\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg := setup(t)
+			dir := t.TempDir()
+			os.WriteFile(filepath.Join(dir, "attributes"), []byte("*.md -diff\n"), 0o600)
+			os.MkdirAll(filepath.Join(dir, "template", "info"), 0o755)
+			os.WriteFile(filepath.Join(dir, "template", "info", "attributes"), []byte("*.md binary\n"), 0o600)
+			cmds := [][]string{{"links", "-i", "global/index.md"}, {"ls", "machines/h1"}, {"grep", "-l", "lease"}, {"stat", "global/push.md"}}
+			want := make([]string, len(cmds))
+			for i, args := range cmds {
+				_, want[i], _ = runCLI(t, cfg, "", args...)
+			}
+			if !strings.Contains(want[0], "global/push.md") || strings.Contains(want[1], "y.md") || !strings.Contains(want[2], "projects/app/x.md") || !strings.Contains(want[3], "updated: 2") {
+				t.Fatalf("without configuration: %q", want)
+			}
+			gc := filepath.Join(dir, "gitconfig")
+			os.WriteFile(gc, []byte(strings.ReplaceAll(conf, "DIR", dir)), 0o600)
+			t.Setenv("GIT_CONFIG_GLOBAL", gc)
+			t.Setenv("XDG_CACHE_HOME", filepath.Join(dir, "cache"))
+			for i, args := range cmds {
+				if code, out, errs := runCLI(t, cfg, "", args...); code != 0 || out != want[i] {
+					t.Errorf("%v: code=%d out=%q errs=%q, want %q", args, code, out, errs, want[i])
+				}
+			}
+		})
+	}
+}
+
+// TestWriteGitConfig checks that put succeeds when the git configuration sets
+// hooks that fail or signed pushes, and that the hooks do not run.
+func TestWriteGitConfig(t *testing.T) {
+	for name, conf := range map[string]string{
+		"hooksPath": "[core]\n\thooksPath = HOOKS\n",
+		"gpgSign":   "[push]\n\tgpgSign = true\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg := setup(t)
+			hooks := t.TempDir()
+			marker := filepath.Join(hooks, "ran")
+			if strings.Contains(conf, "HOOKS") {
+				os.WriteFile(filepath.Join(hooks, "pre-push"), []byte("#!/bin/sh\nexit 1\n"), 0o755)
+				os.WriteFile(filepath.Join(hooks, "post-index-change"), []byte("#!/bin/sh\ntouch '"+marker+"'\n"), 0o755)
+			}
+			gc := filepath.Join(t.TempDir(), "gitconfig")
+			os.WriteFile(gc, []byte(strings.ReplaceAll(conf, "HOOKS", hooks)), 0o600)
+			t.Setenv("GIT_CONFIG_GLOBAL", gc)
+			if code, _, errs := runCLI(t, cfg, "---\nsummary: n\n---\n# n\n", "put", "global/new.md"); code != 0 {
+				t.Fatalf("put: code=%d errs=%q", code, errs)
+			}
+			if code, out, _ := runCLI(t, cfg, "", "cat", "global/new.md"); code != 0 || out != "---\nsummary: n\n---\n# n\n" {
+				t.Errorf("cat: code=%d out=%q", code, out)
+			}
+			if _, err := os.Stat(marker); err == nil {
+				t.Error("a hook ran in the mirror")
+			}
+		})
+	}
+}
+
 // TestGrepPathWithNewline checks a file pushed from a clone with a newline in
 // its name.
 func TestGrepPathWithNewline(t *testing.T) {
