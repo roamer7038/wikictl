@@ -1,8 +1,13 @@
 package cli
 
 import (
+	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/roamer7038/wikictl/internal/page"
 )
 
 func TestEscapeControl(t *testing.T) {
@@ -17,6 +22,19 @@ func TestEscapeControl(t *testing.T) {
 	} {
 		if got := escapeControl(in); got != want {
 			t.Errorf("escapeControl(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestEscapeMessage(t *testing.T) {
+	for in, want := range map[string]string{
+		"one line":                   "one line",
+		"a\nwikictl: b\n":            "a\n  wikictl: b",
+		"x\x1b[2K\r\ny\n\n":          "x\\x1b[2K\\x0d\n  y",
+		"path d/n\nl.md: not a file": "path d/n\n  l.md: not a file",
+	} {
+		if got := escapeMessage(in); got != want {
+			t.Errorf("escapeMessage(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
@@ -86,5 +104,59 @@ func TestTextOutputEscapesControl(t *testing.T) {
 	_, out, _ = runCLI(t, cfg, "", "links", "global/linkctl.md")
 	if out != "out\tsee_also\tglobal/missing\\x1b[2K.md\n" {
 		t.Errorf("links must escape the target: %q", out)
+	}
+}
+
+func TestPathOutputEscapesControl(t *testing.T) {
+	cfg := setup(t)
+	work := filepath.Join(filepath.Dir(cfg), "work")
+	c1 := "global/c\u009b31mX.md"
+	os.WriteFile(filepath.Join(work, c1), []byte("---\nsummary: \"t\\e[31m\\r\\n\"\n---\n# c\n"), 0o644)
+	os.MkdirAll(filepath.Join(work, "global", "d\x01"), 0o755)
+	os.WriteFile(filepath.Join(work, "global", "d\x01", "a.md"), []byte("---\nsummary: a\n---\n# a\n"), 0o644)
+	mustRun(t, work, "git", "add", "-A")
+	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "control")
+	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
+	raw := "\u009b\x01\x1b\r"
+
+	_, out, _ := runCLI(t, cfg, "", "lint")
+	if strings.ContainsAny(out, raw) || !strings.Contains(out, `global/c\x9b31mX.md:0: bad_path: `) {
+		t.Errorf("lint: %q", out)
+	}
+	if _, out, _ := runCLI(t, cfg, "", "lint", "--json"); !strings.Contains(out, `"path":"`+c1+`"`) {
+		t.Errorf("lint --json must keep the path: %s", out)
+	}
+
+	if _, out, _ := runCLI(t, cfg, "", "ls", "-l", "global"); strings.ContainsAny(out, raw) || !strings.Contains(out, `t\x1b[31m\x0d\x0a`) || !strings.Contains(out, `d\x01/`) {
+		t.Errorf("ls -l: %q", out)
+	}
+	if _, out, _ := runCLI(t, cfg, "", "find", "global", "-type", "d"); out != "global\nglobal/d\\x01\n" {
+		t.Errorf("find: %q", out)
+	}
+
+	code, _, errs := runCLI(t, cfg, "", "mv", "global", "other")
+	if code != ExitInvalid || strings.ContainsAny(errs, raw) || !strings.Contains(errs, `wikictl: bad_path: other/c\x9b31mX.md: `) {
+		t.Errorf("mv: code=%d errs=%q", code, errs)
+	}
+	if _, out, _ := runCLI(t, cfg, "", "mv", "--json", "global", "other"); !strings.Contains(out, `"message":"bad_path: other/c`+"\u009b"+`31mX.md: `) {
+		t.Errorf("mv --json must keep the message: %s", out)
+	}
+
+	var errb bytes.Buffer
+	a := &app{stderr: &errb}
+	a.warn(page.Issue{Path: "d/\x1b[2Kx.md", Line: 1, Code: "links_syntax", Message: "m\r"})
+	if got := errb.String(); got != `wikictl: warning: d/\x1b[2Kx.md:1: links_syntax: m\x0d`+"\n" {
+		t.Errorf("warn: %q", got)
+	}
+
+	ctl := filepath.Join(t.TempDir(), "c\x1b[31m.yaml")
+	b, _ := os.ReadFile(cfg)
+	os.WriteFile(ctl, append(b, "extra: 1\n"...), 0o600)
+	_, out, errs = runCLI(t, ctl, "", "--no-fetch", "context")
+	if strings.ContainsAny(out+errs, raw) || !strings.Contains(errs, `c\x1b[31m.yaml: unknown key`) || !strings.Contains(out, `c\x1b[31m.yaml`+"\n") {
+		t.Errorf("context: out=%q errs=%q", out, errs)
+	}
+	if _, out, _ := runCLI(t, ctl, "", "--no-fetch", "--json", "context"); !strings.Contains(out, `c\u001b[31m.yaml"`) {
+		t.Errorf("context --json must keep the path: %s", out)
 	}
 }

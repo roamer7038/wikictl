@@ -132,3 +132,20 @@ func TestCommitRejectsPathSeparators(t *testing.T) {
 		}
 	}
 }
+
+// TestCommitRejectsPathSeparatorsOnEmptyBranch checks that a path containing a
+// newline or NUL is rejected when the remote branch does not exist yet.
+func TestCommitRejectsPathSeparatorsOnEmptyBranch(t *testing.T) {
+	remote := newRemote(t, false)
+	r := openFetched(t, remote)
+	for _, p := range []string{"a/x\ny.md", "a/x\x00y.md"} {
+		for _, c := range []Change{{Path: p, Delete: true}, {Path: p, Content: []byte("x")}} {
+			if _, err := r.Commit([]Change{c}, "inject", Author{"a", "a@a"}); err == nil {
+				t.Errorf("Commit(%q, delete=%v) succeeded", p, c.Delete)
+			}
+			if refs := run(t, "", "git", "--git-dir", remote, "for-each-ref"); refs != "" {
+				t.Fatalf("Commit(%q, delete=%v) created refs:\n%s", p, c.Delete, refs)
+			}
+		}
+	}
+}

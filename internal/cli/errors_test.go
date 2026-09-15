@@ -49,6 +49,14 @@ func TestReport(t *testing.T) {
 			`{"error":"git","message":"wrap: x"}` + "\n"},
 		{"conflict", &conflictError{cf, "mv"}, ExitConflict, "# a\n", "wikictl: conflict (changed): global/a.md sha=abc\n",
 			`{"error":"conflict","reason":"changed","path":"global/a.md","sha":"abc","content":"# a\n","message":"the file changed since it was read; re-read the wiki and run mv again"}` + "\n"},
+		{"control characters", errors.New("bad_path: d/c\u009b31mX.md: \x1b[2K\r"), ExitError, "", `wikictl: bad_path: d/c\x9b31mX.md: \x1b[2K\x0d` + "\n",
+			`{"error":"error","message":"bad_path: d/c` + "\u009b" + `31mX.md: \u001b[2K\r"}` + "\n"},
+		{"multi-line git", &gitError{&repo.GitError{Args: []string{"push", "origin"}, Stderr: "remote: \x1b[31mdenied\r\nhint: fetch first\nhint: then push\n", Err: errors.New("exit status 1")}}, ExitGit, "",
+			"wikictl: git push origin: exit status 1: remote: \\x1b[31mdenied\\x0d\n  hint: fetch first\n  hint: then push\n",
+			"{\"error\":\"git\",\"message\":\"git push origin: exit status 1: remote: \\u001b[31mdenied\\r\\nhint: fetch first\\nhint: then push\"}\n"},
+		{"conflict control characters", &conflictError{&repo.Conflict{Path: "d/c\u009b31mX.md", Reason: "exists", SHA: "abc", Content: []byte("\x1b[31m")}, ""}, ExitConflict,
+			"\x1b[31m", `wikictl: conflict (exists): d/c\x9b31mX.md sha=abc` + "\n",
+			`{"error":"conflict","reason":"exists","path":"d/c` + "\u009b" + `31mX.md","sha":"abc","content":"\u001b[31m","message":"the file already exists; pass its sha with --base to replace it, or choose another path"}` + "\n"},
 	}
 	for _, c := range cases {
 		for _, js := range []bool{false, true} {
