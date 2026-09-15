@@ -131,6 +131,15 @@ func TestProfileErrors(t *testing.T) {
 		"repo: r\nauthor: {nmae: n}\n":                            {"author.nmae"},
 		"repo: r\nmachine: m\nprojects: {a: b}\n":                 {"machine", "projects"},
 		"repo: r\n\"1\": a\n":                                     {"1"},
+		"repo: r\n!!str 1: a\n":                                   {"1"},
+		"repo: r\nx: &k zz\n*k : 1\n":                             {"x", "zz"},
+		"repo: r\nx: &a {nmae: n}\nauthor: *a\n":                  {"author.nmae", "x"},
+		"repo: r\nx: &b {zz: 1}\nprofiles: {w: *b}\n":             {"profiles.w.zz", "x"},
+		"repo: r\nx: &b {zz: 1}\nprofiles: {w: {<<: *b}}\n":       {"profiles.w.zz", "x"},
+		"repo: r\nx: &b {zz: 1}\n<<: *b\n":                        {"x", "zz"},
+		"repo: r\nx: &p {a: {zz: 1}}\nprofiles: {<<: [*p]}\n":     {"profiles.a.zz", "x"},
+		"repo: r\nx: &p {a: {zz: 1}}\nprofiles: *p\n":             {"profiles.a.zz", "x"},
+		"repo: r\nprofiles: {1: {repo: r2}}\n":                    {},
 	} {
 		os.WriteFile(p, []byte(yml), 0o600)
 		c, err := Load(p, Selector{})
@@ -152,15 +161,37 @@ func TestProfileErrors(t *testing.T) {
 	if _, err := Load(p, Selector{}); err == nil {
 		t.Error("a profile value of the wrong type must error")
 	}
-	for yml, key := range map[string]string{
-		"repo: r\n1: a\n":                             "1",
-		"repo: r\ntrue: a\n":                          "true",
-		"repo: r\nprofiles:\n  w: {repo: r2, 1: a}\n": "profiles.w.1",
+	// The first key is not a string and causes the error; the other keys are
+	// unknown and their warnings come with the error.
+	for yml, keys := range map[string][]string{
+		"repo: r\n1: a\n":                                            {"1"},
+		"repo: r\ntrue: a\n":                                         {"true"},
+		"repo: r\nnull: a\n":                                         {"null"},
+		"repo: r\n~: a\n":                                            {"null"},
+		"repo: r\n1.5: a\n":                                          {"1.5"},
+		"repo: r\n!!int \"1\": a\n":                                  {"1"},
+		"repo: r\nauthor: {1: a}\n":                                  {"author.1"},
+		"repo: r\nprofiles:\n  w: {repo: r2, 1: a}\n":                {"profiles.w.1"},
+		"repo: r\nprofiles: {w: {match: {1: a}}}\n":                  {"profiles.w.match.1"},
+		"repo: r\nx: &b {repo: r2, 1: a}\nprofiles: {w: *b}\n":       {"profiles.w.1", "x"},
+		"repo: r\nx: &b {1: a}\nprofiles: {w: {repo: r2, <<: *b}}\n": {"profiles.w.1", "x"},
+		"repo: r\n<<: {zz: 1, 1: a}\n":                               {"1", "zz"},
+		"reop: r\n1: a\n":                                            {"1", "reop"},
 	} {
 		os.WriteFile(p, []byte(yml), 0o600)
-		want := "config file " + p + ": key \"" + key + "\" is not a string"
-		if _, err := Load(p, Selector{Profile: "w"}); err == nil || err.Error() != want {
+		c, err := Load(p, Selector{Profile: "w"})
+		if want := "config file " + p + ": key \"" + keys[0] + "\" is not a string"; err == nil || err.Error() != want {
 			t.Errorf("a key that is not a string must error: %v, want %s", err, want)
+			continue
+		}
+		if c == nil || len(c.Warnings) != len(keys)-1 {
+			t.Errorf("warnings %v must come with the error: %+v", keys[1:], c)
+			continue
+		}
+		for i, k := range keys[1:] {
+			if want := "config file " + p + ": unknown key \"" + k + "\" is ignored"; c.Warnings[i] != want {
+				t.Errorf("warning %d: %q, want %q", i, c.Warnings[i], want)
+			}
 		}
 	}
 	// A misspelled key is reported with the error that it causes.

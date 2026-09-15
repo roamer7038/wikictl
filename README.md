@@ -137,7 +137,7 @@ wikictl reads the configuration from `--config <path>`, else `$WIKICTL_CONFIG`, 
 | `profiles` | no | Named profiles that override the keys above |
 | `default_profile` | no | Profile to use when no other rule selects one |
 
-An unknown key is ignored with a warning on standard error, so that a file written for another version of wikictl still works.
+An unknown key is ignored with a warning on standard error, so that a file written for another version of wikictl still works. A key that is not a string, such as `1:`, is a configuration error.
 
 Profiles keep several wikis, such as a personal one and a work one, in one file. The top-level keys are defaults, and a profile overrides them:
 

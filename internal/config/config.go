@@ -108,18 +108,20 @@ func Load(explicit string, sel Selector) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("config file %s: %s", p, yaml.FormatError(err, false, false))
 	}
+	a := anchors{}
 	var body ast.Node
 	if len(f.Docs) > 0 {
 		body = f.Docs[0].Body
-	}
-	unknown, nonString := unknownKeys(body, reflect.TypeOf(*c), "")
-	if nonString != "" {
-		return nil, fmt.Errorf("config file %s: key %q is not a string", p, nonString)
+		ast.Walk(a, body)
 	}
 	// Unknown keys are ignored with a warning, so that a file written for
 	// another version of wikictl still works.
+	unknown, err := a.unknownKeys(body, reflect.TypeOf(*c), "")
 	for _, k := range unknown {
 		c.Warnings = append(c.Warnings, fmt.Sprintf("config file %s: unknown key %q is ignored", p, k))
+	}
+	if err != nil {
+		return c, fmt.Errorf("config file %s: %w", p, err)
 	}
 	if err := c.selectProfile(sel); err != nil {
 		return c, fmt.Errorf("config file %s: %w", p, err)
@@ -143,20 +145,43 @@ func Load(explicit string, sel Selector) (*Config, error) {
 	return c, nil
 }
 
+// anchors maps the anchor names of a YAML file to the nodes they mark.
+type anchors map[string]ast.Node
+
+// Visit records n when it is an anchor; it makes anchors an ast.Visitor.
+func (a anchors) Visit(n ast.Node) ast.Visitor {
+	if an, ok := n.(*ast.AnchorNode); ok {
+		a[an.Name.GetToken().Value] = an.Value
+	}
+	return a
+}
+
+// resolve follows anchors and aliases to the node that they stand for.
+func (a anchors) resolve(n ast.Node) ast.Node {
+	for {
+		switch v := n.(type) {
+		case *ast.AnchorNode:
+			n = v.Value
+		case *ast.AliasNode:
+			n = a[v.Value.GetToken().Value]
+		default:
+			return n
+		}
+	}
+}
+
 // unknownKeys returns the keys of n, a YAML node, that the yaml tags of type t
-// do not name, as sorted dotted paths below prefix. It also returns the path
-// of a key that is not a string where t is a struct, or "" when there is none;
-// goccy/go-yaml leaves such a struct empty without an error.
-func unknownKeys(n ast.Node, t reflect.Type, prefix string) ([]string, string) {
+// do not name, as sorted dotted paths below prefix. The keys that a merge key
+// brings in count as keys of n. The error reports a key that is not a string
+// where t is a struct, because goccy/go-yaml leaves such a struct empty
+// without an error.
+func (a anchors) unknownKeys(n ast.Node, t reflect.Type, prefix string) ([]string, error) {
 	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
-	if a, ok := n.(*ast.AnchorNode); ok {
-		n = a.Value
-	}
-	m, ok := n.(ast.MapNode)
+	m, ok := a.resolve(n).(ast.MapNode)
 	if !ok {
-		return nil, ""
+		return nil, nil
 	}
 	fields := map[string]reflect.Type{}
 	if t.Kind() == reflect.Struct {
@@ -168,39 +193,52 @@ func unknownKeys(n ast.Node, t reflect.Type, prefix string) ([]string, string) {
 		}
 	}
 	var out []string
+	var first error
+	add := func(keys []string, err error) {
+		out = append(out, keys...)
+		if first == nil {
+			first = err
+		}
+	}
 	for it := m.MapRange(); it.Next(); {
-		key := it.Key()
-		if key.IsMergeKey() {
+		if it.Key().IsMergeKey() {
+			v := a.resolve(it.Value())
+			values := []ast.Node{v}
+			if s, ok := v.(*ast.SequenceNode); ok {
+				values = s.Values
+			}
+			for _, v := range values {
+				add(a.unknownKeys(v, t, prefix))
+			}
 			continue
 		}
-		var v any
-		yaml.NodeToValue(key, &v)
-		k, isString := v.(string)
-		if !isString {
-			k = key.GetToken().Value
+		var key any
+		if err := yaml.NodeToValue(a.resolve(it.Key()), &key); err != nil {
+			add(nil, err)
+			continue
 		}
-		var sub []string
-		var nonString string
+		k, isString := key.(string)
+		if !isString {
+			k = fmt.Sprint(key)
+			if key == nil {
+				k = "null"
+			}
+		}
 		switch t.Kind() {
 		case reflect.Map:
-			sub, nonString = unknownKeys(it.Value(), t.Elem(), prefix+k+".")
+			add(a.unknownKeys(it.Value(), t.Elem(), prefix+k+"."))
 		case reflect.Struct:
-			if !isString {
-				return nil, prefix + k
-			}
-			if ft, ok := fields[k]; ok {
-				sub, nonString = unknownKeys(it.Value(), ft, prefix+k+".")
+			if ft, ok := fields[k]; !isString {
+				add(nil, fmt.Errorf("key %q is not a string", prefix+k))
+			} else if ok {
+				add(a.unknownKeys(it.Value(), ft, prefix+k+"."))
 			} else {
-				sub = []string{prefix + k}
+				add([]string{prefix + k}, nil)
 			}
 		}
-		if nonString != "" {
-			return nil, nonString
-		}
-		out = append(out, sub...)
 	}
 	sort.Strings(out)
-	return out, ""
+	return out, first
 }
 
 // isRelativeLocal reports whether repo is a relative local path: not
