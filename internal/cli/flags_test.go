@@ -97,6 +97,16 @@ func TestHelpAndVersionFlags(t *testing.T) {
 	if code, out, _ := runNoConfig(t, "help", "grep", "-h"); code != ExitOK || !strings.Contains(out, "Usage: wikictl grep") {
 		t.Errorf("help grep -h: code=%d out=%q", code, out)
 	}
+	if code, out, _ := runNoConfig(t, "grep", "x", "--help"); code != ExitOK || !strings.Contains(out, "Usage: wikictl grep") {
+		t.Errorf("grep x --help: code=%d out=%q", code, out)
+	}
+	// -h of grep is --no-filename, as in GNU grep.
+	if code, _, errs := runNoConfig(t, "grep", "-h"); code != ExitUsage || !strings.Contains(errs, "missing pattern") {
+		t.Errorf("grep -h: code=%d errs=%q", code, errs)
+	}
+	if code, out, _ := runNoConfig(t, "-h", "grep"); code != ExitOK || !strings.Contains(out, "Usage: wikictl [global flags] <command>") {
+		t.Errorf("-h grep: code=%d out=%q", code, out)
+	}
 	if code, out, _ := runNoConfig(t, "help", "-h"); code != ExitOK || !strings.Contains(out, "Usage: wikictl help") {
 		t.Errorf("help -h: code=%d out=%q", code, out)
 	}
