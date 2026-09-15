@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -27,9 +28,10 @@ type Config struct {
 	DefaultProfile string              `yaml:"default_profile"` // profile used when no other rule selects one
 	Profiles       map[string]*Profile `yaml:"profiles"`        // named overrides of the top-level keys
 
-	Path          string `yaml:"-"` // file the configuration was read from
-	Profile       string `yaml:"-"` // name of the selected profile; empty when none is selected
-	ProfileSource string `yaml:"-"` // how the profile was selected: one of the Source* constants
+	Path          string   `yaml:"-"` // file the configuration was read from
+	Warnings      []string `yaml:"-"` // one line for each unknown key, which is ignored
+	Profile       string   `yaml:"-"` // name of the selected profile; empty when none is selected
+	ProfileSource string   `yaml:"-"` // how the profile was selected: one of the Source* constants
 }
 
 // Profile overrides the top-level keys of Config. Empty keys inherit the
@@ -95,8 +97,16 @@ func Load(explicit string, sel Selector) (*Config, error) {
 		return nil, fmt.Errorf("config file %s: %w", p, err)
 	}
 	c := &Config{Path: p}
-	if err := yaml.UnmarshalWithOptions(b, c, yaml.DisallowUnknownField()); err != nil {
-		return nil, fmt.Errorf("config file %s: %s", p, yaml.FormatError(err, false, false))
+	var raw any
+	for _, v := range []any{c, &raw} {
+		if err := yaml.Unmarshal(b, v); err != nil {
+			return nil, fmt.Errorf("config file %s: %s", p, yaml.FormatError(err, false, false))
+		}
+	}
+	// Unknown keys are ignored with a warning, so that a file written for
+	// another version of wikictl still works.
+	for _, k := range unknownKeys(raw, reflect.TypeOf(*c), "") {
+		c.Warnings = append(c.Warnings, fmt.Sprintf("config file %s: unknown key %q is ignored", p, k))
 	}
 	if err := c.selectProfile(sel); err != nil {
 		return nil, fmt.Errorf("config file %s: %w", p, err)
@@ -118,6 +128,42 @@ func Load(explicit string, sel Selector) (*Config, error) {
 		c.Repo = filepath.Join(filepath.Dir(abs), c.Repo)
 	}
 	return c, nil
+}
+
+// unknownKeys returns the keys of v, a decoded YAML value, that the yaml tags
+// of type t do not name, as sorted dotted paths below prefix.
+func unknownKeys(v any, t reflect.Type, prefix string) []string {
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	m, ok := v.(map[string]any)
+	if !ok {
+		return nil
+	}
+	var out []string
+	switch t.Kind() {
+	case reflect.Map:
+		for k, e := range m {
+			out = append(out, unknownKeys(e, t.Elem(), prefix+k+".")...)
+		}
+	case reflect.Struct:
+		fields := map[string]reflect.Type{}
+		for i := range t.NumField() {
+			f := t.Field(i)
+			if name, _, _ := strings.Cut(f.Tag.Get("yaml"), ","); name != "" && name != "-" {
+				fields[name] = f.Type
+			}
+		}
+		for k, e := range m {
+			if ft, ok := fields[k]; ok {
+				out = append(out, unknownKeys(e, ft, prefix+k+".")...)
+			} else {
+				out = append(out, prefix+k)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // isRelativeLocal reports whether repo is a relative local path: not

@@ -936,8 +936,8 @@ profiles:
 	}
 
 	os.WriteFile(cfg, []byte("repo: "+home+"\nprofiles:\n  work:\n    match: {remote: [\"gitlab.example.com/team/*\"]}\n"), 0o600)
-	if code, _, errs := runCLI(t, cfg, "", "context"); code != ExitUsage || !strings.Contains(errs, `unknown field "remote"`) {
-		t.Errorf("unknown key: code=%d %s", code, errs)
+	if code, _, errs := runCLI(t, cfg, "", "context"); code != 0 || errs != "wikictl: warning: config file "+cfg+": unknown key \"profiles.work.match.remote\" is ignored\n" {
+		t.Errorf("unknown key: code=%d %q", code, errs)
 	}
 }
 

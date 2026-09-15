@@ -124,16 +124,28 @@ func TestProfileErrors(t *testing.T) {
 		t.Error("bad pattern must error")
 	}
 
-	for yml, key := range map[string]string{
-		"repo: r\nprofiles:\n  a: {match: {remote: [\"h/*\"]}}\n": "remote",
-		"repo: r\nprofile:\n  a: {repo: r2}\n":                    "profile",
-		"repo: r\ndefault_profle: a\n":                            "default_profle",
-		"repo: r\nauthor: {nmae: n}\n":                            "nmae",
+	for yml, keys := range map[string][]string{
+		"repo: r\nprofiles:\n  a: {match: {remote: [\"h/*\"]}}\n": {"profiles.a.match.remote"},
+		"repo: r\nprofile:\n  a: {repo: r2}\n":                    {"profile"},
+		"repo: r\ndefault_profle: a\n":                            {"default_profle"},
+		"repo: r\nauthor: {nmae: n}\n":                            {"author.nmae"},
+		"repo: r\nmachine: m\nprojects: {a: b}\n":                 {"machine", "projects"},
 	} {
 		os.WriteFile(p, []byte(yml), 0o600)
-		if _, err := Load(p, Selector{}); err == nil || !strings.Contains(err.Error(), `unknown field "`+key+`"`) || !strings.Contains(err.Error(), p) {
-			t.Errorf("unknown key %s must error: %v", key, err)
+		c, err := Load(p, Selector{})
+		if err != nil || len(c.Warnings) != len(keys) {
+			t.Errorf("unknown keys %v must be warnings: %+v %v", keys, c, err)
+			continue
 		}
+		for i, k := range keys {
+			if want := "config file " + p + ": unknown key \"" + k + "\" is ignored"; c.Warnings[i] != want {
+				t.Errorf("warning %d: %q, want %q", i, c.Warnings[i], want)
+			}
+		}
+	}
+	os.WriteFile(p, []byte("repo: [r]\n"), 0o600)
+	if _, err := Load(p, Selector{}); err == nil {
+		t.Error("a value of the wrong type must error")
 	}
 
 	for _, rel := range []string{".", "work"} {

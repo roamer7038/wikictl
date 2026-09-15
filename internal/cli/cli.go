@@ -541,6 +541,9 @@ func (a *app) setup() error {
 	if err != nil {
 		return &usageError{msg: err.Error()}
 	}
+	for _, w := range cfg.Warnings {
+		fmt.Fprintln(a.stderr, "wikictl: warning: "+w)
+	}
 	a.cfg = cfg
 	if err := a.openRepo(); err != nil {
 		return &gitError{err}
