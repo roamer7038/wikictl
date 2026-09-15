@@ -7,6 +7,7 @@ import (
 	"maps"
 	"path"
 	"slices"
+	"sort"
 	"strings"
 
 	"github.com/spf13/pflag"
@@ -147,11 +148,14 @@ func (a *app) cmdRm(c *command, args []string) error {
 	for i, e := range entries {
 		files[i], shas[e.Path] = e.Path, e.SHA
 	}
+	slices.Sort(files)
+	// under returns the files below directory p: they sort from p+"/" up to
+	// p+"0", as '0' follows '/'.
 	under := func(p string) []string {
-		return slices.DeleteFunc(slices.Clone(files), func(f string) bool { return !strings.HasPrefix(f, p+"/") })
+		return files[sort.SearchStrings(files, p+"/"):sort.SearchStrings(files, p+"0")]
 	}
 	for _, p := range args {
-		if !strings.Contains(p, "/") && slices.Contains(files, p) {
+		if !strings.Contains(p, "/") && shas[p] != "" {
 			return &invalidError{"bad_path: " + p + ": a file at the wiki root cannot be deleted"}
 		}
 	}
@@ -164,7 +168,7 @@ func (a *app) cmdRm(c *command, args []string) error {
 			failed = true
 		case len(sub) > 0:
 			targets = append(targets, sub...)
-		case slices.Contains(files, p):
+		case shas[p] != "":
 			targets = append(targets, p)
 		case !a.force:
 			fmt.Fprintf(a.stderr, "wikictl: %s: no such file or directory\n", escapeControl(p))
@@ -253,9 +257,15 @@ func (a *app) cmdMv(c *command, args []string) error {
 	for i, e := range entries {
 		files[i], modes[e.Path] = e.Path, e.Mode
 	}
+	slices.Sort(files)
 	isSubmodule := func(f string) bool { return modes[f] == "160000" }
+	// under returns the files below dir: they sort from dir+"/" up to dir+"0",
+	// as '0' follows '/'.
 	under := func(dir string) []string {
-		return slices.DeleteFunc(slices.Clone(files), func(f string) bool { return dir != "." && !strings.HasPrefix(f, dir+"/") })
+		if dir == "." {
+			return files
+		}
+		return files[sort.SearchStrings(files, dir+"/"):sort.SearchStrings(files, dir+"0")]
 	}
 	to := cleaned[len(cleaned)-1]
 	into := !a.noTargetDir && len(under(to)) > 0
@@ -269,15 +279,31 @@ func (a *app) cmdMv(c *command, args []string) error {
 		return &invalidError{"bad_path: the root of the wiki cannot be replaced"}
 	}
 	mapping := map[string]string{}
+	// movedTo holds the paths moved to, and movedToDirs the directories above them.
+	movedTo, movedToDirs := map[string]bool{}, map[string]bool{}
+	move := func(f, np string) {
+		mapping[f] = np
+		movedTo[np] = true
+		for d := path.Dir(np); d != "." && !movedToDirs[d]; d = path.Dir(d) {
+			movedToDirs[d] = true
+		}
+	}
 	// taken reports whether p exists, or is or contains a path already moved to.
 	taken := func(p string) bool {
-		return slices.Contains(files, p) || (p != "." && len(under(p)) > 0) || slices.ContainsFunc(slices.Collect(maps.Values(mapping)),
-			func(np string) bool { return np == p || strings.HasPrefix(np, p+"/") || strings.HasPrefix(p, np+"/") })
+		if modes[p] != "" || (p != "." && len(under(p)) > 0) || movedTo[p] || movedToDirs[p] {
+			return true
+		}
+		for d := path.Dir(p); d != "."; d = path.Dir(d) {
+			if movedTo[d] {
+				return true
+			}
+		}
+		return false
 	}
 	// belowFile reports whether a directory above p is a file.
 	belowFile := func(p string) bool {
 		for d := path.Dir(p); d != "."; d = path.Dir(d) {
-			if slices.Contains(files, d) {
+			if modes[d] != "" {
 				return true
 			}
 		}
@@ -299,7 +325,7 @@ func (a *app) cmdMv(c *command, args []string) error {
 			return &invalidError{"bad_path: the root of the wiki cannot be moved"}
 		case len(sub) > 0:
 			// Files moved by an earlier source are not moved again.
-			sub = slices.DeleteFunc(sub, func(f string) bool { _, moved := mapping[f]; return moved })
+			sub = slices.DeleteFunc(slices.Clone(sub), func(f string) bool { _, moved := mapping[f]; return moved })
 			if len(sub) == 0 {
 				fail(srcs[i], "no such file or directory")
 				continue
@@ -333,9 +359,9 @@ func (a *app) cmdMv(c *command, args []string) error {
 				if err := checkFilePath(np); err != nil {
 					return &invalidError{"bad_path: " + np + ": " + err.Error()}
 				}
-				mapping[f] = np
+				move(f, np)
 			}
-		case slices.Contains(files, src):
+		case modes[src] != "":
 			if _, moved := mapping[src]; moved {
 				fail(srcs[i], "no such file or directory")
 				continue
@@ -373,7 +399,7 @@ func (a *app) cmdMv(c *command, args []string) error {
 				fail(target, "not replacing")
 				continue
 			}
-			mapping[src] = target
+			move(src, target)
 		default:
 			fail(srcs[i], "no such file or directory")
 		}
