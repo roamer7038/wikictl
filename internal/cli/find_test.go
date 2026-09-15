@@ -36,8 +36,11 @@ func TestFind(t *testing.T) {
 		}
 	}
 
-	// Commit times have a resolution of one second.
-	time.Sleep(1100 * time.Millisecond)
+	// Commit times have a resolution of one second, so the new page is
+	// committed an hour later than the others.
+	date := time.Now().Add(time.Hour).Format(time.RFC3339)
+	t.Setenv("GIT_AUTHOR_DATE", date)
+	t.Setenv("GIT_COMMITTER_DATE", date)
 	if code, _, errs := runCLI(t, cfg, "---\nsummary: n\n---\n# n\n", "put", "global/new.md"); code != 0 {
 		t.Fatalf("put: %s", errs)
 	}
@@ -94,7 +97,7 @@ func TestFindUsage(t *testing.T) {
 // was deleted since: a deleted file does not change the time of a directory.
 func TestFindTimes(t *testing.T) {
 	cfg := setup(t)
-	work := filepath.Join(filepath.Dir(cfg), "work")
+	work := cloneRemote(t, cfg)
 	os.MkdirAll(filepath.Join(work, "old"), 0o755)
 	for _, name := range []string{"a.md", `b\`, "gone.md"} {
 		os.WriteFile(filepath.Join(work, "old", name), []byte("x\n"), 0o644)
@@ -108,8 +111,7 @@ func TestFindTimes(t *testing.T) {
 		t.Fatalf("commit: %v\n%s", err, out)
 	}
 	mustRun(t, work, "git", "rm", "-q", "old/gone.md")
-	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "gone")
-	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
+	commitAndPush(t, work)
 	for args, want := range map[string]string{
 		"old -mtime 3":               "old\nold/a.md\nold/b\\\n",
 		"-mtime +2 -type f":          "old/a.md\nold/b\\\n",

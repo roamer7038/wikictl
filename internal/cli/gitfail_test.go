@@ -25,6 +25,29 @@ type gitFault struct {
 // for the invocations selected by f and runs the real git for the others.
 func injectGitFault(t *testing.T, f gitFault) {
 	t.Helper()
+	counter := shQuote(filepath.Join(t.TempDir(), "count"))
+	fail := "    echo 'fatal: injected failure' >&2\n"
+	if f.quiet {
+		fail = ""
+	}
+	wrapGit(t, func(string) string {
+		return "*" + shQuote(f.match) + "*)\n" +
+			"  n=$(cat " + counter + " 2>/dev/null || echo 0)\n" +
+			"  echo $((n + 1)) > " + counter + "\n" +
+			"  if [ \"$n\" -ge " + strconv.Itoa(f.skip) + " ]; then\n" +
+			fail +
+			"    exit 128\n" +
+			"  fi\n" +
+			"  ;;\n"
+	})
+}
+
+// wrapGit puts a git wrapper first on PATH: a shell script that matches its
+// arguments, joined by spaces and surrounded by one space, against the case
+// branches that cases returns for the quoted path of the real git, and runs
+// the real git when no branch exits.
+func wrapGit(t *testing.T, cases func(real string) string) {
+	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("the git wrapper is a shell script")
 	}
@@ -33,23 +56,7 @@ func injectGitFault(t *testing.T, f gitFault) {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	counter := shQuote(filepath.Join(dir, "count"))
-	fail := "    echo 'fatal: injected failure' >&2\n"
-	if f.quiet {
-		fail = ""
-	}
-	script := "#!/bin/sh\n" +
-		"case \" $* \" in\n" +
-		"*" + shQuote(f.match) + "*)\n" +
-		"  n=$(cat " + counter + " 2>/dev/null || echo 0)\n" +
-		"  echo $((n + 1)) > " + counter + "\n" +
-		"  if [ \"$n\" -ge " + strconv.Itoa(f.skip) + " ]; then\n" +
-		fail +
-		"    exit 128\n" +
-		"  fi\n" +
-		"  ;;\n" +
-		"esac\n" +
-		"exec " + shQuote(real) + " \"$@\"\n"
+	script := "#!/bin/sh\ncase \" $* \" in\n" + cases(shQuote(real)) + "esac\nexec " + shQuote(real) + " \"$@\"\n"
 	if err := os.WriteFile(filepath.Join(dir, "git"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -297,27 +304,13 @@ func TestGitStderrNoise(t *testing.T) {
 // returned file.
 func recordBatchInput(t *testing.T) string {
 	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("the git wrapper is a shell script")
-	}
-	real, err := exec.LookPath("git")
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := t.TempDir()
-	log := filepath.Join(dir, "batch-input")
-	script := "#!/bin/sh\n" +
-		"case \" $* \" in\n" +
-		"*' cat-file --batch '*)\n" +
-		"  tee -a " + shQuote(log) + " | " + shQuote(real) + " \"$@\"\n" +
-		"  exit $?\n" +
-		"  ;;\n" +
-		"esac\n" +
-		"exec " + shQuote(real) + " \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(dir, "git"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	log := filepath.Join(t.TempDir(), "batch-input")
+	wrapGit(t, func(real string) string {
+		return "*' cat-file --batch '*)\n" +
+			"  tee -a " + shQuote(log) + " | " + real + " \"$@\"\n" +
+			"  exit $?\n" +
+			"  ;;\n"
+	})
 	return log
 }
 
@@ -326,19 +319,10 @@ func recordBatchInput(t *testing.T) string {
 func TestLargeBlobNotRead(t *testing.T) {
 	cfg := setup(t)
 	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
-	work := filepath.Join(t.TempDir(), "w")
-	mustRun(t, "", "git", "clone", "-q", remote, work)
-	huge := "---\nsummary: huge\n---\n# huge\n" + strings.Repeat("lorem ipsum\n", 100000) + "Äpfel\n[push](push.md)\n"
-	files := map[string]string{
-		"global/huge.md":  huge,
+	pushFiles(t, cfg, map[string]string{
+		"global/huge.md":  "---\nsummary: huge\n---\n# huge\n" + strings.Repeat("lorem ipsum\n", 100000) + "Äpfel\n[push](push.md)\n",
 		"global/refer.md": "---\nsummary: refer\n---\n# refer\nsee [huge](huge.md)\n",
-	}
-	for p, c := range files {
-		os.WriteFile(filepath.Join(work, p), []byte(c), 0o644)
-	}
-	mustRun(t, work, "git", "add", "-A")
-	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "huge")
-	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
+	})
 	if code, _, errs := runCLI(t, cfg, "", "ls"); code != ExitOK {
 		t.Fatalf("ls: code=%d errs=%q", code, errs)
 	}

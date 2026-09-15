@@ -109,14 +109,11 @@ func TestTextOutputEscapesControl(t *testing.T) {
 
 func TestPathOutputEscapesControl(t *testing.T) {
 	cfg := setup(t)
-	work := filepath.Join(filepath.Dir(cfg), "work")
 	c1 := "global/c\u009b31mX.md"
-	os.WriteFile(filepath.Join(work, c1), []byte("---\nsummary: \"t\\e[31m\\r\\n\"\n---\n# c\n"), 0o644)
-	os.MkdirAll(filepath.Join(work, "global", "d\x01"), 0o755)
-	os.WriteFile(filepath.Join(work, "global", "d\x01", "a.md"), []byte("---\nsummary: a\n---\n# a\n"), 0o644)
-	mustRun(t, work, "git", "add", "-A")
-	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "control")
-	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
+	pushFiles(t, cfg, map[string]string{
+		c1:                  "---\nsummary: \"t\\e[31m\\r\\n\"\n---\n# c\n",
+		"global/d\x01/a.md": "---\nsummary: a\n---\n# a\n",
+	})
 	raw := "\u009b\x01\x1b\r"
 
 	_, out, _ := runCLI(t, cfg, "", "lint")

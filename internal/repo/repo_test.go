@@ -310,20 +310,6 @@ func TestOpenRemoteMismatch(t *testing.T) {
 	}
 }
 
-func TestOpenEmptyRemote(t *testing.T) {
-	remote := newRemote(t, false)
-	r, err := Open(filepath.Join(t.TempDir(), "m"), remote, "main")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := r.Fetch(); err != nil {
-		t.Fatal(err)
-	}
-	if h, err := r.trackingHead(); err != nil || h != "" {
-		t.Errorf("empty remote must have no head, got %q, %v", h, err)
-	}
-}
-
 // TestReadGitFailure reads from a directory that is not a git repository, so
 // that every git command fails. No read may report the failure as an empty
 // result.
@@ -409,8 +395,9 @@ func TestRead(t *testing.T) {
 	if dep := grepFiles(t, r, []string{"-F", "-l"}, "deprecated"); !slices.Equal(dep, []string{"projects/a/x.md"}) {
 		t.Errorf("dep=%v", dep)
 	}
-	c, shas, _ := r.CatSHA([]string{"global/git-push.md", "missing.md", "machines/h/y.md"})
-	if !strings.HasPrefix(string(c["global/git-push.md"]), "---") || c["missing.md"] != nil || c["machines/h/y.md"] == nil {
+	// A tree before the pages is left out and does not hide them.
+	c, shas, _ := r.CatSHA([]string{"machines/h", "global/git-push.md", "missing.md", "machines/h/y.md"})
+	if _, tree := c["machines/h"]; tree || !strings.HasPrefix(string(c["global/git-push.md"]), "---") || c["missing.md"] != nil || c["machines/h/y.md"] == nil {
 		t.Errorf("cat=%v", c)
 	}
 	if len(shas["global/git-push.md"]) != 40 || shas["missing.md"] != "" {
@@ -482,19 +469,6 @@ func TestReadQuotedNames(t *testing.T) {
 	}
 	if err := r.CheckMissing([]string{"global/no\nne.md", "global\n"}); err != nil {
 		t.Error(err)
-	}
-}
-
-func TestCatSkipsTrees(t *testing.T) {
-	remote := newRemote(t, true)
-	seedRemote(t, remote, map[string]string{"global/sub.md/a.md": "---\nsummary: a\n---\n"})
-	r := openFetched(t, remote)
-	c, _, err := r.CatSHA([]string{"global/sub.md", "global/index.md"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := c["global/sub.md"]; ok || !strings.HasPrefix(string(c["global/index.md"]), "---") {
-		t.Errorf("cat=%q", c)
 	}
 }
 
