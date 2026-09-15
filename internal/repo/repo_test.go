@@ -5,6 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -420,6 +422,54 @@ func TestRead(t *testing.T) {
 	up, _ := r.Updated([]string{"global/git-push.md", "global/日本語.md"})
 	if up["global/git-push.md"].IsZero() || up["global/日本語.md"].IsZero() {
 		t.Errorf("updated=%v", up)
+	}
+}
+
+// TestReadQuotedNames checks the reads of pages whose names git quotes
+// unless -z is given: names with a newline, a control character, a double
+// quote or a backslash.
+func TestReadQuotedNames(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the file system does not allow these names")
+	}
+	remote := newRemote(t, true)
+	names := []string{"global/a\nb.md", "global/c\x01.md", "global/q\"\\.md"}
+	files := map[string]string{}
+	for _, n := range names {
+		files[n] = "---\nsummary: s\nstatus: deprecated\n---\nlease\n" + n + "\n"
+	}
+	seedRemote(t, remote, files)
+	r := openFetched(t, remote)
+	list, err := r.List()
+	if want := []string{names[0], names[1], "global/index.md", names[2]}; err != nil || !slices.Equal(list, want) {
+		t.Errorf("List = %q, %v", list, err)
+	}
+	if got, err := r.Grep([]string{"lease"}); err != nil || !slices.Equal(got, names) {
+		t.Errorf("Grep = %q, %v", got, err)
+	}
+	dep, err := r.GrepDeprecated()
+	if err != nil || len(dep) != 3 || !dep[names[0]] || !dep[names[1]] || !dep[names[2]] {
+		t.Errorf("GrepDeprecated = %v, %v", dep, err)
+	}
+	paths := append([]string{"global/no\nne.md", "global/a"}, names...)
+	paths = append(paths, "global/index.md")
+	c, shas, err := r.CatSHA(paths)
+	if err != nil || len(c) != 4 || len(shas) != 4 {
+		t.Fatalf("CatSHA = %q, %q, %v", c, shas, err)
+	}
+	for _, n := range names {
+		if string(c[n]) != files[n] {
+			t.Errorf("CatSHA[%q] = %q", n, c[n])
+		}
+	}
+	objs, err := r.Stat(paths)
+	if err != nil || len(objs) != 4 {
+		t.Fatalf("Stat = %v, %v", objs, err)
+	}
+	for _, n := range names {
+		if objs[n].SHA != shas[n] || objs[n].Size != int64(len(files[n])) {
+			t.Errorf("Stat[%q] = %v", n, objs[n])
+		}
 	}
 }
 

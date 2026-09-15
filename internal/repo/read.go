@@ -41,13 +41,13 @@ func pathspec(dirs []string) []string {
 	return out
 }
 
-// stripRef removes the "<ref>:" prefix that ls-tree and grep print, and drops non-pages.
-func stripRef(r *Repo, lines string) []string {
+// stripRef takes the output of "git grep -l -z", removes the "<ref>:" prefix
+// of each path, and drops non-pages.
+func stripRef(r *Repo, out string) []string {
 	var res []string
 	prefix := r.readRef() + ":"
-	for _, l := range strings.Split(strings.TrimSpace(lines), "\n") {
-		p := strings.TrimPrefix(l, prefix)
-		if p != "" && IsPagePath(p) {
+	for rec := range strings.SplitSeq(out, "\x00") {
+		if p := strings.TrimPrefix(rec, prefix); IsPagePath(p) {
 			res = append(res, p)
 		}
 	}
@@ -56,15 +56,8 @@ func stripRef(r *Repo, lines string) []string {
 
 // List returns the paths of all pages.
 func (r *Repo) List() ([]string, error) {
-	head, err := r.Head()
-	if err != nil || head == "" {
-		return nil, err
-	}
-	out, err := r.Git("ls-tree", "-r", "--name-only", r.readRef())
-	if err != nil {
-		return nil, err
-	}
-	return stripRef(r, out), nil
+	files, err := r.Files(nil)
+	return slices.DeleteFunc(files, func(p string) bool { return !IsPagePath(p) }), err
 }
 
 // Entry is a file of the tree: its path, mode, object type and object sha.
@@ -132,7 +125,7 @@ func (r *Repo) Grep(words []string) ([]string, error) {
 	if err != nil || head == "" || len(words) == 0 {
 		return nil, err
 	}
-	args := []string{"grep", "-E", "-l", "--all-match"}
+	args := []string{"grep", "-E", "-l", "-z", "--all-match"}
 	for _, w := range words {
 		args = append(args, "-e", FoldPattern(w))
 	}
@@ -206,7 +199,7 @@ func (r *Repo) GrepDeprecated() (map[string]bool, error) {
 	if head == "" {
 		return res, nil
 	}
-	out, err := r.gitStrict("grep", "-l", "-F", "-e", "deprecated", r.readRef())
+	out, err := r.gitStrict("grep", "-l", "-z", "-F", "-e", "deprecated", r.readRef())
 	if noResult(err) {
 		return res, nil
 	}
@@ -322,32 +315,49 @@ type catEntry struct {
 // "cat-file --batch-check" when withContent is false, and returns one entry
 // per name. When Snapshot found no branch, every name is missing and git is
 // not run, so that a branch fetched since then is not read.
+//
+// The names are given one per line, or ending with NUL (-z, git 2.38 or
+// later) when one of them contains a newline. The output is the same either
+// way: a header line per name, "<name> missing" when the object does not
+// exist, where the name may contain a newline.
 func (r *Repo) catFile(names []string, withContent bool) ([]catEntry, error) {
 	res := make([]catEntry, len(names))
 	if len(names) == 0 || r.pinned && r.snapshot == "" {
 		return res, nil
 	}
-	mode := "--batch-check"
+	args := []string{"cat-file", "--batch-check"}
 	if withContent {
-		mode = "--batch"
+		args[1] = "--batch"
+	}
+	sep := "\n"
+	if slices.ContainsFunc(names, func(n string) bool { return strings.Contains(n, "\n") }) {
+		args, sep = append(args, "-z"), "\x00"
 	}
 	var in bytes.Buffer
 	for _, n := range names {
-		in.WriteString(n + "\n")
+		in.WriteString(n + sep)
 	}
-	out, err := r.GitIn(in.Bytes(), "cat-file", mode)
+	out, err := r.GitIn(in.Bytes(), args...)
 	if err != nil {
 		return nil, err
 	}
-	rd := bufio.NewReader(strings.NewReader(out))
-	for i := range names {
+	size := 0
+	for _, n := range names {
+		size = max(size, len(n+" missing\n"))
+	}
+	rd := bufio.NewReaderSize(strings.NewReader(out), size)
+	for i, name := range names {
+		if b, _ := rd.Peek(len(name) + len(" missing\n")); string(b) == name+" missing\n" {
+			rd.Discard(len(b))
+			continue
+		}
 		hdr, err := rd.ReadString('\n')
 		if err != nil {
 			break
 		}
 		f := strings.Fields(hdr)
 		if len(f) < 3 {
-			continue // "<object> missing"
+			continue
 		}
 		n, _ := strconv.ParseInt(f[2], 10, 64)
 		e := catEntry{Object: Object{SHA: f[0], Size: n}, typ: f[1]}

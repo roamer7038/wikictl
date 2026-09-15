@@ -85,7 +85,7 @@ func TestGitFailure(t *testing.T) {
 		{"links/backlinks grep", gitFault{match: " grep -E -l "}, "", []string{"links", "global/index.md"}, ExitGit},
 		{"links/backlinks cat", gitFault{match: " cat-file --batch ", skip: 1}, "", []string{"links", "global/index.md"}, ExitGit},
 		{"ls/files", gitFault{match: " ls-tree -r -z "}, "", []string{"ls"}, ExitGit},
-		{"ls/deprecated", gitFault{match: " grep -l -F "}, "", []string{"ls"}, ExitGit},
+		{"ls/deprecated", gitFault{match: " grep -l -z -F "}, "", []string{"ls"}, ExitGit},
 		{"ls/cat pages", gitFault{match: " cat-file --batch ", skip: 1}, "", []string{"ls", "-l", "global"}, ExitGit},
 		{"ls/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"ls", "-al", "global"}, ExitGit},
 		{"ls/cat", gitFault{match: " cat-file --batch "}, "", []string{"ls", "-al", "global"}, ExitGit},

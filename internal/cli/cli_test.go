@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -1440,6 +1441,69 @@ func TestWriteGitConfig(t *testing.T) {
 				t.Error("a hook ran in the mirror")
 			}
 		})
+	}
+}
+
+// TestQuotedNames checks the commands on pages pushed from a clone with names
+// that git quotes unless -z is given: a newline, a control character, a
+// double quote and a backslash.
+func TestQuotedNames(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the file system does not allow these names")
+	}
+	cfg := setup(t)
+	work := filepath.Join(filepath.Dir(cfg), "work")
+	nl, ctl, q := "global/n\nl.md", "global/c\x01.md", "global/q\"\\.md"
+	files := map[string]string{
+		nl:  "---\nsummary: newline\nstatus: deprecated\ntags: [odd]\n---\n# nl\nlease [push](push.md)\n",
+		ctl: "---\nsummary: control\ntags: [odd]\n---\n# ctl\nlease [push](push.md)\n",
+		q:   "# q\nlease [push](push.md)\n",
+	}
+	for p, c := range files {
+		os.WriteFile(filepath.Join(work, p), []byte(c), 0o644)
+	}
+	mustRun(t, work, "git", "add", "-A")
+	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "quoted")
+	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
+	enl, ectl := `global/n\x0al.md`, `global/c\x01.md`
+
+	for _, args := range [][]string{{"lint", "--json"}, {"lint", "--json", "global"}} {
+		_, out, _ := runCLI(t, cfg, "", args...)
+		var res struct{ Items []struct{ Path, Code string } }
+		mustUnmarshal(t, out, &res)
+		codes := map[string][]string{}
+		for _, it := range res.Items {
+			codes[it.Path] = append(codes[it.Path], it.Code)
+		}
+		if !slices.Contains(codes[q], "missing_summary") || slices.Contains(codes[nl], "missing_summary") ||
+			slices.Contains(codes[ctl], "missing_summary") || codes[nl] == nil || codes[ctl] == nil {
+			t.Errorf("%v: %s", args, out)
+		}
+	}
+	// Paths with control characters cannot be given on the command line.
+	if _, out, errs := runCLI(t, cfg, "", "cat", "global/index.md", q); out != "---\nsummary: entry point\n---\n# global\n"+files[q] {
+		t.Errorf("cat: %q %q", out, errs)
+	}
+	if _, out, errs := runCLI(t, cfg, "", "stat", q); !strings.Contains(out, "title: q\n") {
+		t.Errorf("stat: %q %q", out, errs)
+	}
+	if _, out, _ := runCLI(t, cfg, "", "ls", "-l", "global"); strings.Contains(out, `n\x0al.md`) || !strings.Contains(out, `c\x01.md  control`) || !strings.Contains(out, `q"\.md    q`) {
+		t.Errorf("ls -l must hide the deprecated page: %q", out)
+	}
+	if _, out, _ := runCLI(t, cfg, "", "ls", "-la", "global"); !strings.Contains(out, `n\x0al.md  newline`) || !strings.Contains(out, `c\x01.md   control`) || !strings.Contains(out, `q"\.md     q`) {
+		t.Errorf("ls -la: %q", out)
+	}
+	if _, out, errs := runCLI(t, cfg, "", "find", "global", "-meta", "tags=odd"); out != ectl+"\n"+enl+"\n" {
+		t.Errorf("find -meta: %q %q", out, errs)
+	}
+	if _, out, errs := runCLI(t, cfg, "", "links", "--in", "global/push.md"); out != "in\tmentions\t"+ectl+"\nin\tmentions\t"+enl+"\nin\tmentions\t"+q+"\n" {
+		t.Errorf("links --in: %q %q", out, errs)
+	}
+	if _, out, errs := runCLI(t, cfg, "", "links", q); out != "out\tmentions\tglobal/push.md\n" {
+		t.Errorf("links: %q %q", out, errs)
+	}
+	if _, out, errs := runCLI(t, cfg, "", "grep", "-l", "lease", "global"); out != ectl+"\n"+enl+"\nglobal/push.md\n"+q+"\n" {
+		t.Errorf("grep -l: %q %q", out, errs)
 	}
 }
 
