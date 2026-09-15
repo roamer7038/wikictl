@@ -495,6 +495,35 @@ func TestMvKeepsLineEndings(t *testing.T) {
 	}
 }
 
+// TestLintDirs checks that lint checks the pages under a directory
+// recursively, and each page once when the arguments overlap.
+func TestLintDirs(t *testing.T) {
+	cfg := setup(t)
+	runCLI(t, cfg, "# a\n", "put", "global/sub/a.md")
+	runCLI(t, cfg, "# b\n", "put", "projects/app/b.md")
+	runCLI(t, cfg, "png", "put", "machines/raw/img.png")
+	for _, c := range []struct {
+		args []string
+		code int
+		out  string
+	}{
+		{[]string{"global"}, 4, "global/sub/a.md:1: missing_summary: frontmatter is missing\n"},
+		{[]string{"/global/", "projects/app/x.md"}, 4, "global/sub/a.md:1: missing_summary: frontmatter is missing\n"},
+		{[]string{"global", "global/sub/a.md"}, 4, "global/sub/a.md:1: missing_summary: frontmatter is missing\n"},
+		{[]string{"projects", "global/push.md"}, 4, "projects/app/b.md:1: missing_summary: frontmatter is missing\n"},
+		{[]string{"machines"}, 0, ""},
+		{[]string{"machines/raw"}, 0, ""},
+		{[]string{"global/none"}, 1, ""},
+	} {
+		if code, out, _ := runCLI(t, cfg, "", append([]string{"lint"}, c.args...)...); code != c.code || out != c.out {
+			t.Errorf("lint %v: code=%d out=%q", c.args, code, out)
+		}
+	}
+	if _, _, errs := runCLI(t, cfg, "", "lint", "global", "global/none"); errs != "wikictl: page not found: global/none\n" {
+		t.Errorf("lint of a missing path: errs=%q", errs)
+	}
+}
+
 // TestLintLinksNotLast checks that lint reports a Links heading that is
 // followed by another heading.
 func TestLintLinksNotLast(t *testing.T) {
