@@ -255,17 +255,17 @@ func TestNonRegularFiles(t *testing.T) {
 	object := func(p string) string { return gitOut(t, "--git-dir", remote, "rev-parse", "main:"+p) }
 	linkObject, dirLinkObject := object("global/link.md"), object("tools/push.md")
 
-	// A moved symbolic link keeps its mode and target, and links to it are
-	// rewritten in pages that keep their mode.
-	for _, args := range [][]string{{"mv", "global/link.md", "projects/link.md"}, {"mv", "tools", "bin"}} {
+	// A symbolic link moved to a new name keeps its mode and target, gets no
+	// alias, and links to it are rewritten in pages that keep their mode.
+	for _, args := range [][]string{{"mv", "global/link.md", "projects/link2.md"}, {"mv", "tools", "bin"}} {
 		if code, _, errs := runCLI(t, cfg, "", args...); code != 0 {
 			t.Fatalf("%v: code=%d %s", args, code, errs)
 		}
 	}
-	if m, o := mode("projects/link.md"), object("projects/link.md"); m != "120000" || o != linkObject {
+	if m, o := mode("projects/link2.md"), object("projects/link2.md"); m != "120000" || o != linkObject {
 		t.Errorf("moved symbolic link: mode %q, object %s, want %s", m, o, linkObject)
 	}
-	if m, b := mode("global/exec.md"), blob("global/exec.md"); m != "100755" || !strings.Contains(b, "[l](../projects/link.md)") {
+	if m, b := mode("global/exec.md"), blob("global/exec.md"); m != "100755" || !strings.Contains(b, "[l](../projects/link2.md)") {
 		t.Errorf("rewritten executable page: mode %q, content %q", m, b)
 	}
 	if m1, m2, o := mode("bin/run.sh"), mode("bin/push.md"), object("bin/push.md"); m1 != "100755" || m2 != "120000" || o != dirLinkObject {
@@ -276,7 +276,7 @@ func TestNonRegularFiles(t *testing.T) {
 	}
 
 	for p, want := range map[string]string{
-		"projects/link.md":    "wikictl: projects/link.md: is a symbolic link\n",
+		"projects/link2.md":    "wikictl: projects/link2.md: is a symbolic link\n",
 		"global/linkdir/x.md": "wikictl: global/linkdir/x.md: global/linkdir is a file\n",
 	} {
 		if code, _, errs := runCLI(t, cfg, "x", "put", p); code != ExitError || !strings.HasSuffix(errs, want) {
@@ -291,7 +291,7 @@ func TestNonRegularFiles(t *testing.T) {
 	if m := mode("global/sub"); m != "160000" {
 		t.Errorf("submodule after a refused mv: mode %q", m)
 	}
-	if code, _, errs := runCLI(t, cfg, "", "rm", "-r", "global/sub", "projects/link.md", "mods"); code != 0 || mode("global/sub")+mode("projects/link.md")+mode("mods/lib/sub") != "" {
+	if code, _, errs := runCLI(t, cfg, "", "rm", "-r", "global/sub", "projects/link2.md", "mods"); code != 0 || mode("global/sub")+mode("projects/link2.md")+mode("mods/lib/sub") != "" {
 		t.Errorf("rm of submodules and a symbolic link: code=%d %s", code, errs)
 	}
 }
