@@ -213,8 +213,9 @@ func TestWriteOverDirectoryOrFile(t *testing.T) {
 			t.Errorf("%v: code=%d errs=%q", c.args, code, errs)
 		}
 	}
-	// A path at the root that is not a directory is still a file at the root.
-	for _, p := range []string{"README.md", "newtop"} {
+	// A path at the root that is not a directory is still a file at the root,
+	// and a file that is not a page follows the name rules of pages.
+	for _, p := range []string{"README.md", "newtop", "global/a b.txt", "global/.hidden"} {
 		if code, _, errs := runCLI(t, cfg, "x", "put", p); code != ExitInvalid || !strings.Contains(errs, "bad_path: ") {
 			t.Errorf("put %s: code=%d errs=%q", p, code, errs)
 		}

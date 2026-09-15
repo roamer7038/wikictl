@@ -94,7 +94,17 @@ func TestEveryCommandHasHelp(t *testing.T) {
 			}
 		}
 	}
-	if _, out, _ := runNoConfig(t, "put", "-h"); !strings.Contains(out, "--base <sha>") || !strings.Contains(out, "-m, --message <message>") {
-		t.Errorf("put help must list flags: %q", out)
+	if code, out, _ := runNoConfig(t, "put", "-h"); code != ExitOK || !strings.Contains(out, "--base <sha>") || !strings.Contains(out, "-m, --message <message>") {
+		t.Errorf("put -h must list flags: code=%d out=%q", code, out)
+	}
+	if code, out, _ := runNoConfig(t, "links", "-h"); code != ExitOK || !strings.Contains(out, "Usage: wikictl links [flags] <path>") {
+		t.Errorf("links -h: code=%d out=%q", code, out)
+	}
+	// Every issue code that lint reports is described in its help.
+	_, out, _ := runNoConfig(t, "help", "lint")
+	for _, code := range []string{"missing_summary", "frontmatter_invalid", "links_syntax", "bad_path", "name_style", "case_collision", "page_too_large", "broken_link"} {
+		if !strings.Contains(out, code) {
+			t.Errorf("help lint must describe %s", code)
+		}
 	}
 }
