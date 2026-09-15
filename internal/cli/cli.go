@@ -395,7 +395,8 @@ type app struct {
 	allMatch     bool
 	patterns     []string
 
-	find *findQuery
+	find    *findQuery
+	cleaned []string // the paths cleaned by the check of grep and mv
 }
 
 // globalFlags registers the flags accepted before or after the command name.

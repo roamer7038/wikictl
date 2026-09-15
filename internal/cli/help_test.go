@@ -80,6 +80,18 @@ func TestUsageErrorsNeedNoConfig(t *testing.T) {
 	if code != ExitUsage || !strings.Contains(errs, "missing pattern") || !strings.Contains(errs, "Usage: wikictl grep") {
 		t.Errorf("grep without a pattern: code=%d errs=%q", code, errs)
 	}
+	for _, args := range [][]string{
+		{"grep", "foo", "../x"},
+		{"grep", "-e", "foo", "../x"},
+		{"mv", "a/b.md", "../x"},
+		{"mv", "../x", "a/"},
+		{"mv", "-t", "../x", "a.md"},
+	} {
+		code, _, errs := runNoConfig(t, args...)
+		if code != ExitInvalid || !strings.Contains(errs, "bad_path") {
+			t.Errorf("%v: code=%d errs=%q", args, code, errs)
+		}
+	}
 	code, _, errs = runNoConfig(t, "tree", "-L", "0")
 	if code != ExitUsage || !strings.Contains(errs, "Usage: wikictl tree") {
 		t.Errorf("tree -L 0: code=%d errs=%q", code, errs)

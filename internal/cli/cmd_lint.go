@@ -13,7 +13,7 @@ import (
 )
 
 func (a *app) cmdLint(c *command, args []string) error {
-	all, err := a.repo.List(nil)
+	all, err := a.repo.List()
 	if err != nil {
 		return &gitError{err}
 	}

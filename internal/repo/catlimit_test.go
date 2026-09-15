@@ -21,9 +21,8 @@ func TestStatAndCatLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h, _ := r.Head()
-	bigSHA, _ := r.BlobSHA(h, "global/big.md")
-	if len(st) != 3 || st["global/big.md"] != (Object{SHA: bigSHA, Size: 101}) || st["global/limit.md"].Size != 100 {
+	bigSHA, _ := r.Git("rev-parse", r.readRef()+":global/big.md")
+	if len(st) != 3 || st["global/big.md"] != (Object{SHA: strings.TrimSpace(bigSHA), Size: 101}) || st["global/limit.md"].Size != 100 {
 		t.Errorf("stat=%v", st)
 	}
 
