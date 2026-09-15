@@ -264,24 +264,30 @@ func (r *Repo) Stat(paths []string) (map[string]Object, error) {
 
 // CatLimit returns the contents of the files of at most max bytes. It finds
 // the sizes with Stat first; the files over max are returned in large, and
-// their contents are not read.
+// their contents are not read. Paths that do not exist or are not files are
+// absent from the result; a path that is a blob the mirror cannot read is an
+// error, as CheckMissing reports it.
 func (r *Repo) CatLimit(paths []string, max int64) (contents map[string][]byte, large map[string]Object, err error) {
 	objs, err := r.Stat(paths)
 	if err != nil {
 		return nil, nil, err
 	}
 	contents, large = map[string][]byte{}, map[string]Object{}
-	var small, shas []string
+	var small, shas, absent []string
 	for _, p := range paths {
 		o, ok := objs[p]
 		switch {
 		case !ok:
+			absent = append(absent, p)
 		case o.Size > max:
 			large[p] = o
 		default:
 			small = append(small, p)
 			shas = append(shas, o.SHA)
 		}
+	}
+	if err := r.CheckMissing(absent); err != nil {
+		return nil, nil, err
 	}
 	ents, err := r.catFile(shas, true)
 	if err != nil {
@@ -444,7 +450,7 @@ func (r *Repo) treeEntry(head, path string) (typ, sha string, err error) {
 	return "", "", nil
 }
 
-// CheckMissing is called for paths that CatSHA or CatLimit did not return. It
+// CheckMissing is called for paths that CatSHA or Stat did not return. It
 // returns an error when git cannot tell whether a path exists at the commit
 // that reads use, or when a path is a blob there that the mirror cannot read;
 // cat-file --batch reports both as "missing". A path that does not exist or is

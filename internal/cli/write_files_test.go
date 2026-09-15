@@ -160,6 +160,25 @@ func TestMvArguments(t *testing.T) {
 	if code, _, _ := runCLI(t, cfg, "", "stat", "machines/global/push.md", "machines/global/index.md"); code != 0 {
 		t.Error("the directory was not moved with all its files")
 	}
+
+	// A source whose target was already moved to by an earlier source is not replacing.
+	code, _, errs = runCLI(t, cfg, "", "mv", "machines/h1/y.md", "projects/app/y.md", "projects")
+	if code != ExitError || errs != "wikictl: projects/y.md: not replacing\n" {
+		t.Errorf("mv of sources with the same name: code=%d errs=%q", code, errs)
+	}
+	if code, _, _ := runCLI(t, cfg, "", "stat", "projects/y.md", "projects/app/y.md"); code != 0 {
+		t.Error("the first source was not moved, or the second was")
+	}
+
+	// A directory given after a file in it moves the other files, and its parent
+	// given after them is reported as missing.
+	code, _, errs = runCLI(t, cfg, "", "mv", "-t", "projects/app", "machines/global/index.md", "machines/global", "machines")
+	if code != ExitError || errs != "wikictl: machines: no such file or directory\n" {
+		t.Errorf("mv of directories after their files: code=%d errs=%q", code, errs)
+	}
+	if code, _, _ := runCLI(t, cfg, "", "stat", "projects/app/index.md", "projects/app/global/push.md", "projects/app/global/img/logo.png"); code != 0 {
+		t.Error("the files were not moved")
+	}
 }
 
 func TestCommitMessage(t *testing.T) {
