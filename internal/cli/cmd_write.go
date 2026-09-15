@@ -445,6 +445,18 @@ func (a *app) moveChanges(mapping, modes map[string]string) ([]repo.Change, int,
 			return nil, 0, &gitError{err}
 		}
 	}
+	// A symbolic link named like a page is moved like a page, so that links to
+	// it are rewritten, but its target is kept as it is.
+	var symlinks []string
+	for f := range pages {
+		if modes[f] == "120000" {
+			symlinks = append(symlinks, f)
+		}
+	}
+	targetsOf, _, err := a.repo.CatSHA(symlinks)
+	if err != nil {
+		return nil, 0, &gitError{err}
+	}
 	targets := map[string]string{}
 	for f, np := range pages {
 		targets[np] = f
@@ -459,6 +471,8 @@ func (a *app) moveChanges(mapping, modes map[string]string) ([]repo.Change, int,
 		case ch.Delete:
 		case !moved:
 			rewritten++
+		case modes[from] == "120000":
+			changes[i].Content = targetsOf[from]
 		case strings.TrimSuffix(path.Base(from), ".md") != strings.TrimSuffix(path.Base(ch.Path), ".md"):
 			changes[i].Content = page.AddAlias(ch.Content, strings.TrimSuffix(path.Base(from), ".md"))
 		}

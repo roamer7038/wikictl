@@ -252,6 +252,8 @@ func TestNonRegularFiles(t *testing.T) {
 		return ""
 	}
 	blob := func(p string) string { return gitOut(t, "--git-dir", remote, "cat-file", "-p", "main:"+p) }
+	object := func(p string) string { return gitOut(t, "--git-dir", remote, "rev-parse", "main:"+p) }
+	linkObject, dirLinkObject := object("global/link.md"), object("tools/push.md")
 
 	// A moved symbolic link keeps its mode and target, and links to it are
 	// rewritten in pages that keep their mode.
@@ -260,14 +262,14 @@ func TestNonRegularFiles(t *testing.T) {
 			t.Fatalf("%v: code=%d %s", args, code, errs)
 		}
 	}
-	if m, target := mode("projects/link.md"), blob("projects/link.md"); m != "120000" || target != "push.md" {
-		t.Errorf("moved symbolic link: mode %q, target %q", m, target)
+	if m, o := mode("projects/link.md"), object("projects/link.md"); m != "120000" || o != linkObject {
+		t.Errorf("moved symbolic link: mode %q, object %s, want %s", m, o, linkObject)
 	}
 	if m, b := mode("global/exec.md"), blob("global/exec.md"); m != "100755" || !strings.Contains(b, "[l](../projects/link.md)") {
 		t.Errorf("rewritten executable page: mode %q, content %q", m, b)
 	}
-	if m1, m2 := mode("bin/run.sh"), mode("bin/push.md"); m1 != "100755" || m2 != "120000" {
-		t.Errorf("moved directory: modes %q and %q", m1, m2)
+	if m1, m2, o := mode("bin/run.sh"), mode("bin/push.md"), object("bin/push.md"); m1 != "100755" || m2 != "120000" || o != dirLinkObject {
+		t.Errorf("moved directory: modes %q and %q, link object %s, want %s", m1, m2, o, dirLinkObject)
 	}
 	if code, _, errs := runCLI(t, cfg, "#!/bin/sh\necho hi\n", "put", "--base", shaOf(t, cfg, "bin/run.sh"), "bin/run.sh"); code != 0 || mode("bin/run.sh") != "100755" {
 		t.Errorf("put over an executable: code=%d mode %q %s", code, mode("bin/run.sh"), errs)
