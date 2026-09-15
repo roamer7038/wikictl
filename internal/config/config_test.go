@@ -147,6 +147,15 @@ func TestProfileErrors(t *testing.T) {
 	if _, err := Load(p, Selector{}); err == nil {
 		t.Error("a value of the wrong type must error")
 	}
+	os.WriteFile(p, []byte("repo: r\nprofiles:\n  a: {match: {remotes: r}}\n"), 0o600)
+	if _, err := Load(p, Selector{}); err == nil {
+		t.Error("a profile value of the wrong type must error")
+	}
+	// A misspelled key is reported with the error that it causes.
+	os.WriteFile(p, []byte("reop: r\n"), 0o600)
+	if c, err := Load(p, Selector{}); err == nil || c == nil || len(c.Warnings) != 1 || !strings.Contains(c.Warnings[0], `unknown key "reop"`) {
+		t.Errorf("warnings must come with the error: %+v %v", c, err)
+	}
 
 	for _, rel := range []string{".", "work"} {
 		os.WriteFile(p, []byte("repo: r\nprofiles:\n  a: {match: {paths: [\""+rel+"\"]}}\n"), 0o600)

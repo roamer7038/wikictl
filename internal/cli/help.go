@@ -34,7 +34,8 @@ written as commits pushed with --force-with-lease.`
 const outputHelp = `Output:
   Text goes to standard output; with --json every command except help prints
   one JSON object, whose fields "wikictl help <command>" lists. Warnings go to
-  standard error as "wikictl: warning: <path>:<line>: <code>: <message>".
+  standard error as "wikictl: warning: <path>:<line>: <code>: <message>", or
+  "wikictl: warning: config file <path>: <message>" for the configuration.
   Errors go to standard error as "wikictl: <message>", or with --json to
   standard output as {"error": "<kind>", "message": "..."}, where <kind> is
   error, usage, conflict, invalid or git. In text output, control characters

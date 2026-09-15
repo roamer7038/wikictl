@@ -81,6 +81,8 @@ func DefaultPath() string {
 // Load reads the configuration from explicit, or $WIKICTL_CONFIG, or
 // DefaultPath, and applies the profile chosen by sel: --profile, then
 // $WIKICTL_PROFILE, then match, then default_profile.
+// When the file is read but the configuration is invalid, the returned
+// Config is not nil and holds the warnings, which may explain the error.
 func Load(explicit string, sel Selector) (*Config, error) {
 	p := explicit
 	if p == "" {
@@ -109,21 +111,21 @@ func Load(explicit string, sel Selector) (*Config, error) {
 		c.Warnings = append(c.Warnings, fmt.Sprintf("config file %s: unknown key %q is ignored", p, k))
 	}
 	if err := c.selectProfile(sel); err != nil {
-		return nil, fmt.Errorf("config file %s: %w", p, err)
+		return c, fmt.Errorf("config file %s: %w", p, err)
 	}
 	if c.Repo == "" {
 		switch {
 		case c.Profile != "":
-			return nil, fmt.Errorf("config file %s: repo is not set for profile %s", p, c.Profile)
+			return c, fmt.Errorf("config file %s: repo is not set for profile %s", p, c.Profile)
 		case len(c.Profiles) > 0:
-			return nil, fmt.Errorf("config file %s: repo is not set and no profile is selected; pass --profile, set WIKICTL_PROFILE, or add match or default_profile", p)
+			return c, fmt.Errorf("config file %s: repo is not set and no profile is selected; pass --profile, set WIKICTL_PROFILE, or add match or default_profile", p)
 		}
-		return nil, fmt.Errorf("config file %s: repo is not set", p)
+		return c, fmt.Errorf("config file %s: repo is not set", p)
 	}
 	if isRelativeLocal(c.Repo) {
 		abs, err := filepath.Abs(p)
 		if err != nil {
-			return nil, fmt.Errorf("config file %s: %w", p, err)
+			return c, fmt.Errorf("config file %s: %w", p, err)
 		}
 		c.Repo = filepath.Join(filepath.Dir(abs), c.Repo)
 	}
