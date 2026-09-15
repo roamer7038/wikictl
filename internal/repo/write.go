@@ -123,8 +123,14 @@ type treeEntry struct{ mode, typ, sha string }
 // the directories that hold them; ls-tree reads no blob, and fails when a
 // tree it lists cannot be read. An absent path has no entry. A directory that
 // ls-tree descends into instead of listing is known as a tree by the entries
-// below it.
+// below it. A path with a newline or NUL, which ls-tree and update-index
+// cannot take, is an error.
 func (r *Repo) entries(head string, changes []Change) (map[string]treeEntry, error) {
+	for _, c := range changes {
+		if strings.ContainsAny(c.Path, "\n\x00") {
+			return nil, fmt.Errorf("path %q contains a newline or NUL", c.Path)
+		}
+	}
 	res := map[string]treeEntry{}
 	if head == "" || len(changes) == 0 {
 		return res, nil
@@ -144,9 +150,6 @@ func (r *Repo) entries(head string, changes []Change) (map[string]treeEntry, err
 		}
 	}
 	for _, c := range changes {
-		if strings.ContainsAny(c.Path, "\n\x00") {
-			return nil, fmt.Errorf("path %q contains a newline or NUL", c.Path)
-		}
 		list(c.Path)
 		if !c.Delete {
 			for d := path.Dir(c.Path); d != "."; d = path.Dir(d) {
@@ -230,11 +233,6 @@ func (r *Repo) conflict(path, reason, sha string) error {
 // and pushes it. retry is true when the push was rejected because another push
 // moved or locked the remote branch.
 func (r *Repo) buildAndPush(head string, changes []Change, msg string, au Author) (res *Result, retry bool, err error) {
-	for _, c := range changes {
-		if strings.ContainsAny(c.Path, "\n\x00") {
-			return nil, false, fmt.Errorf("path %q contains a newline or NUL", c.Path)
-		}
-	}
 	// The index lives in a new directory inside the mirror, where no other
 	// user or process can create or replace it.
 	idxDir, err := os.MkdirTemp(r.Dir, "wikictl-index-*")
