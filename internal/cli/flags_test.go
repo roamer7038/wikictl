@@ -25,7 +25,7 @@ func TestBareWordsAreNotGlobalFlags(t *testing.T) {
 	if code, _, errs := runCLI(t, cfg, "", "grep", "lease", "version"); code != ExitUsage || errs != "wikictl: version: no such file or directory\n" {
 		t.Errorf("grep lease version: code=%d errs=%q", code, errs)
 	}
-	if code, _, errs := runCLI(t, cfg, "", "ls", "json"); code != ExitError || errs != "wikictl: json: no such file\n" {
+	if code, _, errs := runCLI(t, cfg, "", "ls", "json"); code != ExitError || errs != "wikictl: json: no such file or directory\n" {
 		t.Errorf("ls json: code=%d errs=%q", code, errs)
 	}
 	code, _, errs := runCLI(t, cfg, "---\nsummary: k\n---\n# k\n", "put", "-m", "json", "global/k.md")

@@ -100,6 +100,8 @@ func TestGitFailure(t *testing.T) {
 		{"rm/files", gitFault{match: " ls-tree -r -z "}, "", []string{"rm", "global/push.md"}, ExitGit},
 		{"mv/cat", gitFault{match: " cat-file --batch "}, "", []string{"mv", "global/push.md", "global/push2.md"}, ExitGit},
 		{"mv/files", gitFault{match: " ls-tree -r -z "}, "", []string{"mv", "projects/app", "projects/app2"}, ExitGit},
+		{"put/directory at the root", gitFault{match: " ls-tree -r -z "}, "x", []string{"put", "global"}, ExitGit},
+		{"edit/directory at the root", gitFault{match: " ls-tree -r -z "}, "", []string{"edit", "global"}, ExitGit},
 		{"put/link targets", gitFault{match: " cat-file --batch-check "}, newPage, []string{"put", "global/new.md"}, ExitGit},
 		{"put/head", gitFault{match: head}, newPage, []string{"put", "global/new.md"}, ExitGit},
 		{"put/sha", gitFault{match: " ls-tree -z "}, newPage, []string{"put", "global/push.md"}, ExitGit},
@@ -111,6 +113,9 @@ func TestGitFailure(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			cfg := setup(t)
+			if c.args[0] == "edit" {
+				editWith(t, "exit 7\n")
+			}
 			injectGitFault(t, c.fault)
 			code, out, errs := runCLI(t, cfg, c.stdin, append([]string{"--json"}, c.args...)...)
 			if code != c.code {
@@ -171,7 +176,7 @@ func mirrorObject(t *testing.T, mirror, path string) string {
 // on stderr while grep may still exit with 0, cat-file --batch reports it as
 // "missing" like an absent page, and "rev-parse <commit>:<path>" exits with 1
 // like an absent path. Every command must exit with 5 instead of printing a
-// partial result, "page not found" or a conflict.
+// partial result, "no such file or directory" or a conflict.
 func TestUnreadableObject(t *testing.T) {
 	newPage := "---\nsummary: new\n---\n# New\n"
 	cases := []struct {

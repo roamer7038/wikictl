@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -53,6 +54,10 @@ func (a *app) cmdCat(c *command, args []string) error {
 	if err != nil {
 		return err
 	}
+	msg, err := a.fileMessage(missing)
+	if err != nil {
+		return err
+	}
 	items := []catItem{}
 	for _, p := range args {
 		if b, ok := contents[p]; ok {
@@ -64,7 +69,7 @@ func (a *app) cmdCat(c *command, args []string) error {
 			io.WriteString(w, it.Content)
 		}
 	})
-	return a.reportMissing(missing)
+	return a.reportMissing(missing, msg)
 }
 
 type statItem struct {
@@ -87,6 +92,10 @@ func (a *app) cmdStat(c *command, args []string) error {
 		return &gitError{err}
 	}
 	missing, err := a.missing(args, func(p string) bool { _, ok := objs[p]; return ok })
+	if err != nil {
+		return err
+	}
+	msg, err := a.fileMessage(missing)
 	if err != nil {
 		return err
 	}
@@ -122,7 +131,7 @@ func (a *app) cmdStat(c *command, args []string) error {
 				escapeControl(strings.Join(it.Tags, ", ")), escapeControl(it.Status), escapeControl(strings.Join(it.Aliases, ", ")))
 		}
 	})
-	return a.reportMissing(missing)
+	return a.reportMissing(missing, msg)
 }
 
 // stringList returns the strings of a frontmatter value written as a YAML
@@ -142,6 +151,9 @@ func stringList(v any) []string {
 	return out
 }
 
+// noSuchFile is the message for a path that does not exist.
+const noSuchFile = "no such file or directory"
+
 // missing returns the paths for which found is false, after checking with
 // git that each of them is absent rather than unreadable.
 func (a *app) missing(paths []string, found func(string) bool) ([]string, error) {
@@ -157,11 +169,35 @@ func (a *app) missing(paths []string, found func(string) bool) ([]string, error)
 	return out, nil
 }
 
-// reportMissing prints a line on standard error for each path that is not a
-// file, and returns exit status 1 when there is any.
-func (a *app) reportMissing(paths []string) error {
+// fileMessage returns the message for reportMissing of paths that are not
+// files where a file is required: "is a directory" for a directory, else
+// noSuchFile.
+func (a *app) fileMessage(paths []string) (func(string) string, error) {
+	var files []string
+	if len(paths) > 0 {
+		var err error
+		if files, err = a.repo.Files(paths); err != nil {
+			return nil, &gitError{err}
+		}
+	}
+	return func(p string) string {
+		if p == "." || slices.ContainsFunc(files, func(f string) bool { return strings.HasPrefix(f, p+"/") }) {
+			return "is a directory"
+		}
+		return noSuchFile
+	}, nil
+}
+
+// reportMissing prints "wikictl: <path>: <message>" on standard error for each
+// path, with the message that msg returns for it, or noSuchFile when msg is
+// nil, and returns exit status 1 when there is any path.
+func (a *app) reportMissing(paths []string, msg func(string) string) error {
 	for _, p := range paths {
-		fmt.Fprintf(a.stderr, "wikictl: %s: no such file\n", escapeControl(p))
+		m := noSuchFile
+		if msg != nil {
+			m = msg(p)
+		}
+		fmt.Fprintf(a.stderr, "wikictl: %s: %s\n", escapeControl(p), m)
 	}
 	if len(paths) > 0 {
 		return exitStatus(ExitError)
@@ -191,7 +227,15 @@ func (a *app) cmdLinks(c *command, args []string) error {
 		return &gitError{err}
 	}
 	if !pages.exists(p) {
-		return a.notFound(p)
+		if err := a.repo.CheckMissing(args); err != nil {
+			return &gitError{err}
+		}
+		msg, err := a.fileMessage(args)
+		if err != nil {
+			return err
+		}
+		a.emit(map[string]any{"items": []linkItem{}}, nil)
+		return a.reportMissing(args, msg)
 	}
 	both := a.linksIn == a.linksOut
 	items := []linkItem{}

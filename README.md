@@ -169,7 +169,7 @@ The profile is chosen by `--profile`, else `$WIKICTL_PROFILE`, else `match` (the
 | 1 | error, for example a missing page |
 | 2 | usage or configuration error |
 | 3 | conflict: the page already exists, or changed or was deleted since it was read |
-| 4 | the page or path violates the wiki format; `lint` exits with 4 on any finding |
+| 4 | the page or path violates the wiki format; `lint` exits with 4 on any finding, or with 1 when a path does not exist |
 | 5 | a git command failed, while reading or writing |
 
 ## Mirror
