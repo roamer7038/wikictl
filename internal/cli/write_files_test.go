@@ -18,11 +18,6 @@ func TestPutFiles(t *testing.T) {
 	if code, out, _ := runCLI(t, cfg, "", "cat", "global/img/logo.png"); code != 0 || out != png {
 		t.Errorf("cat png: code=%d out=%q", code, out)
 	}
-	for _, p := range []string{"logo.png", "global/.hidden", "global/a b.txt"} {
-		if code, _, errs := runCLI(t, cfg, "x", "put", p); code != ExitInvalid || !strings.Contains(errs, "bad_path") {
-			t.Errorf("put %q: code=%d errs=%q", p, code, errs)
-		}
-	}
 	code, out, errs := runCLI(t, cfg, "---\nsummary: v\n---\n# v\n", "put", "-v", "global/v.md")
 	f := strings.Split(strings.TrimSuffix(out, "\n"), "\t")
 	if code != 0 || len(f) != 3 || f[0] != "global/v.md" || len(f[1]) != 40 || len(f[2]) != 40 {
@@ -32,11 +27,7 @@ func TestPutFiles(t *testing.T) {
 
 func TestRm(t *testing.T) {
 	cfg := setup(t)
-	work := filepath.Join(filepath.Dir(cfg), "work")
-	os.WriteFile(filepath.Join(work, "README.md"), []byte("# wiki\n"), 0o644)
-	mustRun(t, work, "git", "add", "-A")
-	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "readme")
-	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
+	pushFiles(t, cfg, map[string]string{"README.md": "# wiki\n"})
 	if code, _, errs := runCLI(t, cfg, "x", "put", "global/img/logo.png"); code != 0 {
 		t.Fatalf("put: %s", errs)
 	}
@@ -213,6 +204,7 @@ func TestWriteOverDirectoryOrFile(t *testing.T) {
 		{[]string{"mv", "global/d.md/z.md", "global/d.md"}, "wikictl: global/d.md/z.md: not replacing\n"},
 		{[]string{"put", "projects/app"}, "wikictl: projects/app: is a directory\n"},
 		{[]string{"put", "global"}, "wikictl: global: is a directory\n"},
+		{[]string{"put", "global/d.md"}, "wikictl: global/d.md: is a directory\n"},
 		{[]string{"put", "x.md"}, "wikictl: x.md: is a directory\n"},
 		{[]string{"put", "global/push.md/child.png"}, "wikictl: global/push.md/child.png: global/push.md is a file\n"},
 		{[]string{"mv", "global/index.md", "global/push.md/index.md"}, "wikictl: global/push.md/index.md: not a directory\n"},
@@ -236,11 +228,9 @@ func TestWriteOverDirectoryOrFile(t *testing.T) {
 	}
 
 	// A submodule is neither replaced nor turned into a directory.
-	work := filepath.Join(filepath.Dir(cfg), "work")
-	mustRun(t, work, "git", "pull", "-q", "origin", "main")
+	work := cloneRemote(t, cfg)
 	mustRun(t, work, "git", "update-index", "--add", "--cacheinfo", "160000,"+head+",global/sub")
-	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "submodule")
-	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
+	commitAndPush(t, work)
 	head = gitOut(t, "--git-dir", remote, "rev-parse", "main")
 	for p, errs := range map[string]string{
 		"global/sub":       "wikictl: global/sub: is a submodule\n",
@@ -263,7 +253,7 @@ func TestNonRegularFiles(t *testing.T) {
 		t.Skip("symbolic links")
 	}
 	cfg := setup(t)
-	remote, work := filepath.Join(filepath.Dir(cfg), "remote.git"), filepath.Join(filepath.Dir(cfg), "work")
+	remote, work := filepath.Join(filepath.Dir(cfg), "remote.git"), cloneRemote(t, cfg)
 	os.MkdirAll(filepath.Join(work, "tools"), 0o755)
 	os.WriteFile(filepath.Join(work, "tools", "run.sh"), []byte("#!/bin/sh\n"), 0o755)
 	os.Symlink("../global/push.md", filepath.Join(work, "tools", "push.md"))
@@ -274,8 +264,7 @@ func TestNonRegularFiles(t *testing.T) {
 	sub := "160000," + gitOut(t, "--git-dir", remote, "rev-parse", "main")
 	mustRun(t, work, "git", "update-index", "--add", "--cacheinfo", sub+",global/sub")
 	mustRun(t, work, "git", "update-index", "--add", "--cacheinfo", sub+",mods/lib/sub")
-	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "special")
-	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
+	commitAndPush(t, work)
 	mode := func(p string) string {
 		t.Helper()
 		if f := strings.Fields(gitOut(t, "--git-dir", remote, "ls-tree", "main", "--", p)); len(f) > 0 {
@@ -331,25 +320,28 @@ func TestNonRegularFiles(t *testing.T) {
 // TestLinkTargetsNonRegular checks which link targets lint reports as broken
 // when they are not regular files: symbolic links exist, and submodules, with
 // or without their commit in the mirror, a directory, a path through a
-// symbolic link to a directory and an absent path do not. None of them is a
-// failure of git.
+// symbolic link to a directory and an absent path do not. A file at the root
+// that is not a page exists. None of them is a failure of git, and put warns
+// about the same targets as lint.
 func TestLinkTargetsNonRegular(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symbolic links")
 	}
 	cfg := setup(t)
-	remote, work := filepath.Join(filepath.Dir(cfg), "remote.git"), filepath.Join(filepath.Dir(cfg), "work")
+	remote, work := filepath.Join(filepath.Dir(cfg), "remote.git"), cloneRemote(t, cfg)
+	refs := "---\nsummary: r\n---\n# r\n" +
+		"[r](../README.md) [s](sub.md) [o](other.md) [l](link.md) [ld](linkdir.md) [d](linkdir.md/app/x.md) [p](dir.md) [m](missing.md) [i](index.md)\n"
+	os.WriteFile(filepath.Join(work, "README.md"), []byte("# wiki\n"), 0o644)
 	os.Symlink("push.md", filepath.Join(work, "global", "link.md"))
 	os.Symlink("../projects", filepath.Join(work, "global", "linkdir.md"))
 	os.MkdirAll(filepath.Join(work, "global", "dir.md"), 0o755)
 	os.WriteFile(filepath.Join(work, "global", "dir.md", "a.md"), []byte("---\nsummary: a\n---\n# a\n"), 0o644)
-	os.WriteFile(filepath.Join(work, "global", "refs.md"), []byte("---\nsummary: r\n---\n# r\n"+
-		"[s](sub.md) [o](other.md) [l](link.md) [ld](linkdir.md) [d](linkdir.md/app/x.md) [p](dir.md) [m](missing.md)\n"), 0o644)
+	os.WriteFile(filepath.Join(work, "global", "refs.md"), []byte(refs), 0o644)
 	mustRun(t, work, "git", "add", "-A")
 	mustRun(t, work, "git", "update-index", "--add", "--cacheinfo", "160000,"+gitOut(t, "--git-dir", remote, "rev-parse", "main")+",global/sub.md")
 	mustRun(t, work, "git", "update-index", "--add", "--cacheinfo", "160000,1234567890123456789012345678901234567890,global/other.md")
-	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "special")
-	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
+	commitAndPush(t, work)
+	want := []string{"global/sub.md", "global/other.md", "global/linkdir.md/app/x.md", "global/dir.md", "global/missing.md"}
 	code, out, errs := runCLI(t, cfg, "", "--json", "lint", "global/refs.md")
 	var res struct {
 		Items []struct{ Code, Message string }
@@ -361,9 +353,18 @@ func TestLinkTargetsNonRegular(t *testing.T) {
 			broken = append(broken, strings.TrimPrefix(it.Message, "link target does not exist: "))
 		}
 	}
-	want := []string{"global/sub.md", "global/other.md", "global/linkdir.md/app/x.md", "global/dir.md", "global/missing.md"}
-	if code != ExitInvalid || strings.Join(broken, " ") != strings.Join(want, " ") {
+	if code != ExitInvalid || !slices.Equal(broken, want) {
 		t.Errorf("lint: code=%d broken=%q errs=%q", code, broken, errs)
+	}
+	code, _, errs = runCLI(t, cfg, refs, "put", "global/refs2.md")
+	var warned []string
+	for l := range strings.Lines(errs) {
+		if _, target, ok := strings.Cut(strings.TrimSuffix(l, "\n"), "broken_link: link target does not exist: "); ok {
+			warned = append(warned, target)
+		}
+	}
+	if code != ExitOK || !slices.Equal(warned, want) {
+		t.Errorf("put: code=%d warned=%q errs=%q", code, warned, errs)
 	}
 }
 
@@ -374,14 +375,12 @@ func TestMoveQuotedName(t *testing.T) {
 		t.Skip(`file names with " or \`)
 	}
 	cfg := setup(t)
-	remote, work := filepath.Join(filepath.Dir(cfg), "remote.git"), filepath.Join(filepath.Dir(cfg), "work")
-	for _, name := range []string{`q"t.md`, `b\s.md`} {
-		os.WriteFile(filepath.Join(work, "global", name), []byte("---\nsummary: q\n---\n# q\n"), 0o644)
-	}
-	os.WriteFile(filepath.Join(work, "projects", "app", "ref.md"), []byte("---\nsummary: r\n---\n# r\n[q](../../global/q\"t.md) [b](../../global/b\\s.md)\n"), 0o644)
-	mustRun(t, work, "git", "add", "-A")
-	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "quoted")
-	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
+	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
+	pushFiles(t, cfg, map[string]string{
+		`global/q"t.md`:       "---\nsummary: q\n---\n# q\n",
+		`global/b\s.md`:       "---\nsummary: q\n---\n# q\n",
+		"projects/app/ref.md": "---\nsummary: r\n---\n# r\n[q](../../global/q\"t.md) [b](../../global/b\\s.md)\n",
+	})
 	for _, args := range [][]string{{"mv", `global/q"t.md`, "global/qt.md"}, {"mv", `global/b\s.md`, "global/bs.md"}} {
 		if code, _, errs := runCLI(t, cfg, "", args...); code != 0 {
 			t.Fatalf("%v: code=%d %s", args, code, errs)

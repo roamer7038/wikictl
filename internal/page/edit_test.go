@@ -122,38 +122,6 @@ func TestRelDest(t *testing.T) {
 	}
 }
 
-func TestRelocateRewritesReferences(t *testing.T) {
-	// A page that stays in place: only links to mapped targets change, and
-	// links inside code fences are left alone.
-	in := "---\nsummary: a\n---\n# t\nsee [y](y.md) and [z](../../global/z.md)\n```\n[y](y.md)\n```\n## Links\n- part_of: [y](y.md) | n\n"
-	out, n := Relocate([]byte(in), "projects/a/x.md", "projects/a/x.md", map[string]string{"projects/a/y.md": "projects/b/y2.md"})
-	want := "---\nsummary: a\n---\n# t\nsee [y](../b/y2.md) and [z](../../global/z.md)\n```\n[y](y.md)\n```\n## Links\n- part_of: [y](../b/y2.md) | n\n"
-	if n != 2 || string(out) != want {
-		t.Errorf("n=%d\n%s", n, out)
-	}
-}
-
-func TestRelocateMovedPage(t *testing.T) {
-	// A page moved from global/ to projects/a/: its own links are re-based
-	// and fragments are preserved.
-	in := "---\nsummary: a\n---\n# t\n[i](index.md) [s](../projects/a/x.md#h)\n"
-	out, n := Relocate([]byte(in), "global/p.md", "projects/a/p.md", nil)
-	want := "---\nsummary: a\n---\n# t\n[i](../../global/index.md) [s](x.md#h)\n"
-	if n != 2 || string(out) != want {
-		t.Errorf("n=%d\n%s", n, out)
-	}
-}
-
-func TestRelocateWithMapper(t *testing.T) {
-	// global/p.md moves to projects/a/p.md while global/q.md moves along with it.
-	in := "---\nsummary: a\n---\n# t\n[q](q.md) [i](index.md)\n"
-	out, n := Relocate([]byte(in), "global/p.md", "projects/a/p.md", map[string]string{"global/q.md": "projects/a/q.md"})
-	want := "---\nsummary: a\n---\n# t\n[q](q.md) [i](../../global/index.md)\n"
-	if n != 1 || string(out) != want {
-		t.Errorf("n=%d\n%s", n, out)
-	}
-}
-
 func TestRelocateKeepsLineEndingsAndBOM(t *testing.T) {
 	for _, tc := range []struct{ name, in, want string }{
 		{"CRLF with BOM",
@@ -230,6 +198,9 @@ func TestRelocateKeepsForm(t *testing.T) {
 			"[i](./index.md) [me](./p.md#top)\n", "[i](./index.md) [me](./p2.md#top)\n", 1},
 		{"moved along", "global/p.md", "projects/a/p.md", map[string]string{"global/p.md": "projects/a/p.md", "global/q.md": "projects/a/q.md"},
 			"[q](./q.md \"t\") [i](index.md)\n", "[q](./q.md \"t\") [i](../../global/index.md)\n", 1},
+		{"target moved to another directory", "projects/a/x.md", "projects/a/x.md", map[string]string{"projects/a/y.md": "projects/b/y2.md"},
+			"# t\nsee [y](y.md) and [z](../../global/z.md)\n```\n[y](y.md)\n```\n## Links\n- part_of: [y](y.md) | n\n",
+			"# t\nsee [y](../b/y2.md) and [z](../../global/z.md)\n```\n[y](y.md)\n```\n## Links\n- part_of: [y](../b/y2.md) | n\n", 2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			out, n := Relocate([]byte(fm+tc.in), tc.from, tc.to, tc.mapping)

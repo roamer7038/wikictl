@@ -117,7 +117,8 @@ func TestParseDescriptionFallback(t *testing.T) {
 
 func TestParseLinksNotLast(t *testing.T) {
 	p := Parse("global/l.md", []byte("---\nsummary: s\n---\n# t\n\n## Links\n- part_of: [i](index.md)\n\n### later\n"))
-	if len(p.Issues) != 1 || p.Issues[0].Code != "links_syntax" || p.Issues[0].Line != 6 || len(p.Links) != 0 {
+	if len(p.Issues) != 1 || p.Issues[0].Code != "links_syntax" || p.Issues[0].Line != 6 || len(p.Links) != 0 ||
+		p.Issues[0].Message != `"## Links" is not the last heading, so the lines after it are not read as links` {
 		t.Errorf("issues=%+v links=%+v", p.Issues, p.Links)
 	}
 	p = Parse("global/l.md", []byte("---\nsummary: s\n---\n# t\n## Links\n## Links\n- part_of: [i](index.md)\n"))
