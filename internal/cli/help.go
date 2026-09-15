@@ -41,7 +41,9 @@ const outputHelp = `Output:
   error, usage, conflict, invalid or git. In text output, control characters
   other than tab in paths, summaries, titles, lint messages, warnings, error
   messages and the attributes and links shown by stat and links are printed as
-  \xNN; JSON output and the files printed by cat are not changed.
+  \xNN, except that a newline in an error or a configuration warning, such as
+  in the output of git, starts a line indented by two spaces; JSON output and
+  the files printed by cat are not changed.
 `
 
 const mirrorHelp = `Mirror:

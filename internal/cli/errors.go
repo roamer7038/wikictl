@@ -127,7 +127,7 @@ func (a *app) report(err error) int {
 		enc.SetEscapeHTML(false)
 		enc.Encode(errorOut{Error: kind, Message: err.Error()})
 	default:
-		fmt.Fprintln(a.stderr, "wikictl: "+escapeControl(err.Error()))
+		fmt.Fprintln(a.stderr, "wikictl: "+escapeMessage(err.Error()))
 		if errors.As(err, &ue) && ue.cmd != nil {
 			fmt.Fprintln(a.stderr, "Usage: "+synopsis(ue.cmd))
 			fmt.Fprintf(a.stderr, "Run \"wikictl help %s\" for details.\n", ue.cmd.name)

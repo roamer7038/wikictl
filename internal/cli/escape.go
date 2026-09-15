@@ -26,3 +26,15 @@ func escapeControl(s string) string {
 	}
 	return b.String()
 }
+
+// escapeMessage is escapeControl for a message that may span several lines,
+// such as git's stderr in an error: each newline is kept and followed by an
+// indent of two spaces, so that no line of the message can pass for a line
+// of wikictl's own output. Trailing newlines are removed.
+func escapeMessage(s string) string {
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	for i, l := range lines {
+		lines[i] = escapeControl(l)
+	}
+	return strings.Join(lines, "\n  ")
+}

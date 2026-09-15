@@ -556,7 +556,7 @@ func (a *app) setup() error {
 	cfg, err := config.Load(a.cfgPath, config.Selector{Profile: a.profile, Dir: dir, Remote: a.remote})
 	if cfg != nil {
 		for _, w := range cfg.Warnings {
-			fmt.Fprintln(a.stderr, "wikictl: warning: "+escapeControl(w))
+			fmt.Fprintln(a.stderr, "wikictl: warning: "+escapeMessage(w))
 		}
 	}
 	if err != nil {

@@ -26,6 +26,19 @@ func TestEscapeControl(t *testing.T) {
 	}
 }
 
+func TestEscapeMessage(t *testing.T) {
+	for in, want := range map[string]string{
+		"one line":                   "one line",
+		"a\nwikictl: b\n":            "a\n  wikictl: b",
+		"x\x1b[2K\r\ny\n\n":          "x\\x1b[2K\\x0d\n  y",
+		"path d/n\nl.md: not a file": "path d/n\n  l.md: not a file",
+	} {
+		if got := escapeMessage(in); got != want {
+			t.Errorf("escapeMessage(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestTextOutputEscapesControl(t *testing.T) {
 	cfg := setup(t)
 	summary := "ok\x1b]52;c;ZWNobyBwd24=\x07\x1b[2K\rfake"
