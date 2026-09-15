@@ -12,11 +12,9 @@ type Line struct {
 	InFence bool
 }
 
-var (
-	reFence   = regexp.MustCompile("^ {0,3}(`{3,}|~{3,})(.*)$")
-	reHeading = regexp.MustCompile(`^#{1,6}\s+(.*?)(?:\s+#+)?\s*$`)
-	reLinksH  = regexp.MustCompile(`^## Links\s*$`)
-)
+// reHeading matches an ATX heading; the first group is its text. isHeading
+// tells whether a line matches it.
+var reHeading = regexp.MustCompile(`^#{1,6}\s+(.*?)(?:\s+#+)?\s*$`)
 
 // scanLines splits body into lines and marks those inside code fences.
 // firstLine is the line number of the first line of body.
@@ -37,8 +35,7 @@ func scanLines(body []byte, firstLine int) []Line {
 	for i, t := range raw {
 		t = strings.TrimRight(t, "\r")
 		in := fence != ""
-		if m := reFence.FindStringSubmatch(t); m != nil {
-			marker, info := m[1], m[2]
+		if marker, info, ok := fenceLine(t); ok {
 			if fence == "" {
 				if marker[0] != '`' || !strings.Contains(info, "`") {
 					fence = marker
@@ -53,7 +50,49 @@ func scanLines(body []byte, firstLine int) []Line {
 	return out
 }
 
-func isHeading(l Line) bool { return !l.InFence && reHeading.MatchString(l.Text) }
+// fenceLine reports whether t, indented by up to three spaces, starts with
+// three or more backticks or tildes. marker is that run of backticks or tildes,
+// and info the rest of t.
+func fenceLine(t string) (marker, info string, ok bool) {
+	i := indent(t)
+	if i < 0 || t[i] != '`' && t[i] != '~' {
+		return "", "", false
+	}
+	j := i
+	for j < len(t) && t[j] == t[i] {
+		j++
+	}
+	if j-i < 3 {
+		return "", "", false
+	}
+	return t[i:j], t[j:], true
+}
+
+// isSpace reports whether c is white space as matched by \s in a regular
+// expression.
+func isSpace(c byte) bool {
+	return c == ' ' || c == '\t' || c == '\n' || c == '\f' || c == '\r'
+}
+
+// isHeading reports whether l is a heading outside code fences: one to six "#"
+// at the start of the line, followed by white space.
+func isHeading(l Line) bool {
+	t := l.Text
+	n := 0
+	for n < len(t) && t[n] == '#' {
+		n++
+	}
+	return !l.InFence && 1 <= n && n <= 6 && n < len(t) && isSpace(t[n])
+}
+
+// isLinksHeading reports whether t is "## Links" followed only by white space.
+func isLinksHeading(t string) bool {
+	rest, ok := strings.CutPrefix(t, "## Links")
+	for i := 0; ok && i < len(rest); i++ {
+		ok = isSpace(rest[i])
+	}
+	return ok
+}
 
 // headings reads the headings outside code fences. linksStart is the index of
 // the "## Links" heading when it is the last heading, or -1 when the page has
@@ -72,7 +111,7 @@ func headings(lines []Line) (linksStart int, notLast []int, title int) {
 			title = i
 		}
 		last = i
-		if reLinksH.MatchString(l.Text) {
+		if isLinksHeading(l.Text) {
 			notLast = append(notLast, i)
 		}
 	}
