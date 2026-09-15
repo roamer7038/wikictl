@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -324,5 +325,80 @@ func TestNonRegularFiles(t *testing.T) {
 	}
 	if code, _, errs := runCLI(t, cfg, "", "rm", "-r", "global/sub", "projects/link2.md", "mods"); code != 0 || mode("global/sub")+mode("projects/link2.md")+mode("mods/lib/sub") != "" {
 		t.Errorf("rm of submodules and a symbolic link: code=%d %s", code, errs)
+	}
+}
+
+// TestLinkTargetsNonRegular checks which link targets lint reports as broken
+// when they are not regular files: symbolic links exist, and submodules, with
+// or without their commit in the mirror, a directory, a path through a
+// symbolic link to a directory and an absent path do not. None of them is a
+// failure of git.
+func TestLinkTargetsNonRegular(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symbolic links")
+	}
+	cfg := setup(t)
+	remote, work := filepath.Join(filepath.Dir(cfg), "remote.git"), filepath.Join(filepath.Dir(cfg), "work")
+	os.Symlink("push.md", filepath.Join(work, "global", "link.md"))
+	os.Symlink("../projects", filepath.Join(work, "global", "linkdir.md"))
+	os.MkdirAll(filepath.Join(work, "global", "dir.md"), 0o755)
+	os.WriteFile(filepath.Join(work, "global", "dir.md", "a.md"), []byte("---\nsummary: a\n---\n# a\n"), 0o644)
+	os.WriteFile(filepath.Join(work, "global", "refs.md"), []byte("---\nsummary: r\n---\n# r\n"+
+		"[s](sub.md) [o](other.md) [l](link.md) [ld](linkdir.md) [d](linkdir.md/app/x.md) [p](dir.md) [m](missing.md)\n"), 0o644)
+	mustRun(t, work, "git", "add", "-A")
+	mustRun(t, work, "git", "update-index", "--add", "--cacheinfo", "160000,"+gitOut(t, "--git-dir", remote, "rev-parse", "main")+",global/sub.md")
+	mustRun(t, work, "git", "update-index", "--add", "--cacheinfo", "160000,1234567890123456789012345678901234567890,global/other.md")
+	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "special")
+	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
+	code, out, errs := runCLI(t, cfg, "", "--json", "lint", "global/refs.md")
+	var res struct {
+		Items []struct{ Code, Message string }
+	}
+	mustUnmarshal(t, out, &res)
+	var broken []string
+	for _, it := range res.Items {
+		if it.Code == "broken_link" {
+			broken = append(broken, strings.TrimPrefix(it.Message, "link target does not exist: "))
+		}
+	}
+	want := []string{"global/sub.md", "global/other.md", "global/linkdir.md/app/x.md", "global/dir.md", "global/missing.md"}
+	if code != ExitInvalid || strings.Join(broken, " ") != strings.Join(want, " ") {
+		t.Errorf("lint: code=%d broken=%q errs=%q", code, broken, errs)
+	}
+}
+
+// TestMoveQuotedName checks that mv moves pages whose names git quotes in
+// output without -z, and rewrites the links to them.
+func TestMoveQuotedName(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip(`file names with " or \`)
+	}
+	cfg := setup(t)
+	remote, work := filepath.Join(filepath.Dir(cfg), "remote.git"), filepath.Join(filepath.Dir(cfg), "work")
+	for _, name := range []string{`q"t.md`, `b\s.md`} {
+		os.WriteFile(filepath.Join(work, "global", name), []byte("---\nsummary: q\n---\n# q\n"), 0o644)
+	}
+	os.WriteFile(filepath.Join(work, "projects", "app", "ref.md"), []byte("---\nsummary: r\n---\n# r\n[q](../../global/q\"t.md) [b](../../global/b\\s.md)\n"), 0o644)
+	mustRun(t, work, "git", "add", "-A")
+	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "quoted")
+	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
+	for _, args := range [][]string{{"mv", `global/q"t.md`, "global/qt.md"}, {"mv", `global/b\s.md`, "global/bs.md"}} {
+		if code, _, errs := runCLI(t, cfg, "", args...); code != 0 {
+			t.Fatalf("%v: code=%d %s", args, code, errs)
+		}
+	}
+	files := strings.Split(gitOut(t, "--git-dir", remote, "ls-tree", "-r", "-z", "--name-only", "main"), "\x00")
+	for _, f := range []string{"global/qt.md", "global/bs.md"} {
+		if !slices.Contains(files, f) {
+			t.Errorf("%s does not exist after mv: %q", f, files)
+		}
+	}
+	for _, f := range []string{`global/q"t.md`, `global/b\s.md`} {
+		if slices.Contains(files, f) {
+			t.Errorf("%s still exists after mv", f)
+		}
+	}
+	if ref := gitOut(t, "--git-dir", remote, "cat-file", "-p", "main:projects/app/ref.md"); !strings.Contains(ref, "[q](../../global/qt.md) [b](../../global/bs.md)") {
+		t.Errorf("referring page: %q", ref)
 	}
 }

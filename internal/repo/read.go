@@ -15,9 +15,9 @@ import (
 	"unicode/utf8"
 )
 
-// isPagePath reports whether p can be a page: a .md file below the root,
+// IsPagePath reports whether p can be a page: a .md file below the root,
 // with no component starting with a dot.
-func isPagePath(p string) bool {
+func IsPagePath(p string) bool {
 	if !strings.HasSuffix(p, ".md") || !strings.Contains(p, "/") {
 		return false
 	}
@@ -47,7 +47,7 @@ func stripRef(r *Repo, lines string) []string {
 	prefix := r.readRef() + ":"
 	for _, l := range strings.Split(strings.TrimSpace(lines), "\n") {
 		p := strings.TrimPrefix(l, prefix)
-		if p != "" && isPagePath(p) {
+		if p != "" && IsPagePath(p) {
 			res = append(res, p)
 		}
 	}
@@ -432,44 +432,67 @@ func (r *Repo) Updated(files []string) (map[string]time.Time, error) {
 	return res, nil
 }
 
-// treeEntry returns the type and object sha of path at commit head, or ""
-// when absent. It uses ls-tree, which fails when a tree on the way cannot be
-// read, unlike "rev-parse <commit>:<path>", which then exits with 1 and
-// nothing on stderr as it does for an absent path.
-func (r *Repo) treeEntry(head, path string) (typ, sha string, err error) {
-	out, err := r.Git("ls-tree", "-z", head, "--", path)
-	if err != nil {
-		return "", "", err
+// maxTreeArgs is the number of bytes of paths given to one ls-tree call by
+// treeEntries, which keeps the command line within the limits of Windows.
+const maxTreeArgs = 8 << 10
+
+// treeEntries returns the entry at commit head of each of paths that exists.
+// It uses ls-tree, which fails when a tree on the way cannot be read, unlike
+// "rev-parse <commit>:<path>", which then exits with 1 and nothing on stderr
+// as it does for an absent path. The paths are split among as few calls as
+// maxTreeArgs allows.
+func (r *Repo) treeEntries(head string, paths []string) (map[string]Entry, error) {
+	paths = slices.Compact(slices.Sorted(slices.Values(paths)))
+	want := map[string]bool{}
+	for _, p := range paths {
+		want[p] = true
 	}
-	for _, l := range strings.Split(out, "\x00") {
-		meta, p, ok := strings.Cut(l, "\t")
-		if f := strings.Fields(meta); ok && p == path && len(f) == 3 {
-			return f[1], f[2], nil
+	res := map[string]Entry{}
+	for len(paths) > 0 {
+		args, n := []string{"ls-tree", "-z", head, "--"}, 0
+		for len(paths) > 0 && (n == 0 || n+len(paths[0]) <= maxTreeArgs) {
+			args = append(args, paths[0])
+			n += len(paths[0]) + 1
+			paths = paths[1:]
+		}
+		out, err := r.Git(args...)
+		if err != nil {
+			return nil, err
+		}
+		for rec := range strings.SplitSeq(out, "\x00") {
+			meta, p, ok := strings.Cut(rec, "\t")
+			if f := strings.Fields(meta); ok && want[p] && len(f) == 3 {
+				res[p] = Entry{p, f[0], f[1], f[2]}
+			}
 		}
 	}
-	return "", "", nil
+	return res, nil
 }
 
 // CheckMissing is called for paths that CatSHA or Stat did not return. It
 // returns an error when git cannot tell whether a path exists at the commit
 // that reads use, or when a path is a blob there that the mirror cannot read;
 // cat-file --batch reports both as "missing". A path that does not exist or is
-// not a file is not an error.
+// not a file is not an error. git is not run when paths is empty.
 func (r *Repo) CheckMissing(paths []string) error {
+	if len(paths) == 0 {
+		return nil
+	}
 	head, err := r.Head()
 	if err != nil || head == "" {
 		return err
 	}
+	ents, err := r.treeEntries(head, paths)
+	if err != nil {
+		return err
+	}
 	for _, p := range paths {
-		typ, sha, err := r.treeEntry(head, p)
-		if err != nil {
-			return err
-		}
-		if typ != "blob" {
+		e, ok := ents[p]
+		if !ok || e.Type != "blob" {
 			continue
 		}
-		if _, err := r.Git("cat-file", "-e", sha); err != nil {
-			return fmt.Errorf("cannot read %s (blob %s) from the mirror: %w", p, sha, err)
+		if _, err := r.Git("cat-file", "-e", e.SHA); err != nil {
+			return fmt.Errorf("cannot read %s (blob %s) from the mirror: %w", p, e.SHA, err)
 		}
 	}
 	return nil

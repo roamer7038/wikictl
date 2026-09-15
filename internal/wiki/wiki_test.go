@@ -17,6 +17,51 @@ import (
 // fakeStore is a Store over files kept in memory, keyed by path.
 type fakeStore map[string]string
 
+// unreadable is the content of a file of a fakeStore that cannot be read:
+// Stat, CatSHA and CatLimit leave it out, and CheckMissing reports it.
+const unreadable = "\x00unreadable"
+
+// submodule is the content of a submodule of a fakeStore: Entries gives it
+// the type "commit", and Stat, CatSHA and CatLimit leave it out.
+const submodule = "\x00submodule"
+
+func (f fakeStore) Entries(dirs []string) ([]repo.Entry, error) {
+	var out []repo.Entry
+	for _, p := range slices.Sorted(maps.Keys(f)) {
+		if dirs != nil && !slices.ContainsFunc(dirs, func(d string) bool { return strings.HasPrefix(p, d+"/") }) {
+			continue
+		}
+		switch f[p] {
+		case submodule:
+			out = append(out, repo.Entry{Path: p, Mode: "160000", Type: "commit"})
+		default:
+			out = append(out, repo.Entry{Path: p, Mode: "100644", Type: "blob", SHA: blobSHA(f[p])})
+		}
+	}
+	return out, nil
+}
+
+func (f fakeStore) CheckMissing(paths []string) error {
+	for _, p := range paths {
+		if f[p] == unreadable {
+			return fmt.Errorf("cannot read %s", p)
+		}
+	}
+	return nil
+}
+
+// recordingStore is a fakeStore that records the paths of each CheckMissing
+// call.
+type recordingStore struct {
+	fakeStore
+	calls [][]string
+}
+
+func (s *recordingStore) CheckMissing(paths []string) error {
+	s.calls = append(s.calls, paths)
+	return s.fakeStore.CheckMissing(paths)
+}
+
 func (f fakeStore) List() ([]string, error) {
 	var out []string
 	for p := range f {
@@ -54,7 +99,7 @@ func blobSHA(c string) string {
 func (f fakeStore) Stat(paths []string) (map[string]repo.Object, error) {
 	out := map[string]repo.Object{}
 	for _, p := range paths {
-		if c, ok := f[p]; ok {
+		if c, ok := f[p]; ok && c != unreadable && c != submodule {
 			out[p] = repo.Object{SHA: blobSHA(c), Size: int64(len(c))}
 		}
 	}
@@ -64,7 +109,7 @@ func (f fakeStore) Stat(paths []string) (map[string]repo.Object, error) {
 func (f fakeStore) CatSHA(paths []string) (map[string][]byte, map[string]string, error) {
 	contents, shas := map[string][]byte{}, map[string]string{}
 	for _, p := range paths {
-		if c, ok := f[p]; ok {
+		if c, ok := f[p]; ok && c != unreadable && c != submodule {
 			contents[p], shas[p] = []byte(c), blobSHA(c)
 		}
 	}
@@ -76,7 +121,7 @@ func (f fakeStore) CatLimit(paths []string, max int64) (map[string][]byte, map[s
 	for _, p := range paths {
 		c, ok := f[p]
 		switch {
-		case !ok:
+		case !ok || c == unreadable || c == submodule:
 		case int64(len(c)) > max:
 			large[p] = repo.Object{SHA: blobSHA(c), Size: int64(len(c))}
 		default:
@@ -196,6 +241,61 @@ func TestBrokenLinks(t *testing.T) {
 	}
 	if !slices.Equal(targets, []string{"global/missing.md", "global/sub.md"}) {
 		t.Errorf("broken targets: %v", targets)
+	}
+}
+
+// TestBrokenLinksUnreadable checks that BrokenLinks asks CheckMissing once
+// about the targets that Stat did not return, each named once, and fails on a
+// target that cannot be read instead of reporting it.
+func TestBrokenLinksUnreadable(t *testing.T) {
+	s := &recordingStore{fakeStore: fakeStore{"global/exists.md": "# e\n"}}
+	pages := []*page.Page{
+		page.Parse("global/a.md", []byte("# a\n[m](missing.md) [e](exists.md)\n")),
+		page.Parse("global/b.md", []byte("# b\n[n](none.md)\n[m](missing.md)\n")),
+	}
+	if got, err := BrokenLinks(s, pages); err != nil || len(got) != 3 {
+		t.Errorf("BrokenLinks = %v, %v", got, err)
+	}
+	if got := fmt.Sprint(s.calls); got != "[[global/missing.md global/none.md]]" {
+		t.Errorf("CheckMissing calls: %s", got)
+	}
+	s.fakeStore["global/none.md"] = unreadable
+	if got, err := BrokenLinks(s, pages); err == nil {
+		t.Errorf("BrokenLinks with an unreadable target = %v, nil", got)
+	}
+}
+
+// TestRelocateUnreadable checks that Relocate fails when a page cannot be
+// read, rather than leaving its links unchanged.
+func TestRelocateUnreadable(t *testing.T) {
+	s := fakeStore{
+		"global/a.md":     "# a\n",
+		"projects/p/c.md": unreadable,
+	}
+	if got, err := Relocate(s, map[string]string{"global/a.md": "global/b.md"}); err == nil {
+		t.Errorf("Relocate = %+v, nil", got)
+	}
+}
+
+// TestRelocateSubmodule checks that a submodule named like a page is neither
+// changed nor checked with CheckMissing when every page can be read.
+func TestRelocateSubmodule(t *testing.T) {
+	s := &recordingStore{fakeStore: fakeStore{
+		"global/a.md":   "# a\n",
+		"global/b.md":   "# b\n[a](a.md)\n",
+		"global/sub.md": submodule,
+	}}
+	changes, err := Relocate(s, map[string]string{"global/a.md": "global/c.md"})
+	if err != nil || len(changes) != 3 {
+		t.Fatalf("Relocate = %+v, %v", changes, err)
+	}
+	for _, c := range changes {
+		if c.Path == "global/sub.md" {
+			t.Errorf("submodule changed: %+v", c)
+		}
+	}
+	if slices.ContainsFunc(s.calls, func(paths []string) bool { return len(paths) > 0 }) {
+		t.Errorf("CheckMissing calls: %q", s.calls)
 	}
 }
 

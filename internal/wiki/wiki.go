@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -17,8 +18,9 @@ import (
 
 // Store reads the files of one state of the wiki. *repo.Repo implements it.
 type Store interface {
-	// List returns the paths of all pages.
-	List() ([]string, error)
+	// Entries returns the files under dirs, or of the whole tree when dirs
+	// is nil, pages or not, with their object types.
+	Entries(dirs []string) ([]repo.Entry, error)
 	// Grep returns the pages that contain every one of words as fixed strings
 	// ignoring case.
 	Grep(words []string) ([]string, error)
@@ -32,6 +34,10 @@ type Store interface {
 	// GrepDeprecated returns the pages that may have status: deprecated in
 	// their frontmatter.
 	GrepDeprecated() (map[string]bool, error)
+	// CheckMissing returns an error for paths that Stat or CatSHA did not
+	// return when one of them is a file that cannot be read, or when it
+	// cannot be told whether they exist.
+	CheckMissing(paths []string) error
 }
 
 // Deprecated returns the set of pages whose frontmatter has status:
@@ -128,7 +134,9 @@ func Backlinks(s Store, target string) ([]Backlink, error) {
 
 // BrokenLinks returns a broken_link issue for every link and mention of pages
 // whose target is not a file in the wiki. lint and put share it so that both
-// agree on which targets exist.
+// agree on which targets exist. A target that is a file the store cannot read
+// is an error, found with one CheckMissing call for all the targets that Stat
+// did not return.
 func BrokenLinks(s Store, pages []*page.Page) ([]page.Issue, error) {
 	var targets []string
 	for _, pg := range pages {
@@ -143,6 +151,15 @@ func BrokenLinks(s Store, pages []*page.Page) ([]page.Issue, error) {
 	}
 	found, err := s.Stat(targets)
 	if err != nil {
+		return nil, err
+	}
+	var absent []string
+	for _, t := range targets {
+		if _, ok := found[t]; !ok {
+			absent = append(absent, t)
+		}
+	}
+	if err := s.CheckMissing(slices.Compact(slices.Sorted(slices.Values(absent)))); err != nil {
 		return nil, err
 	}
 	var items []page.Issue
@@ -161,14 +178,32 @@ func BrokenLinks(s Store, pages []*page.Page) ([]page.Issue, error) {
 // at the new location, and pages that refer to a moved page get those links
 // rewritten. Every change carries the blob sha read here as its Base, and
 // every new path requires that the path does not exist, so that a page
-// changed or created since it was read makes the commit a conflict.
+// changed or created since it was read makes the commit a conflict. A page
+// that cannot be read is an error, so that no link to a moved page is left
+// unchanged. Pages that are not blobs, such as submodules, have no links and
+// are not read.
 func Relocate(s Store, mapping map[string]string) ([]repo.Change, error) {
-	all, err := s.List()
+	ents, err := s.Entries(nil)
 	if err != nil {
 		return nil, err
 	}
+	var all []string
+	for _, e := range ents {
+		if e.Type == "blob" && repo.IsPagePath(e.Path) {
+			all = append(all, e.Path)
+		}
+	}
 	contents, shas, err := s.CatSHA(all)
 	if err != nil {
+		return nil, err
+	}
+	var absent []string
+	for _, p := range all {
+		if _, ok := contents[p]; !ok {
+			absent = append(absent, p)
+		}
+	}
+	if err := s.CheckMissing(absent); err != nil {
 		return nil, err
 	}
 	none := ""

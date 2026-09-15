@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -348,6 +349,30 @@ func TestCheckMissing(t *testing.T) {
 	empty := openFetched(t, newRemote(t, false))
 	if err := empty.CheckMissing([]string{"global/index.md"}); err != nil {
 		t.Error(err)
+	}
+}
+
+// TestTreeEntries checks that paths too many for one ls-tree call are split
+// among several calls, and that an entry is found in the last of them.
+func TestTreeEntries(t *testing.T) {
+	r := openFetched(t, newRemote(t, true))
+	head, err := r.Head()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	for n := 0; n <= 2*maxTreeArgs; n += len(paths[len(paths)-1]) {
+		paths = append(paths, "a/"+strconv.Itoa(len(paths))+".md")
+	}
+	trace := filepath.Join(t.TempDir(), "trace")
+	t.Setenv("GIT_TRACE", trace)
+	ents, err := r.treeEntries(head, append(paths, "global/index.md", "global/index.md"))
+	if err != nil || len(ents) != 1 || ents["global/index.md"].Type != "blob" {
+		t.Errorf("treeEntries = %v, %v", ents, err)
+	}
+	out, _ := os.ReadFile(trace)
+	if n := strings.Count(string(out), " ls-tree -z "); n < 3 {
+		t.Errorf("%d ls-tree calls, want at least 3", n)
 	}
 }
 
