@@ -39,9 +39,9 @@ const outputHelp = `Output:
   Errors go to standard error as "wikictl: <message>", or with --json to
   standard output as {"error": "<kind>", "message": "..."}, where <kind> is
   error, usage, conflict, invalid or git. In text output, control characters
-  other than tab in summaries, titles, lint messages, warnings and the
-  attributes and links shown by stat and links are printed as \xNN; JSON
-  output and the files printed by cat are not changed.
+  other than tab in paths, summaries, titles, lint messages, warnings, error
+  messages and the attributes and links shown by stat and links are printed as
+  \xNN; JSON output and the files printed by cat are not changed.
 `
 
 const mirrorHelp = `Mirror:
