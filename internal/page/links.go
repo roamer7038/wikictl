@@ -138,16 +138,34 @@ func BodyLinks(lines []Line, pagePath string) []Link {
 	return out
 }
 
+var (
+	reListItem  = regexp.MustCompile(`^ {0,3}(?:[-*+]|(\d{1,9})[.)])[ \t]`)
+	reQuote     = regexp.MustCompile(`^ {0,3}>`)
+	reTableRow  = regexp.MustCompile(`^ {0,3}\|`)
+	reUnderOrHR = regexp.MustCompile(`^ {0,3}(?:=+[ \t]*|-+[ \t]*|(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$`)
+)
+
 // eachParagraph calls fn for each paragraph of lines: a run of lines outside
-// code fences without blank lines and headings. A heading, and each line from
-// linksStart on (the Links section is read line by line), is a paragraph of
-// its own; linksStart is -1 when there is no Links section. fn receives the
-// range of the lines, their text joined with "\n", and the byte offset of each
-// line in that text.
+// code fences without blank lines and headings. A heading, a setext underline,
+// a thematic break, and each line from linksStart on (the Links section is
+// read line by line) is a paragraph of its own; linksStart is -1 when there is
+// no Links section. A new paragraph also starts at a list item (an ordered
+// one only after another list item or when it is numbered 1), at a table row
+// after another table row, and at a block quote line after a line outside a
+// block quote. fn receives the range of the lines, their text joined with
+// "\n", and the byte offset of each line in that text.
 func eachParagraph(lines []Line, linksStart int, fn func(from, to int, text string, offsets []int)) {
 	blank := func(l Line) bool { return strings.Trim(l.Text, " \t") == "" }
 	joinable := func(i int) bool {
-		return (linksStart < 0 || i < linksStart) && !lines[i].InFence && !blank(lines[i]) && !isHeading(lines[i])
+		l := lines[i]
+		return (linksStart < 0 || i < linksStart) && !l.InFence && !blank(l) && !isHeading(l) && !reUnderOrHR.MatchString(l.Text)
+	}
+	starts := func(i int) bool {
+		t, prev := lines[i].Text, lines[i-1].Text
+		if m := reListItem.FindStringSubmatch(t); m != nil && (m[1] == "" || m[1] == "1" || reListItem.MatchString(prev)) {
+			return true
+		}
+		return reTableRow.MatchString(t) && reTableRow.MatchString(prev) || reQuote.MatchString(t) && !reQuote.MatchString(prev)
 	}
 	for i := 0; i < len(lines); {
 		if lines[i].InFence || blank(lines[i]) {
@@ -156,7 +174,7 @@ func eachParagraph(lines []Line, linksStart int, fn func(from, to int, text stri
 		}
 		j := i + 1
 		if joinable(i) {
-			for j < len(lines) && joinable(j) {
+			for j < len(lines) && joinable(j) && !starts(j) {
 				j++
 			}
 		}
