@@ -112,6 +112,12 @@ printf -- '---\nsummary: edited\n---\n# push\n' > "$1"
 	if code, _, errs := runCLI(t, cfg, "", "edit", "newtop"); code != ExitInvalid || !strings.Contains(errs, "bad_path: ") {
 		t.Errorf("edit of a file at the root: code=%d errs=%q", code, errs)
 	}
+	if code, _, errs := runCLI(t, cfg, "---\nsummary: a\n---\n# a\n", "put", "x.md/a.md"); code != 0 {
+		t.Fatalf("put x.md/a.md: %s", errs)
+	}
+	if code, _, errs := runCLI(t, cfg, "", "edit", "x.md"); code != ExitError || errs != "wikictl: x.md: is a directory\n" {
+		t.Errorf("edit of a directory with a page name at the root: code=%d errs=%q", code, errs)
+	}
 
 	// A failing editor and content that put rejects keep the edited file.
 	editWith(t, "printf draft > \"$1\"; exit 3\n")
