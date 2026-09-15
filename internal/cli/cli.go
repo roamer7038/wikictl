@@ -73,8 +73,8 @@ Output: items[] {path, sha, content}.`,
 		detail: `Show, for each file, its blob sha, the time of the last commit that changed
 it, and the attributes read from the page: title (the first heading, else the
 file name), summary (or description), type, tags, status and aliases. A path
-that does not exist or is a directory is reported as cat reports it. Control characters other
-than tab are shown as \xNN in text output.
+that does not exist or is a directory is reported as cat reports it. Control
+characters other than tab are shown as \xNN in text output.
 
 Output: items[] {path, sha, updated, title, summary, type, tags, status, aliases}.`,
 		run: (*app).cmdStat},
@@ -262,7 +262,7 @@ directory; for a directory every page under it is checked. Without arguments
 every page of the wiki is checked. Exits with code 4 when violations are found.
 A path that does not exist ("no such file or directory") is reported on
 standard error, also with --json, the other paths are still checked, and the
-command exits with code 1.
+command exits with code 1, even when violations are found.
 Each finding is printed as "<path>:<line>: <code>: <message>"; line 0 means the
 whole file.
 
@@ -320,7 +320,8 @@ root of the wiki without arguments, followed by the number of directories and
 files. Names starting with a dot and pages whose frontmatter has status:
 deprecated are hidden unless -a is given. A path that does not exist ("no such
 file or directory") or is a file ("not a directory") is reported on standard
-error, also with --json, and the command exits with code 1. Control characters other than tab are shown as \xNN in text output.
+error, also with --json, and the command exits with code 1. Control characters
+other than tab are shown as \xNN in text output.
 
 Output: {items[] {path, kind}, directories, files}; kind is "file" or "dir".`,
 		flags: treeFlags, run: (*app).cmdTree},

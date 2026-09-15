@@ -898,6 +898,7 @@ func TestTree(t *testing.T) {
 // prints its result JSON with --json.
 func TestMissingPaths(t *testing.T) {
 	cfg := setup(t)
+	runCLI(t, cfg, "# a\n", "put", "global/sub/a.md")
 	for _, c := range []struct {
 		args []string
 		code int
@@ -906,6 +907,8 @@ func TestMissingPaths(t *testing.T) {
 	}{
 		{[]string{"cat", "none"}, ExitError, "none: no such file or directory", `{"items":[]}`},
 		{[]string{"cat", "global"}, ExitError, "global: is a directory", `{"items":[]}`},
+		{[]string{"cat", "global/"}, ExitError, "global: is a directory", `{"items":[]}`},
+		{[]string{"cat", "."}, ExitError, ".: is a directory", `{"items":[]}`},
 		{[]string{"stat", "none"}, ExitError, "none: no such file or directory", `{"items":[]}`},
 		{[]string{"stat", "global"}, ExitError, "global: is a directory", `{"items":[]}`},
 		{[]string{"links", "none"}, ExitError, "none: no such file or directory", `{"items":[]}`},
@@ -915,6 +918,8 @@ func TestMissingPaths(t *testing.T) {
 		{[]string{"tree", "none"}, ExitError, "none: no such file or directory", `{"directories":0,"files":0,"items":[]}`},
 		{[]string{"tree", "global/index.md"}, ExitError, "global/index.md: not a directory", `{"directories":0,"files":0,"items":[]}`},
 		{[]string{"lint", "none"}, ExitError, "none: no such file or directory", `{"items":[]}`},
+		{[]string{"lint", "global/sub/a.md", "none"}, ExitError, "none: no such file or directory",
+			`{"items":[{"path":"global/sub/a.md","line":1,"code":"missing_summary","message":"frontmatter is missing"}]}`},
 		{[]string{"rm", "global/none.md"}, ExitError, "global/none.md: no such file or directory", `{"commit":"","paths":[]}`},
 		{[]string{"mv", "global/none.md", "global/new.md"}, ExitError, "global/none.md: no such file or directory", `{"commit":"","moved":[],"rewritten":0}`},
 		{[]string{"grep", "lease", "none"}, ExitUsage, "none: no such file or directory", `{"items":[]}`},
