@@ -326,3 +326,42 @@ func TestNonRegularFiles(t *testing.T) {
 		t.Errorf("rm of submodules and a symbolic link: code=%d %s", code, errs)
 	}
 }
+
+// TestLinkTargetsNonRegular checks which link targets lint reports as broken
+// when they are not regular files: symbolic links exist, and submodules, with
+// or without their commit in the mirror, a directory, a path through a
+// symbolic link to a directory and an absent path do not. None of them is a
+// failure of git.
+func TestLinkTargetsNonRegular(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symbolic links")
+	}
+	cfg := setup(t)
+	remote, work := filepath.Join(filepath.Dir(cfg), "remote.git"), filepath.Join(filepath.Dir(cfg), "work")
+	os.Symlink("push.md", filepath.Join(work, "global", "link.md"))
+	os.Symlink("../projects", filepath.Join(work, "global", "linkdir.md"))
+	os.MkdirAll(filepath.Join(work, "global", "dir.md"), 0o755)
+	os.WriteFile(filepath.Join(work, "global", "dir.md", "a.md"), []byte("---\nsummary: a\n---\n# a\n"), 0o644)
+	os.WriteFile(filepath.Join(work, "global", "refs.md"), []byte("---\nsummary: r\n---\n# r\n"+
+		"[s](sub.md) [o](other.md) [l](link.md) [ld](linkdir.md) [d](linkdir.md/app/x.md) [p](dir.md) [m](missing.md)\n"), 0o644)
+	mustRun(t, work, "git", "add", "-A")
+	mustRun(t, work, "git", "update-index", "--add", "--cacheinfo", "160000,"+gitOut(t, "--git-dir", remote, "rev-parse", "main")+",global/sub.md")
+	mustRun(t, work, "git", "update-index", "--add", "--cacheinfo", "160000,1234567890123456789012345678901234567890,global/other.md")
+	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "special")
+	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
+	code, out, errs := runCLI(t, cfg, "", "--json", "lint", "global/refs.md")
+	var res struct {
+		Items []struct{ Code, Message string }
+	}
+	mustUnmarshal(t, out, &res)
+	var broken []string
+	for _, it := range res.Items {
+		if it.Code == "broken_link" {
+			broken = append(broken, strings.TrimPrefix(it.Message, "link target does not exist: "))
+		}
+	}
+	want := []string{"global/sub.md", "global/other.md", "global/linkdir.md/app/x.md", "global/dir.md", "global/missing.md"}
+	if code != ExitInvalid || strings.Join(broken, " ") != strings.Join(want, " ") {
+		t.Errorf("lint: code=%d broken=%q errs=%q", code, broken, errs)
+	}
+}

@@ -17,6 +17,31 @@ import (
 // fakeStore is a Store over files kept in memory, keyed by path.
 type fakeStore map[string]string
 
+// unreadable is the content of a file of a fakeStore that cannot be read:
+// Stat, CatSHA and CatLimit leave it out, and CheckMissing reports it.
+const unreadable = "\x00unreadable"
+
+func (f fakeStore) CheckMissing(paths []string) error {
+	for _, p := range paths {
+		if f[p] == unreadable {
+			return fmt.Errorf("cannot read %s", p)
+		}
+	}
+	return nil
+}
+
+// recordingStore is a fakeStore that records the paths of each CheckMissing
+// call.
+type recordingStore struct {
+	fakeStore
+	calls [][]string
+}
+
+func (s *recordingStore) CheckMissing(paths []string) error {
+	s.calls = append(s.calls, paths)
+	return s.fakeStore.CheckMissing(paths)
+}
+
 func (f fakeStore) List() ([]string, error) {
 	var out []string
 	for p := range f {
@@ -54,7 +79,7 @@ func blobSHA(c string) string {
 func (f fakeStore) Stat(paths []string) (map[string]repo.Object, error) {
 	out := map[string]repo.Object{}
 	for _, p := range paths {
-		if c, ok := f[p]; ok {
+		if c, ok := f[p]; ok && c != unreadable {
 			out[p] = repo.Object{SHA: blobSHA(c), Size: int64(len(c))}
 		}
 	}
@@ -64,7 +89,7 @@ func (f fakeStore) Stat(paths []string) (map[string]repo.Object, error) {
 func (f fakeStore) CatSHA(paths []string) (map[string][]byte, map[string]string, error) {
 	contents, shas := map[string][]byte{}, map[string]string{}
 	for _, p := range paths {
-		if c, ok := f[p]; ok {
+		if c, ok := f[p]; ok && c != unreadable {
 			contents[p], shas[p] = []byte(c), blobSHA(c)
 		}
 	}
@@ -76,7 +101,7 @@ func (f fakeStore) CatLimit(paths []string, max int64) (map[string][]byte, map[s
 	for _, p := range paths {
 		c, ok := f[p]
 		switch {
-		case !ok:
+		case !ok || c == unreadable:
 		case int64(len(c)) > max:
 			large[p] = repo.Object{SHA: blobSHA(c), Size: int64(len(c))}
 		default:
@@ -196,6 +221,39 @@ func TestBrokenLinks(t *testing.T) {
 	}
 	if !slices.Equal(targets, []string{"global/missing.md", "global/sub.md"}) {
 		t.Errorf("broken targets: %v", targets)
+	}
+}
+
+// TestBrokenLinksUnreadable checks that BrokenLinks asks CheckMissing once
+// about the targets that Stat did not return, each named once, and fails on a
+// target that cannot be read instead of reporting it.
+func TestBrokenLinksUnreadable(t *testing.T) {
+	s := &recordingStore{fakeStore: fakeStore{"global/exists.md": "# e\n"}}
+	pages := []*page.Page{
+		page.Parse("global/a.md", []byte("# a\n[m](missing.md) [e](exists.md)\n")),
+		page.Parse("global/b.md", []byte("# b\n[n](none.md)\n[m](missing.md)\n")),
+	}
+	if got, err := BrokenLinks(s, pages); err != nil || len(got) != 3 {
+		t.Errorf("BrokenLinks = %v, %v", got, err)
+	}
+	if got := fmt.Sprint(s.calls); got != "[[global/missing.md global/none.md]]" {
+		t.Errorf("CheckMissing calls: %s", got)
+	}
+	s.fakeStore["global/none.md"] = unreadable
+	if got, err := BrokenLinks(s, pages); err == nil {
+		t.Errorf("BrokenLinks with an unreadable target = %v, nil", got)
+	}
+}
+
+// TestRelocateUnreadable checks that Relocate fails when a page cannot be
+// read, rather than leaving its links unchanged.
+func TestRelocateUnreadable(t *testing.T) {
+	s := fakeStore{
+		"global/a.md":     "# a\n",
+		"projects/p/c.md": unreadable,
+	}
+	if got, err := Relocate(s, map[string]string{"global/a.md": "global/b.md"}); err == nil {
+		t.Errorf("Relocate = %+v, nil", got)
 	}
 }
 
