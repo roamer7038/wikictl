@@ -51,7 +51,7 @@ func TestCommitConcurrentMirrors(t *testing.T) {
 func TestUpdateTrackingRef(t *testing.T) {
 	remote := newRemote(t, true)
 	r := openFetched(t, remote)
-	old, err := r.Head()
+	old, err := r.trackingHead()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestUpdateTrackingRef(t *testing.T) {
 	if err := r.Fetch(); err != nil {
 		t.Fatal(err)
 	}
-	cur, err := r.Head()
+	cur, err := r.trackingHead()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestUpdateTrackingRef(t *testing.T) {
 	if err := r.updateTrackingRef(old, strings.TrimSpace(out)); err == nil {
 		t.Error("ref without the commit: no error")
 	}
-	if h, _ := r.Head(); h != cur {
+	if h, _ := r.trackingHead(); h != cur {
 		t.Errorf("ref moved to %s, want %s", h, cur)
 	}
 }
@@ -98,9 +98,9 @@ func TestPushStatus(t *testing.T) {
 		"To /r.git\n \tabc:refs/heads/main\tdef..123\nDone\n":                                pushOK,
 		"To /r.git\n*\tabc:refs/heads/main\t[new branch]\nDone\n":                            pushOK,
 		"To /r.git\n!\tabc:refs/heads/main\t[rejected] (stale info)\nDone\n":                 pushStale,
-		"To /r.git\n!\tabc:refs/heads/main\t[remote rejected] (pre-receive hook declined)\n": pushRejected,
-		"fatal: could not read from remote repository\n":                                     pushNone,
-		"": pushNone,
+		"To /r.git\n!\tabc:refs/heads/main\t[remote rejected] (pre-receive hook declined)\n": pushFailed,
+		"fatal: could not read from remote repository\n":                                     pushFailed,
+		"": pushFailed,
 	}
 	for in, want := range cases {
 		if got := pushStatus(in); got != want {

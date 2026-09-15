@@ -93,20 +93,12 @@ func baseEnv() []string {
 }
 
 // Git runs git in the mirror and returns its stdout.
-func (r *Repo) Git(args ...string) (string, error) { return r.run(nil, nil, args...) }
-
-// GitIn runs git in the mirror with stdin and returns its stdout.
-func (r *Repo) GitIn(stdin []byte, args ...string) (string, error) { return r.run(nil, stdin, args...) }
+func (r *Repo) Git(args ...string) (string, error) { return r.runGit(false, nil, nil, args...) }
 
 // gitStrict is Git that also fails when git reports an error on stderr. git
 // grep reports an object it cannot read on stderr and still exits with 0 when
 // another file matches.
 func (r *Repo) gitStrict(args ...string) (string, error) { return r.runGit(true, nil, nil, args...) }
-
-// run executes git in the mirror; see runGit.
-func (r *Repo) run(extraEnv []string, stdin []byte, args ...string) (string, error) {
-	return r.runGit(false, extraEnv, stdin, args...)
-}
 
 // command returns git to be run in the mirror. core.quotePath is turned off so
 // that ls-tree, grep and log print non-ASCII paths verbatim instead of quoting

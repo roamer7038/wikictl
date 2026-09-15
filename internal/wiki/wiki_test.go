@@ -3,9 +3,9 @@ package wiki
 import (
 	"crypto/sha1"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"maps"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -21,16 +21,14 @@ type fakeStore map[string]string
 // Stat, CatSHA and CatLimit leave it out, and CheckMissing reports it.
 const unreadable = "\x00unreadable"
 
-// submodule is the content of a submodule of a fakeStore: Entries gives it
+// submodule is the content of a submodule of a fakeStore: entries gives it
 // the type "commit", and Stat, CatSHA and CatLimit leave it out.
 const submodule = "\x00submodule"
 
-func (f fakeStore) Entries(dirs []string) ([]repo.Entry, error) {
+// entries returns the files of the whole tree, as repo.Entries does.
+func (f fakeStore) entries() []repo.Entry {
 	var out []repo.Entry
 	for _, p := range slices.Sorted(maps.Keys(f)) {
-		if dirs != nil && !slices.ContainsFunc(dirs, func(d string) bool { return strings.HasPrefix(p, d+"/") }) {
-			continue
-		}
 		switch f[p] {
 		case submodule:
 			out = append(out, repo.Entry{Path: p, Mode: "160000", Type: "commit"})
@@ -38,7 +36,7 @@ func (f fakeStore) Entries(dirs []string) ([]repo.Entry, error) {
 			out = append(out, repo.Entry{Path: p, Mode: "100644", Type: "blob", SHA: blobSHA(f[p])})
 		}
 	}
-	return out, nil
+	return out
 }
 
 func (f fakeStore) CheckMissing(paths []string) error {
@@ -62,30 +60,18 @@ func (s *recordingStore) CheckMissing(paths []string) error {
 	return s.fakeStore.CheckMissing(paths)
 }
 
-func (f fakeStore) List() ([]string, error) {
-	var out []string
-	for p := range f {
-		if !strings.HasSuffix(p, ".md") || !strings.Contains(p, "/") || strings.HasPrefix(p, ".") || strings.Contains(p, "/.") {
-			continue
-		}
-		out = append(out, p)
-	}
-	slices.Sort(out)
-	return out, nil
-}
-
-func (f fakeStore) Grep(words []string) ([]string, error) {
-	paths, _ := f.List()
-	var out []string
-	for _, p := range paths {
-		n := 0
-		for _, w := range words {
-			if strings.Contains(strings.ToLower(f[p]), strings.ToLower(w)) {
-				n++
+// GrepRecords returns the path of every file that contains one of patterns,
+// as fixed strings with -F and as regular expressions otherwise.
+func (f fakeStore) GrepRecords(flags, patterns, dirs []string) ([][]string, error) {
+	var out [][]string
+	for _, p := range slices.Sorted(maps.Keys(f)) {
+		if slices.ContainsFunc(patterns, func(pat string) bool {
+			if slices.Contains(flags, "-F") {
+				return strings.Contains(f[p], pat)
 			}
-		}
-		if n == len(words) {
-			out = append(out, p)
+			return regexp.MustCompile(pat).MatchString(f[p])
+		}) {
+			out = append(out, []string{p})
 		}
 	}
 	return out, nil
@@ -117,29 +103,18 @@ func (f fakeStore) CatSHA(paths []string) (map[string][]byte, map[string]string,
 }
 
 func (f fakeStore) CatLimit(paths []string, max int64) (map[string][]byte, map[string]repo.Object, error) {
-	contents, large := map[string][]byte{}, map[string]repo.Object{}
+	contents, objs := map[string][]byte{}, map[string]repo.Object{}
 	for _, p := range paths {
 		c, ok := f[p]
-		switch {
-		case !ok || c == unreadable || c == submodule:
-		case int64(len(c)) > max:
-			large[p] = repo.Object{SHA: blobSHA(c), Size: int64(len(c))}
-		default:
+		if !ok || c == unreadable || c == submodule {
+			continue
+		}
+		objs[p] = repo.Object{SHA: blobSHA(c), Size: int64(len(c))}
+		if int64(len(c)) <= max {
 			contents[p] = []byte(c)
 		}
 	}
-	return contents, large, nil
-}
-
-func (f fakeStore) GrepDeprecated() (map[string]bool, error) {
-	paths, _ := f.List()
-	out := map[string]bool{}
-	for _, p := range paths {
-		if strings.Contains(f[p], "deprecated") {
-			out[p] = true
-		}
-	}
-	return out, nil
+	return contents, objs, nil
 }
 
 func TestDeprecated(t *testing.T) {
@@ -182,13 +157,13 @@ func TestClean(t *testing.T) {
 		}
 	}
 	for _, in := range []string{"..", "../x", "/../x", "a/../../x", "./../"} {
-		if got, err := Clean(in); !errors.Is(err, ErrOutside) {
-			t.Errorf("Clean(%q) = %q, %v; want ErrOutside", in, got, err)
+		if got, err := Clean(in); err == nil || !strings.HasPrefix(err.Error(), "path is outside the wiki: ") {
+			t.Errorf("Clean(%q) = %q, %v; want outside the wiki", in, got, err)
 		}
 	}
 	for _, in := range []string{"global/push.md\nglobal/index.md", "global/a.md\r", "global/\ta.md", "global/a\x00.md", "global/a\u0085.md", "\n"} {
-		if got, err := Clean(in); !errors.Is(err, ErrControl) {
-			t.Errorf("Clean(%q) = %q, %v; want ErrControl", in, got, err)
+		if got, err := Clean(in); err == nil || !strings.HasPrefix(err.Error(), "path contains a control character: ") {
+			t.Errorf("Clean(%q) = %q, %v; want a control character", in, got, err)
 		}
 	}
 }
@@ -272,7 +247,7 @@ func TestRelocateUnreadable(t *testing.T) {
 		"global/a.md":     "# a\n",
 		"projects/p/c.md": unreadable,
 	}
-	if got, err := Relocate(s, map[string]string{"global/a.md": "global/b.md"}); err == nil {
+	if got, err := Relocate(s, s.entries(), map[string]string{"global/a.md": "global/b.md"}); err == nil {
 		t.Errorf("Relocate = %+v, nil", got)
 	}
 }
@@ -285,7 +260,7 @@ func TestRelocateSubmodule(t *testing.T) {
 		"global/b.md":   "# b\n[a](a.md)\n",
 		"global/sub.md": submodule,
 	}}
-	changes, err := Relocate(s, map[string]string{"global/a.md": "global/c.md"})
+	changes, err := Relocate(s, s.entries(), map[string]string{"global/a.md": "global/c.md"})
 	if err != nil || len(changes) != 3 {
 		t.Fatalf("Relocate = %+v, %v", changes, err)
 	}
@@ -306,7 +281,7 @@ func TestRelocate(t *testing.T) {
 		"global/d.md":     "# d\n[b](b.md)\n",
 		"projects/p/c.md": "# c\n[a](../../global/a.md)\n",
 	}
-	changes, err := Relocate(s, map[string]string{"global/a.md": "projects/p/a.md"})
+	changes, err := Relocate(s, s.entries(), map[string]string{"global/a.md": "projects/p/a.md"})
 	if err != nil {
 		t.Fatal(err)
 	}

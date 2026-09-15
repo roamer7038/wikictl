@@ -197,14 +197,14 @@ func (a *app) lsDetails(t *fileTree, roots []string, sections []lsSection) error
 		}
 	}
 	if a.long || a.json {
-		pages, err := a.readPages(paths)
+		pages, err := wiki.ReadPages(a.repo, paths)
 		if err != nil {
 			return &gitError{err}
 		}
 		for _, s := range sections {
 			for i, it := range s.items {
 				if it.Kind == "file" {
-					pg := pages.parse(it.Path)
+					pg := pages.Parse(it.Path)
 					s.items[i].Type, _ = pg.Frontmatter["type"].(string)
 					s.items[i].Summary, s.items[i].Title = pg.Summary, pg.Title
 				}

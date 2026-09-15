@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"maps"
 	"strings"
 	"testing"
 )
@@ -21,19 +22,19 @@ func TestStatAndCatLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bigSHA, _ := r.Git("rev-parse", r.readRef()+":global/big.md")
+	bigSHA, _ := r.Git("rev-parse", r.snapshot+":global/big.md")
 	if len(st) != 3 || st["global/big.md"] != (Object{SHA: strings.TrimSpace(bigSHA), Size: 101}) || st["global/limit.md"].Size != 100 {
 		t.Errorf("stat=%v", st)
 	}
 
-	contents, large, err := r.CatLimit(paths, 100)
+	contents, objs, err := r.CatLimit(paths, 100)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(contents) != 2 || !strings.HasPrefix(string(contents["global/small.md"]), "---") || len(contents["global/limit.md"]) != 100 {
 		t.Errorf("contents=%q", contents)
 	}
-	if len(large) != 1 || large["global/big.md"] != st["global/big.md"] {
-		t.Errorf("large=%v", large)
+	if !maps.Equal(objs, st) {
+		t.Errorf("objs=%v", objs)
 	}
 }

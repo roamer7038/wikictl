@@ -72,7 +72,7 @@ func TestGitFailure(t *testing.T) {
 		code  int
 	}{
 		{"grep/head", gitFault{match: head}, "", []string{"grep", "lease"}, ExitGit},
-		{"grep/grep without stderr", gitFault{match: " grep -I -z ", quiet: true}, "", []string{"grep", "lease"}, ExitGit},
+		{"grep/grep without stderr", gitFault{match: " grep -z --no-column -I ", quiet: true}, "", []string{"grep", "lease"}, ExitGit},
 		{"grep/paths", gitFault{match: " ls-tree -r -z "}, "", []string{"grep", "lease", "global"}, ExitGit},
 		{"find/paths", gitFault{match: " ls-tree -r -z "}, "", []string{"find"}, ExitGit},
 		{"find/updated", gitFault{match: " log -z --format="}, "", []string{"find", "-mtime", "0"}, ExitGit},
@@ -82,10 +82,10 @@ func TestGitFailure(t *testing.T) {
 		{"cat/missing path", gitFault{match: " ls-tree -z "}, "", []string{"cat", "global/none.md"}, ExitGit},
 		{"stat/updated", gitFault{match: " log -z --format="}, "", []string{"stat", "global/push.md"}, ExitGit},
 		{"stat/cat", gitFault{match: " cat-file --batch "}, "", []string{"stat", "global/push.md"}, ExitGit},
-		{"links/backlinks grep", gitFault{match: " grep -E -l "}, "", []string{"links", "global/index.md"}, ExitGit},
+		{"links/backlinks grep", gitFault{match: " grep -z --no-column -E -l "}, "", []string{"links", "global/index.md"}, ExitGit},
 		{"links/backlinks cat", gitFault{match: " cat-file --batch ", skip: 1}, "", []string{"links", "global/index.md"}, ExitGit},
 		{"ls/files", gitFault{match: " ls-tree -r -z "}, "", []string{"ls"}, ExitGit},
-		{"ls/deprecated", gitFault{match: " grep -l -z -F "}, "", []string{"ls"}, ExitGit},
+		{"ls/deprecated", gitFault{match: " grep -z --no-column -F -l "}, "", []string{"ls"}, ExitGit},
 		{"ls/cat pages", gitFault{match: " cat-file --batch ", skip: 1}, "", []string{"ls", "-l", "global"}, ExitGit},
 		{"ls/stat", gitFault{match: " cat-file --batch-check "}, "", []string{"ls", "-al", "global"}, ExitGit},
 		{"ls/cat", gitFault{match: " cat-file --batch "}, "", []string{"ls", "-al", "global"}, ExitGit},

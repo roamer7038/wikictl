@@ -413,7 +413,7 @@ func (a *app) cmdMv(c *command, args []string) error {
 
 	moved, rewritten, commit := []movedFile{}, 0, ""
 	if len(mapping) > 0 {
-		changes, n, err := a.moveChanges(mapping, modes)
+		changes, n, err := a.moveChanges(entries, mapping, modes)
 		if err != nil {
 			return err
 		}
@@ -469,11 +469,11 @@ func (a *app) badPath(p string, err error) error {
 }
 
 // moveChanges builds the changes that move the files of mapping (old path ->
-// new path), each keeping its mode from modes: pages through wiki.Relocate,
-// with the old name added to aliases when it changes, and other files
-// unchanged. It also returns the number of other pages whose links were
-// rewritten.
-func (a *app) moveChanges(mapping, modes map[string]string) ([]repo.Change, int, error) {
+// new path), each keeping its mode from modes: pages through wiki.Relocate
+// over entries, the files of the whole tree, with the old name added to
+// aliases when it changes, and other files unchanged. It also returns the
+// number of other pages whose links were rewritten.
+func (a *app) moveChanges(entries []repo.Entry, mapping, modes map[string]string) ([]repo.Change, int, error) {
 	sources := slices.Collect(maps.Keys(mapping))
 	objs, err := a.repo.Stat(sources)
 	if err != nil {
@@ -492,7 +492,7 @@ func (a *app) moveChanges(mapping, modes map[string]string) ([]repo.Change, int,
 	}
 	var changes []repo.Change
 	if len(pages) > 0 {
-		if changes, err = wiki.Relocate(a.repo, pages); err != nil {
+		if changes, err = wiki.Relocate(a.repo, entries, pages); err != nil {
 			return nil, 0, &gitError{err}
 		}
 	}

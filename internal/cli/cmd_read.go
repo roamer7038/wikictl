@@ -11,7 +11,6 @@ import (
 
 	"github.com/spf13/pflag"
 
-	"github.com/roamer7038/wikictl/internal/page"
 	"github.com/roamer7038/wikictl/internal/repo"
 	"github.com/roamer7038/wikictl/internal/wiki"
 )
@@ -87,27 +86,21 @@ type statItem struct {
 // cmdStat shows the blob sha, the time of the last change and the attributes
 // of each file. Paths that are not files are reported as cat reports them.
 func (a *app) cmdStat(c *command, args []string) error {
-	objs, err := a.repo.Stat(args)
+	pages, err := wiki.ReadPages(a.repo, args)
 	if err != nil {
 		return &gitError{err}
 	}
-	missing, err := a.missing(args, func(p string) bool { _, ok := objs[p]; return ok })
-	if err != nil {
-		return err
+	var found, missing []string
+	for _, p := range args {
+		if pages.Exists(p) {
+			found = append(found, p)
+		} else {
+			missing = append(missing, p)
+		}
 	}
 	msg, err := a.fileMessage(missing)
 	if err != nil {
 		return err
-	}
-	var found []string
-	for _, p := range args {
-		if _, ok := objs[p]; ok {
-			found = append(found, p)
-		}
-	}
-	pages, err := a.readPages(found)
-	if err != nil {
-		return &gitError{err}
 	}
 	updated, err := a.repo.Updated(found)
 	if err != nil {
@@ -115,10 +108,10 @@ func (a *app) cmdStat(c *command, args []string) error {
 	}
 	items := []statItem{}
 	for _, p := range found {
-		pg := pages.parse(p)
+		pg := pages.Parse(p)
 		typ, _ := pg.Frontmatter["type"].(string)
 		status, _ := pg.Frontmatter["status"].(string)
-		items = append(items, statItem{Path: p, SHA: objs[p].SHA, Updated: fmtTime(updated[p]), Title: pg.Title, Summary: pg.Summary,
+		items = append(items, statItem{Path: p, SHA: pages.Objects[p].SHA, Updated: fmtTime(updated[p]), Title: pg.Title, Summary: pg.Summary,
 			Type: typ, Tags: stringList(pg.Frontmatter["tags"]), Status: status, Aliases: stringList(pg.Frontmatter["aliases"])})
 	}
 	a.emit(map[string]any{"items": items}, func(w io.Writer) {
@@ -222,14 +215,11 @@ func linksFlags(a *app, fs *pflag.FlagSet) {
 // not listed again.
 func (a *app) cmdLinks(c *command, args []string) error {
 	p := args[0]
-	pages, err := a.readPages(args)
+	pages, err := wiki.ReadPages(a.repo, args)
 	if err != nil {
 		return &gitError{err}
 	}
-	if !pages.exists(p) {
-		if err := a.repo.CheckMissing(args); err != nil {
-			return &gitError{err}
-		}
+	if !pages.Exists(p) {
 		msg, err := a.fileMessage(args)
 		if err != nil {
 			return err
@@ -240,7 +230,7 @@ func (a *app) cmdLinks(c *command, args []string) error {
 	both := a.linksIn == a.linksOut
 	items := []linkItem{}
 	if both || a.linksOut {
-		pg := pages.parse(p)
+		pg := pages.Parse(p)
 		typed := map[string]bool{}
 		for _, l := range pg.Links {
 			items = append(items, linkItem{"out", l.Type, l.Target, l.Note})
@@ -267,34 +257,6 @@ func (a *app) cmdLinks(c *command, args []string) error {
 		}
 	})
 	return nil
-}
-
-// pageSet is the files read by readPages.
-type pageSet struct {
-	contents map[string][]byte
-	large    map[string]repo.Object // files over page.MaxPageSize, not read
-}
-
-// readPages reads paths with one lookup of their sizes and one read of the
-// contents of the files that are not over page.MaxPageSize.
-func (a *app) readPages(paths []string) (pageSet, error) {
-	contents, large, err := a.repo.CatLimit(paths, page.MaxPageSize)
-	return pageSet{contents, large}, err
-}
-
-// exists reports whether p is a file.
-func (s pageSet) exists(p string) bool {
-	_, ok := s.contents[p]
-	_, big := s.large[p]
-	return ok || big
-}
-
-// parse returns page.Parse of p, and page.TooLarge for a file over the limit.
-func (s pageSet) parse(p string) *page.Page {
-	if _, big := s.large[p]; big {
-		return page.TooLarge(p)
-	}
-	return page.Parse(p, s.contents[p])
 }
 
 // cmdContext prints the configuration the other commands use, with the origin

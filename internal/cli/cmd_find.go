@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/spf13/pflag"
+
+	"github.com/roamer7038/wikictl/internal/wiki"
 )
 
 // findQuery is the expression of find, parsed by checkFind. The tests read
@@ -316,13 +318,13 @@ func (a *app) cmdFind(c *command, args []string) error {
 		q.now = time.Now()
 	}
 	if q.needPages {
-		pages, err := a.readPages(files)
+		pages, err := wiki.ReadPages(a.repo, files)
 		if err != nil {
 			return &gitError{err}
 		}
 		q.frontmatter = map[string]map[string]any{}
 		for _, p := range files {
-			q.frontmatter[p] = pages.parse(p).Frontmatter
+			q.frontmatter[p] = pages.Parse(p).Frontmatter
 		}
 	}
 	items := []treeItem{}

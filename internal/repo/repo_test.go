@@ -58,19 +58,12 @@ func run(t *testing.T, dir string, name string, args ...string) string {
 func TestSnapshot(t *testing.T) {
 	remote := newRemote(t, true)
 	r := openFetched(t, remote)
-	if err := r.Snapshot(); err != nil {
-		t.Fatal(err)
-	}
-	before, _ := r.Head()
 	seedRemote(t, remote, map[string]string{"global/new.md": "---\nsummary: n\n---\n# n\n"})
 	if err := r.Fetch(); err != nil {
 		t.Fatal(err)
 	}
-	if head, err := r.Head(); err != nil || head != before {
-		t.Errorf("Head after fetch: %s %v, want %s", head, err, before)
-	}
-	if list, err := r.List(); err != nil || strings.Contains(strings.Join(list, "\n"), "global/new.md") {
-		t.Errorf("List after fetch: %v %v", list, err)
+	if list, err := r.Files(nil); err != nil || strings.Contains(strings.Join(list, "\n"), "global/new.md") {
+		t.Errorf("Files after fetch: %v %v", list, err)
 	}
 	if c, _, err := r.CatSHA([]string{"global/new.md"}); err != nil || c["global/new.md"] != nil {
 		t.Errorf("CatSHA after fetch: %v %v", c, err)
@@ -90,9 +83,6 @@ func TestSnapshot(t *testing.T) {
 func TestSnapshotOfEmptyBranch(t *testing.T) {
 	remote := newRemote(t, false)
 	r := openFetched(t, remote)
-	if err := r.Snapshot(); err != nil {
-		t.Fatal(err)
-	}
 	seedRemote(t, remote, map[string]string{"global/new.md": "# n\n"})
 	if err := r.Fetch(); err != nil {
 		t.Fatal(err)
@@ -105,6 +95,7 @@ func TestSnapshotOfEmptyBranch(t *testing.T) {
 	}
 }
 
+// openFetched opens a mirror of remote, fetches and calls Snapshot.
 func openFetched(t *testing.T, remote string) *Repo {
 	t.Helper()
 	r, err := Open(filepath.Join(t.TempDir(), "m"), remote, "")
@@ -114,7 +105,24 @@ func openFetched(t *testing.T, remote string) *Repo {
 	if err := r.Fetch(); err != nil {
 		t.Fatal(err)
 	}
+	if err := r.Snapshot(); err != nil {
+		t.Fatal(err)
+	}
 	return r
+}
+
+// grepFiles returns the paths that GrepRecords lists with flags and pattern.
+func grepFiles(t *testing.T, r *Repo, flags []string, pattern string) []string {
+	t.Helper()
+	records, err := r.GrepRecords(flags, []string{pattern}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, rec := range records {
+		out = append(out, rec[0])
+	}
+	return out
 }
 
 func TestOpenAndFetch(t *testing.T) {
@@ -130,7 +138,7 @@ func TestOpenAndFetch(t *testing.T) {
 	if err := r.Fetch(); err != nil {
 		t.Fatal(err)
 	}
-	h, err := r.Head()
+	h, err := r.trackingHead()
 	if err != nil || len(h) != 40 {
 		t.Fatalf("head=%q err=%v", h, err)
 	}
@@ -311,7 +319,7 @@ func TestOpenEmptyRemote(t *testing.T) {
 	if err := r.Fetch(); err != nil {
 		t.Fatal(err)
 	}
-	if h, err := r.Head(); err != nil || h != "" {
+	if h, err := r.trackingHead(); err != nil || h != "" {
 		t.Errorf("empty remote must have no head, got %q, %v", h, err)
 	}
 }
@@ -323,17 +331,15 @@ func TestReadGitFailure(t *testing.T) {
 	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	r := &Repo{Dir: t.TempDir(), Branch: "main"}
-	if h, err := r.Head(); err == nil {
-		t.Errorf("Head = %q, nil", h)
+	if err := r.Snapshot(); err == nil {
+		t.Errorf("Snapshot = nil")
 	}
-	if got, err := r.List(); err == nil {
-		t.Errorf("List = %v, nil", got)
+	r.snapshot = zeroSHA
+	if got, err := r.Files(nil); err == nil {
+		t.Errorf("Files = %v, nil", got)
 	}
-	if got, err := r.Grep([]string{"x"}); err == nil {
-		t.Errorf("Grep = %v, nil", got)
-	}
-	if got, err := r.GrepDeprecated(); err == nil {
-		t.Errorf("GrepDeprecated = %v, nil", got)
+	if got, err := r.GrepRecords([]string{"-l"}, []string{"x"}, nil); err == nil {
+		t.Errorf("GrepRecords = %v, nil", got)
 	}
 	if got, err := r.Updated([]string{"global/a.md"}); err == nil {
 		t.Errorf("Updated = %v, nil", got)
@@ -358,17 +364,13 @@ func TestCheckMissing(t *testing.T) {
 // among several calls, and that an entry is found in the last of them.
 func TestTreeEntries(t *testing.T) {
 	r := openFetched(t, newRemote(t, true))
-	head, err := r.Head()
-	if err != nil {
-		t.Fatal(err)
-	}
 	var paths []string
 	for n := 0; n <= 2*maxTreeArgs; n += len(paths[len(paths)-1]) {
 		paths = append(paths, "a/"+strconv.Itoa(len(paths))+".md")
 	}
 	trace := filepath.Join(t.TempDir(), "trace")
 	t.Setenv("GIT_TRACE", trace)
-	ents, err := r.treeEntries(head, append(paths, "global/index.md", "global/index.md"))
+	ents, err := r.treeEntries(append(paths, "global/index.md", "global/index.md"))
 	if err != nil || len(ents) != 1 || ents["global/index.md"].Type != "blob" {
 		t.Errorf("treeEntries = %v, %v", ents, err)
 	}
@@ -390,26 +392,21 @@ func TestRead(t *testing.T) {
 		"global/日本語.md":      "---\nsummary: non-ascii\n---\n# 日本語\nlease\n",
 	})
 	r := openFetched(t, remote)
-	list, err := r.List()
+	list, err := r.Files(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(list) != 5 || list[2] != "global/日本語.md" {
+	if len(list) != 8 || list[5] != "global/日本語.md" {
 		t.Errorf("list=%v", list)
 	}
-	got, _ := r.Grep([]string{"LEASE", "force"})
-	if len(got) != 1 || got[0] != "global/git-push.md" {
-		t.Errorf("all-match grep=%v", got)
-	}
-	got, _ = r.Grep([]string{"lease"})
-	if len(got) != 3 {
+	want := []string{"global/git-push.md", "global/notes.txt", "global/日本語.md", "projects/a/x.md"}
+	if got := grepFiles(t, r, []string{"-E", "-l"}, FoldPattern("LEASE")); !slices.Equal(got, want) {
 		t.Errorf("grep=%v", got)
 	}
-	if got, _ := r.Grep([]string{"zzz-none"}); len(got) != 0 {
+	if got := grepFiles(t, r, []string{"-E", "-l"}, "zzz-none"); len(got) != 0 {
 		t.Errorf("no match must be empty: %v", got)
 	}
-	dep, _ := r.GrepDeprecated()
-	if !dep["projects/a/x.md"] || len(dep) != 1 {
+	if dep := grepFiles(t, r, []string{"-F", "-l"}, "deprecated"); !slices.Equal(dep, []string{"projects/a/x.md"}) {
 		t.Errorf("dep=%v", dep)
 	}
 	c, shas, _ := r.CatSHA([]string{"global/git-push.md", "missing.md", "machines/h/y.md"})
@@ -440,16 +437,15 @@ func TestReadQuotedNames(t *testing.T) {
 	}
 	seedRemote(t, remote, files)
 	r := openFetched(t, remote)
-	list, err := r.List()
+	list, err := r.Files(nil)
 	if want := []string{names[0], names[1], "global/index.md", names[2], names[3]}; err != nil || !slices.Equal(list, want) {
-		t.Errorf("List = %q, %v", list, err)
+		t.Errorf("Files = %q, %v", list, err)
 	}
-	if got, err := r.Grep([]string{"lease"}); err != nil || !slices.Equal(got, names) {
-		t.Errorf("Grep = %q, %v", got, err)
+	if got := grepFiles(t, r, []string{"-E", "-l"}, FoldPattern("lease")); !slices.Equal(got, names) {
+		t.Errorf("grep = %q", got)
 	}
-	dep, err := r.GrepDeprecated()
-	if err != nil || len(dep) != len(names) || !dep[names[0]] || !dep[names[1]] || !dep[names[2]] || !dep[names[3]] {
-		t.Errorf("GrepDeprecated = %v, %v", dep, err)
+	if dep := grepFiles(t, r, []string{"-F", "-l"}, "deprecated"); !slices.Equal(dep, names) {
+		t.Errorf("grep deprecated = %q", dep)
 	}
 	// Absent paths with and without a newline and a directory are mixed with
 	// the pages. git before 2.38 has no cat-file -z, so it must not be used.
@@ -511,6 +507,9 @@ func TestCommitAndConflict(t *testing.T) {
 	if err != nil || len(res.Commit) != 40 || len(res.SHAs["global/a.md"]) != 40 {
 		t.Fatalf("%+v %v", res, err)
 	}
+	if err := r.Snapshot(); err != nil {
+		t.Fatal(err)
+	}
 	c, _, _ := r.CatSHA([]string{"global/a.md"})
 	if c["global/a.md"] == nil {
 		t.Fatal("not readable after commit")
@@ -533,10 +532,16 @@ func TestCommitAndConflict(t *testing.T) {
 	if _, err := r.Commit([]Change{{Path: "global/a.md", Content: []byte("---\nsummary: a3\n---\n"), Base: &cur}}, "retry", au); err != nil {
 		t.Fatal(err)
 	}
+	if err := r.Snapshot(); err != nil {
+		t.Fatal(err)
+	}
 	if c, _, _ := r.CatSHA([]string{"global/other.md"}); c["global/other.md"] == nil {
 		t.Error("other.md must survive")
 	}
 	if _, err := r.Commit([]Change{{Path: "global/a.md", Delete: true}}, "rm", au); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Snapshot(); err != nil {
 		t.Fatal(err)
 	}
 	if c, _, _ := r.CatSHA([]string{"global/a.md"}); c["global/a.md"] != nil {
@@ -555,7 +560,7 @@ func TestCommitEmptyRemote(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if h, _ := r.Head(); len(h) != 40 {
+	if h, _ := r.trackingHead(); len(h) != 40 {
 		t.Error("head not set")
 	}
 }
@@ -602,19 +607,15 @@ func TestGrepFoldsNonASCII(t *testing.T) {
 		"global/axb.md":    "---\nsummary: axb x\n---\n",
 	})
 	r := openFetched(t, remote)
-	for _, tc := range []struct {
-		words []string
-		want  string
-	}{
-		{[]string{"äpfel"}, "global/apfel.md"},
-		{[]string{"ÄPFEL"}, "global/apfel.md"},
-		{[]string{"273 k"}, "global/kelvin.md"},
-		{[]string{"οδος"}, "global/sigma.md"},
-		{[]string{"A.B", "[X]"}, "global/a.b.md"},
+	for _, tc := range []struct{ word, want string }{
+		{"äpfel", "global/apfel.md"},
+		{"ÄPFEL", "global/apfel.md"},
+		{"273 k", "global/kelvin.md"},
+		{"οδος", "global/sigma.md"},
+		{"A.B [X]", "global/a.b.md"},
 	} {
-		got, err := r.Grep(tc.words)
-		if err != nil || len(got) != 1 || got[0] != tc.want {
-			t.Errorf("Grep(%q)=%v, %v; want [%s]", tc.words, got, err, tc.want)
+		if got := grepFiles(t, r, []string{"-E", "-l"}, FoldPattern(tc.word)); len(got) != 1 || got[0] != tc.want {
+			t.Errorf("grep %q=%v; want [%s]", tc.word, got, tc.want)
 		}
 	}
 }
