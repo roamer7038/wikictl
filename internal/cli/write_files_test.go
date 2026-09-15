@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -219,5 +220,59 @@ func TestWriteOverDirectoryOrFile(t *testing.T) {
 	}
 	if got := gitOut(t, "--git-dir", remote, "rev-parse", "main"); got != head {
 		t.Errorf("a rejected write over a submodule moved the remote branch: %s -> %s", head, got)
+	}
+}
+
+// TestNonRegularFiles checks that writes keep the mode of executables and
+// symbolic links, refuse to write over a symbolic link or to move a
+// submodule, and delete both.
+func TestNonRegularFiles(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symbolic links")
+	}
+	cfg := setup(t)
+	remote, work := filepath.Join(filepath.Dir(cfg), "remote.git"), filepath.Join(filepath.Dir(cfg), "work")
+	os.WriteFile(filepath.Join(work, "global", "run.sh"), []byte("#!/bin/sh\n"), 0o755)
+	os.Symlink("push.md", filepath.Join(work, "global", "link.md"))
+	mustRun(t, work, "git", "add", "-A")
+	mustRun(t, work, "git", "update-index", "--add", "--cacheinfo", "160000,"+gitOut(t, "--git-dir", remote, "rev-parse", "main")+",global/sub")
+	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "special")
+	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
+	mode := func(p string) string {
+		t.Helper()
+		if f := strings.Fields(gitOut(t, "--git-dir", remote, "ls-tree", "main", "--", p)); len(f) > 0 {
+			return f[0]
+		}
+		return ""
+	}
+
+	for _, args := range [][]string{{"mv", "global/run.sh", "global/run2.sh"}, {"mv", "global/link.md", "projects/link.md"}} {
+		if code, _, errs := runCLI(t, cfg, "", args...); code != 0 {
+			t.Fatalf("%v: code=%d %s", args, code, errs)
+		}
+	}
+	if m := mode("global/run2.sh"); m != "100755" {
+		t.Errorf("moved executable: mode %q", m)
+	}
+	if m, target := mode("projects/link.md"), gitOut(t, "--git-dir", remote, "cat-file", "-p", "main:projects/link.md"); m != "120000" || target != "push.md" {
+		t.Errorf("moved symbolic link: mode %q, target %q", m, target)
+	}
+	if code, _, errs := runCLI(t, cfg, "#!/bin/sh\necho hi\n", "put", "--base", shaOf(t, cfg, "global/run2.sh"), "global/run2.sh"); code != 0 || mode("global/run2.sh") != "100755" {
+		t.Errorf("put over an executable: code=%d mode %q %s", code, mode("global/run2.sh"), errs)
+	}
+	if code, _, errs := runCLI(t, cfg, "x", "put", "projects/link.md"); code != ExitError || !strings.HasSuffix(errs, "wikictl: projects/link.md: is a symbolic link\n") {
+		t.Errorf("put over a symbolic link: code=%d %q", code, errs)
+	}
+
+	for _, args := range [][]string{{"mv", "global/sub", "global/sub2"}, {"mv", "global", "machines"}} {
+		if code, _, errs := runCLI(t, cfg, "", args...); code != ExitError || !strings.Contains(errs, "cannot move a submodule") {
+			t.Errorf("%v: code=%d %q", args, code, errs)
+		}
+	}
+	if m := mode("global/sub"); m != "160000" {
+		t.Errorf("submodule after a refused mv: mode %q", m)
+	}
+	if code, _, errs := runCLI(t, cfg, "", "rm", "global/sub", "projects/link.md"); code != 0 || mode("global/sub")+mode("projects/link.md") != "" {
+		t.Errorf("rm of a submodule and a symbolic link: code=%d %s", code, errs)
 	}
 }
