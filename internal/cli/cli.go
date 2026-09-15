@@ -143,9 +143,10 @@ Output: items[] {path, kind}; kind is "file" or "dir".`,
 must be inside a directory. Omit --base for a new file. For an existing file
 pass --base with the blob sha from stat; without it, or if the file changed in
 the meantime, the command exits with code 3 and prints the current content and
-sha. A path that breaks the file name rules (see "help lint") is rejected with
-exit code 4. A path ending in .md is a page: a page whose frontmatter is
-invalid or that is over the size limits is rejected with exit code 4, and a
+sha (see "wikictl help"). A path that breaks the file name rules (see "help
+lint") is rejected with exit code 4. A path ending in .md is a page: a page
+whose frontmatter is invalid or that is over the size limits is rejected with
+exit code 4, and a
 missing summary, Links lines that do not parse, links to files missing from
 the wiki and names outside the recommended form only produce warnings on
 standard error; "description" in the frontmatter is read as a synonym of
@@ -165,7 +166,8 @@ starts empty. The editor is $VISUAL, else $EDITOR, else vi; one with spaces or
 shell characters is run by the shell, so it may include arguments. Nothing is
 committed when the content is unchanged, which includes a new file left empty.
 When the result cannot be committed, because the file changed in the meantime
-(exit code 3), the content breaks the rules that put applies (exit code 4), or
+(exit code 3; see "wikictl help"), the content breaks the rules that put
+applies (exit code 4), or
 the editor fails (exit code 1), the edited content is kept in a temporary file
 whose path is printed on standard error. Standard input must be a terminal;
 otherwise the command exits with code 2.
@@ -203,7 +205,8 @@ such as "- part_of: index.md" or "- index.md", is left unchanged and becomes
 a broken link; write page targets as [text](path).
 
 If a file that mv changes or deletes changed since mv read it, or a new path
-was created, the command exits with code 3 and writes nothing; run it again.
+was created, the command exits with code 3 and writes nothing (see "wikictl
+help"); run it again.
 
 Output: {moved[] {from, to}, rewritten, commit}; moved lists every moved file,
 rewritten counts the other pages whose links were rewritten, and commit is
@@ -220,8 +223,8 @@ root of the wiki, or a path that breaks the file name rules (see "help lint"),
 is rejected with exit code 4 and nothing is deleted. A file added under a
 directory after rm read it is not deleted. Pages that link to a deleted page
 are left unchanged; lint reports them as broken_link. If a file
-changed since rm read it, the command exits with code 3 and deletes nothing;
-run it again.
+changed since rm read it, the command exits with code 3 and deletes nothing
+(see "wikictl help"); run it again.
 
 Output: {paths, commit}; paths lists the deleted files, and commit is empty
 when nothing was deleted. With -v, text output is "<path><TAB><commit>" for
@@ -366,7 +369,7 @@ type app struct {
 	patterns     []string
 
 	find    *findQuery
-	cleaned []string // the paths cleaned by the check of grep, and the sources and destination cleaned by the check of mv
+	cleaned []string // the paths cleaned by the check of grep; for mv, the sources and the destination
 }
 
 // globalFlags registers the flags accepted before or after the command name.

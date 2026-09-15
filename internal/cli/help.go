@@ -46,18 +46,21 @@ const outputHelp = `Output:
 `
 
 const writesHelp = `Writes:
-  put, edit, mv and rm write their changes as one commit, with the message
-  given by -m or "wikictl: <command> <arguments>". Nothing is printed on
-  success unless -v is given. When a file changed or a path was created since
-  the command read it, nothing is written and the command exits with code 3:
-  text output prints "wikictl: conflict (<reason>): <path> sha=<sha>" on
-  standard error and the current content of the file on standard output, and
-  --json prints {error, reason, path, sha, content, message} with error
-  "conflict". reason is "exists" when the path already exists, or "changed"
-  when the file no longer has the expected sha; sha and content are empty when
-  the file has been deleted. With --no-fetch, edit, mv and rm read the mirror
-  as last fetched, so a file that changed since then is reported as a
-  conflict.
+  put, edit, mv and rm write their changes as one commit. Its message is -m,
+  else "wikictl: <command> " followed by the paths, the sources before the
+  destination for mv, or "<first path> and <n> more" when they are long.
+  Nothing is printed on success unless -v is given. When a path to create
+  already exists, as with put without --base, or a file to replace or delete
+  no longer has the expected sha, because it changed since it was read or
+  --base is not its current sha, nothing is written and the command exits
+  with code 3: text output prints "wikictl: conflict (<reason>): <path>
+  sha=<sha>" on standard error and the current content of the file on
+  standard output, and --json prints {error, reason, path, sha, content,
+  message} with error "conflict". reason is "exists" when the path already
+  exists, or "changed" when the file no longer has the expected sha; sha and
+  content are empty when the file has been deleted. With --no-fetch, edit, mv
+  and rm read the mirror as last fetched, so a file that changed since then is
+  reported as a conflict.
 `
 
 const mirrorHelp = `Mirror:

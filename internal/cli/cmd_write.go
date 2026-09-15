@@ -56,7 +56,7 @@ func rmFlags(a *app, fs *pflag.FlagSet) {
 
 // msgFlag registers the -m flag shared by the commands that commit.
 func msgFlag(a *app, fs *pflag.FlagSet) {
-	fs.StringVarP(&a.msg, "message", "m", "", "commit `message` (default \"wikictl: <command> <arguments>\")")
+	fs.StringVarP(&a.msg, "message", "m", "", "commit `message`")
 }
 
 func (a *app) cmdPut(c *command, args []string) error {
