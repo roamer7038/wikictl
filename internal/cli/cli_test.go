@@ -88,6 +88,10 @@ func TestReadCommands(t *testing.T) {
 		"-hc lease global":                    "1\n",
 		"-hl lease global":                    "global/push.md\n",
 		"--no-filename -i LEASE projects":     "lease\n",
+		"-hi LEASE projects":                  "lease\n",
+		"-hL lease global":                    "global/index.md\n",
+		"-hvn lease projects":                 "1:---\n2:summary: x\n3:---\n4:# x\n",
+		"-hq lease":                           "",
 		"-c lease global":                     "global/push.md:1\n",
 		"-L lease global":                     "global/index.md\n",
 		"-v -c lease projects":                "projects/app/x.md:4\n",
@@ -99,6 +103,13 @@ func TestReadCommands(t *testing.T) {
 	} {
 		if code, out, errs := runCLI(t, cfg, "", append([]string{"grep"}, strings.Fields(args)...)...); code != 0 || out != want {
 			t.Errorf("grep %s: code=%d out=%q errs=%q", args, code, out, errs)
+		}
+	}
+	for _, mode := range []string{"", "-n", "-c"} {
+		args := append(strings.Fields(mode), "--json", "lease", "global", "projects")
+		_, want, _ := runCLI(t, cfg, "", append([]string{"grep"}, args...)...)
+		if _, got, _ := runCLI(t, cfg, "", append([]string{"grep", "-h"}, args...)...); got != want || !strings.Contains(got, `"path"`) {
+			t.Errorf("grep -h %v: got %q, want %q", args, got, want)
 		}
 	}
 	if code, out, _ := runCLI(t, cfg, "", "grep", "-q", "zzz-none"); code != ExitError || out != "" {

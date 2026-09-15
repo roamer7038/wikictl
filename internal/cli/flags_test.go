@@ -104,6 +104,9 @@ func TestHelpAndVersionFlags(t *testing.T) {
 	if code, _, errs := runNoConfig(t, "grep", "-h"); code != ExitUsage || !strings.Contains(errs, "missing pattern") {
 		t.Errorf("grep -h: code=%d errs=%q", code, errs)
 	}
+	if code, out, _ := runNoConfig(t, "-h", "grep"); code != ExitOK || !strings.Contains(out, "Usage: wikictl [global flags] <command>") {
+		t.Errorf("-h grep: code=%d out=%q", code, out)
+	}
 	if code, out, _ := runNoConfig(t, "help", "-h"); code != ExitOK || !strings.Contains(out, "Usage: wikictl help") {
 		t.Errorf("help -h: code=%d out=%q", code, out)
 	}
