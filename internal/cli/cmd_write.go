@@ -300,7 +300,7 @@ func (a *app) cmdMv(c *command, args []string) error {
 			movedToDirs[d] = true
 		}
 	}
-	// taken reports whether p exists, or is or contains a path already moved to.
+	// taken reports whether p exists, or is, contains or is below a path already moved to.
 	taken := func(p string) bool {
 		if modes[p] != "" || (p != "." && len(under(p)) > 0) || movedTo[p] || movedToDirs[p] {
 			return true
