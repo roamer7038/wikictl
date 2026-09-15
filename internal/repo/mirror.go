@@ -145,8 +145,10 @@ const fetchAttempts = 10
 // A remote that does not have the branch yet (an empty repository) is not an error.
 // git fetch updates the ref only if it still holds the value read when the
 // fetch started, so a fetch that another process's fetch overtakes fails with
-// "cannot lock ref"; that fetch is run again. The lock of the mirror is not
-// used, so that a read does not wait for a write that is pushing.
+// "cannot lock ref ...: is at X but expected Y"; that fetch is run again. Other
+// failures to lock the ref, such as a stale lock file, are not retried. The
+// lock of the mirror is not used, so that a read does not wait for a write
+// that is pushing.
 func (r *Repo) Fetch() error {
 	for attempt := 1; ; attempt++ {
 		_, err := r.Git("fetch", "-q", "origin", "+refs/heads/"+r.Branch+":"+r.trackingRef())
@@ -158,7 +160,7 @@ func (r *Repo) Fetch() error {
 			return err
 		case strings.Contains(ge.Stderr, "couldn't find remote ref"):
 			return nil
-		case strings.Contains(ge.Stderr, "cannot lock ref") && attempt < fetchAttempts:
+		case strings.Contains(ge.Stderr, "cannot lock ref") && strings.Contains(ge.Stderr, "but expected") && attempt < fetchAttempts:
 			continue
 		default:
 			return err

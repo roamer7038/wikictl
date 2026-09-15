@@ -223,6 +223,27 @@ func TestFetchConcurrent(t *testing.T) {
 	}
 }
 
+// TestFetchStaleLockNotRetried checks that a fetch that cannot lock the
+// tracking ref because of a stale lock file fails after one git fetch.
+func TestFetchStaleLockNotRetried(t *testing.T) {
+	remote := newRemote(t, true)
+	r := openFetched(t, remote)
+	seedRemote(t, remote, map[string]string{"global/new.md": "# n\n"})
+	if err := os.WriteFile(filepath.Join(r.Dir, r.trackingRef()+".lock"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	trace := filepath.Join(t.TempDir(), "trace")
+	t.Setenv("GIT_TRACE", trace)
+	err := r.Fetch()
+	if err == nil || !strings.Contains(err.Error(), "cannot lock ref") {
+		t.Fatalf("Fetch: %v, want a cannot lock ref error", err)
+	}
+	b, _ := os.ReadFile(trace)
+	if n := strings.Count(string(b), "built-in: git fetch "); n != 1 {
+		t.Errorf("git fetch ran %d times, want 1", n)
+	}
+}
+
 func TestOpenLeftoverDir(t *testing.T) {
 	remote := newRemote(t, true)
 	empty := filepath.Join(t.TempDir(), "m")
