@@ -39,11 +39,28 @@ const outputHelp = `Output:
   Errors go to standard error as "wikictl: <message>", or with --json to
   standard output as {"error": "<kind>", "message": "..."}, where <kind> is
   error, usage, conflict, invalid or git. In text output, control characters
-  other than tab in paths, summaries, titles, lint messages, warnings, error
-  messages and the attributes and links shown by stat and links are printed as
-  \xNN, except that a newline in an error or a configuration warning, such as
-  in the output of git, starts a line indented by two spaces; JSON output and
-  the files printed by cat are not changed.
+  other than tab are printed as \xNN, except that a newline in an error or a
+  configuration warning, such as in the output of git, starts a line indented
+  by two spaces; JSON output and the content of files printed by cat or on a
+  conflict are not changed.
+`
+
+const writesHelp = `Writes:
+  put, edit, mv and rm write their changes as one commit. Its message is -m,
+  else "wikictl: <command> " followed by the paths, the sources before the
+  destination for mv, or "<first path> and <n> more" when they are long.
+  Nothing is printed on success unless -v is given. When a path to create
+  already exists, as with put without --base, or a file to replace or delete
+  no longer has the expected sha, because it changed since it was read or
+  --base is not its current sha, nothing is written and the command exits
+  with code 3: text output prints "wikictl: conflict (<reason>): <path>
+  sha=<sha>" on standard error and the current content of the file on
+  standard output, and --json prints {error, reason, path, sha, content,
+  message} with error "conflict". reason is "exists" when the path already
+  exists, or "changed" when the file no longer has the expected sha; sha and
+  content are empty when the file has been deleted. With --no-fetch, edit, mv
+  and rm read the mirror as last fetched, so a file that changed since then is
+  reported as a conflict.
 `
 
 const mirrorHelp = `Mirror:
@@ -81,6 +98,8 @@ func printUsage(w io.Writer) {
 	printFlags(w, fs)
 	fmt.Fprintln(w)
 	fmt.Fprint(w, outputHelp)
+	fmt.Fprintln(w)
+	fmt.Fprint(w, writesHelp)
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Exit codes:")
 	fmt.Fprintln(w, "  0 success   1 error   2 usage or configuration   3 conflict   4 invalid page   5 git failure")

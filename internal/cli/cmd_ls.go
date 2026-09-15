@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"path"
@@ -177,7 +178,7 @@ func (a *app) cmdLs(c *command, args []string) error {
 				if it.Kind == "dir" {
 					name += "/"
 				}
-				rows = append(rows, [4]string{orDash(escapeControl(it.Type)), orDash(it.Updated), escapeControl(name), escapeControl(summaryOrTitle(it.Summary, it.Title))})
+				rows = append(rows, [4]string{cmp.Or(escapeControl(it.Type), "-"), cmp.Or(it.Updated, "-"), escapeControl(name), escapeControl(cmp.Or(it.Summary, it.Title))})
 			}
 			writeLs(w, rows, a.long)
 		}
@@ -274,13 +275,6 @@ func writeLs(w io.Writer, rows [][4]string, long bool) {
 		line := fmt.Sprintf("%-*s  %-*s  %-*s  %s", width[0], r[0], width[1], r[1], width[2], r[2], r[3])
 		fmt.Fprintln(w, strings.TrimRight(line, " "))
 	}
-}
-
-func orDash(s string) string {
-	if s == "" {
-		return "-"
-	}
-	return s
 }
 
 type treeItem struct {
