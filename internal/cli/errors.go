@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -123,9 +122,7 @@ func (a *app) report(err error) int {
 			a.stdout.Write(cf.Content)
 		}
 	case a.json:
-		enc := json.NewEncoder(a.stdout)
-		enc.SetEscapeHTML(false)
-		enc.Encode(errorOut{Error: kind, Message: err.Error()})
+		a.emit(errorOut{Error: kind, Message: err.Error()}, nil)
 	default:
 		fmt.Fprintln(a.stderr, "wikictl: "+escapeMessage(err.Error()))
 		if errors.As(err, &ue) && ue.cmd != nil {

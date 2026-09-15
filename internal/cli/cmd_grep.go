@@ -44,22 +44,14 @@ func grepFlags(a *app, fs *pflag.FlagSet) {
 	fs.BoolVar(&a.allMatch, "all-match", false, "with several -e, select only the files that match every pattern; not with -L")
 }
 
-// grepArgs splits the positional arguments of grep into the patterns and the
-// paths: without -e, the first argument is the pattern.
-func (a *app) grepArgs(args []string) (patterns, paths []string) {
-	if len(a.patterns) > 0 {
-		return a.patterns, args
-	}
-	if len(args) == 0 {
-		return nil, nil
-	}
-	return args[:1], args[1:]
-}
-
 func (a *app) checkGrep(c *command, args []string) error {
-	patterns, paths := a.grepArgs(args)
+	// Without -e, the first argument is the pattern.
+	paths := args
+	if len(a.patterns) == 0 && len(args) > 0 {
+		a.patterns, paths = args[:1], args[1:]
+	}
 	switch {
-	case len(patterns) == 0:
+	case len(a.patterns) == 0:
 		return &usageError{c, "missing pattern"}
 	case a.extended && a.fixed:
 		return &usageError{c, "-E and -F cannot be combined"}
@@ -75,8 +67,7 @@ func (a *app) checkGrep(c *command, args []string) error {
 // of GNU grep. It exits with 0 when anything is selected, 1 when nothing is,
 // and 2 when a path does not exist, unless -q selected anything.
 func (a *app) cmdGrep(c *command, args []string) error {
-	patterns, _ := a.grepArgs(args)
-	paths := a.cleaned
+	patterns, paths := a.patterns, a.cleaned
 	missing, err := a.absent(paths)
 	if err != nil {
 		return err

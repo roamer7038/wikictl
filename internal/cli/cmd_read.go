@@ -274,15 +274,6 @@ func (a *app) cmdContext(c *command, args []string) error {
 	return nil
 }
 
-// summaryOrTitle returns the summary, or the title when the page has none,
-// so that text output always shows something for a page.
-func summaryOrTitle(summary, title string) string {
-	if summary != "" {
-		return summary
-	}
-	return title
-}
-
 func fmtTime(t time.Time) string {
 	if t.IsZero() {
 		return ""

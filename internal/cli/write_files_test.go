@@ -183,14 +183,14 @@ func TestMvArguments(t *testing.T) {
 }
 
 func TestCommitMessage(t *testing.T) {
-	if got := commitMessage("rm", []string{"global/a.md", "global/b"}); got != "wikictl: rm global/a.md global/b" {
+	if got := (&app{}).commitMessage("rm", []string{"global/a.md", "global/b"}); got != "wikictl: rm global/a.md global/b" {
 		t.Errorf("short: %q", got)
 	}
 	long := make([]string, 30)
 	for i := range long {
 		long[i] = "global/some-long-page-name.md"
 	}
-	if got := commitMessage("rm", long); got != "wikictl: rm global/some-long-page-name.md and 29 more" {
+	if got := (&app{}).commitMessage("rm", long); got != "wikictl: rm global/some-long-page-name.md and 29 more" {
 		t.Errorf("long: %q", got)
 	}
 }

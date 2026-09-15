@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"io"
@@ -55,7 +56,7 @@ func rmFlags(a *app, fs *pflag.FlagSet) {
 
 // msgFlag registers the -m flag shared by the commands that commit.
 func msgFlag(a *app, fs *pflag.FlagSet) {
-	fs.StringVarP(&a.msg, "message", "m", "", "commit `message`")
+	fs.StringVarP(&a.msg, "message", "m", "", "commit `message` (default \"wikictl: <command> <arguments>\")")
 }
 
 func (a *app) cmdPut(c *command, args []string) error {
@@ -103,16 +104,12 @@ func (a *app) writeFile(p string, content []byte, base, cmd string) error {
 	} else if err := checkFilePath(p); err != nil {
 		return a.badPath(p, err)
 	}
-	msg := a.msg
-	if msg == "" {
-		msg = commitMessage(cmd, []string{p})
-	}
 	// put resolves a conflict by reapplying the change; edit is run again.
 	rerun := ""
 	if cmd != "put" {
 		rerun = cmd
 	}
-	res, err := a.commit([]repo.Change{{Path: p, Content: content, Base: &base}}, msg, rerun)
+	res, err := a.commit([]repo.Change{{Path: p, Content: content, Base: &base}}, a.commitMessage(cmd, []string{p}), rerun)
 	if err != nil {
 		return err
 	}
@@ -125,10 +122,13 @@ func (a *app) writeFile(p string, content []byte, base, cmd string) error {
 	return nil
 }
 
-// commitMessage returns the default commit message "wikictl: <cmd> <args>",
-// which names only the first argument and the number of the others when the
-// arguments are long.
-func commitMessage(cmd string, args []string) string {
+// commitMessage returns the message given with -m, else the default commit
+// message "wikictl: <cmd> <args>", which names only the first argument and the
+// number of the others when the arguments are long.
+func (a *app) commitMessage(cmd string, args []string) string {
+	if a.msg != "" {
+		return a.msg
+	}
 	msg := "wikictl: " + cmd + " " + strings.Join(args, " ")
 	if len(msg) > 200 && len(args) > 1 {
 		msg = fmt.Sprintf("wikictl: %s %s and %d more", cmd, args[0], len(args)-1)
@@ -192,11 +192,7 @@ func (a *app) cmdRm(c *command, args []string) error {
 			changes = append(changes, repo.Change{Path: p, Delete: true, Base: &base})
 		}
 		deleted = targets
-		msg := a.msg
-		if msg == "" {
-			msg = commitMessage("rm", args)
-		}
-		res, err := a.commit(changes, msg, "rm")
+		res, err := a.commit(changes, a.commitMessage("rm", args), "rm")
 		if err != nil {
 			return err
 		}
@@ -250,11 +246,9 @@ func (a *app) checkMv(c *command, args []string) error {
 // mv does, a source that cannot be moved is reported and the others are still
 // moved.
 func (a *app) cmdMv(c *command, args []string) error {
-	srcs, dst := args, a.targetDir
-	if dst == "" {
-		srcs, dst = args[:len(args)-1], args[len(args)-1]
-	}
+	// checkMv cleaned the sources followed by the destination.
 	cleaned := a.cleaned
+	srcs, dst := args[:len(cleaned)-1], cmp.Or(a.targetDir, args[len(args)-1])
 	entries, err := a.repo.Entries(nil)
 	if err != nil {
 		return &gitError{err}
@@ -275,10 +269,7 @@ func (a *app) cmdMv(c *command, args []string) error {
 	}
 	to := cleaned[len(cleaned)-1]
 	into := !a.noTargetDir && len(under(to)) > 0
-	if a.targetDir != "" && !into {
-		return fmt.Errorf("%s: not a directory", to)
-	}
-	if !into && len(srcs) > 1 {
+	if !into && (a.targetDir != "" || len(srcs) > 1) {
 		return fmt.Errorf("%s: not a directory", to)
 	}
 	if !into && to == "." {
@@ -352,21 +343,6 @@ func (a *app) cmdMv(c *command, args []string) error {
 					a.warn(page.Issue{Path: target + "/", Code: "name_style", Message: fmt.Sprintf("name %q: lowercase ASCII letters, digits and hyphens are recommended", seg)})
 				}
 			}
-			if belowFile(target) {
-				fail(target, "not a directory")
-				continue
-			}
-			if taken(target) {
-				fail(target, "not replacing")
-				continue
-			}
-			for _, f := range sub {
-				np := target + strings.TrimPrefix(f, src)
-				if err := checkFilePath(np); err != nil {
-					return &invalidError{"bad_path: " + np + ": " + err.Error()}
-				}
-				move(f, np)
-			}
 		case modes[src] != "":
 			if _, moved := mapping[src]; moved {
 				fail(srcs[i], "no such file or directory")
@@ -397,17 +373,25 @@ func (a *app) cmdMv(c *command, args []string) error {
 			} else if err := page.CheckFilePath(target); err != nil {
 				return &invalidError{"bad_path: " + err.Error()}
 			}
-			if belowFile(target) {
-				fail(target, "not a directory")
-				continue
-			}
-			if taken(target) {
-				fail(target, "not replacing")
-				continue
-			}
-			move(src, target)
+			sub = []string{src}
 		default:
 			fail(srcs[i], "no such file or directory")
+			continue
+		}
+		if belowFile(target) {
+			fail(target, "not a directory")
+			continue
+		}
+		if taken(target) {
+			fail(target, "not replacing")
+			continue
+		}
+		for _, f := range sub {
+			np := target + strings.TrimPrefix(f, src)
+			if err := checkFilePath(np); err != nil {
+				return &invalidError{"bad_path: " + np + ": " + err.Error()}
+			}
+			move(f, np)
 		}
 	}
 
@@ -417,11 +401,7 @@ func (a *app) cmdMv(c *command, args []string) error {
 		if err != nil {
 			return err
 		}
-		msg := a.msg
-		if msg == "" {
-			msg = commitMessage("mv", append(slices.Clone(srcs), dst))
-		}
-		res, err := a.commit(changes, msg, "mv")
+		res, err := a.commit(changes, a.commitMessage("mv", append(slices.Clone(srcs), dst)), "mv")
 		if err != nil {
 			return err
 		}
@@ -457,12 +437,12 @@ func checkFilePath(p string) error {
 // one is; any other path is bad_path.
 func (a *app) badPath(p string, err error) error {
 	if !strings.Contains(p, "/") && page.CheckName(p) == nil {
-		files, ferr := a.repo.Files([]string{p})
+		msg, ferr := a.fileMessage([]string{p})
 		if ferr != nil {
-			return &gitError{ferr}
+			return ferr
 		}
-		if slices.ContainsFunc(files, func(f string) bool { return strings.HasPrefix(f, p+"/") }) {
-			return fmt.Errorf("%s: is a directory", p)
+		if m := msg(p); m != noSuchFile {
+			return fmt.Errorf("%s: %s", p, m)
 		}
 	}
 	return &invalidError{"bad_path: " + err.Error()}
