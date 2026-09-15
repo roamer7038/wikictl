@@ -156,16 +156,36 @@ var (
 // "\n", and the byte offset of each line in that text.
 func eachParagraph(lines []Line, linksStart int, fn func(from, to int, text string, offsets []int)) {
 	blank := func(l Line) bool { return strings.Trim(l.Text, " \t") == "" }
+	// The regular expressions are matched only on lines whose first byte after
+	// up to three spaces can start the block they match.
+	marker := func(t string) byte {
+		for i := 0; i < len(t) && i <= 3; i++ {
+			if t[i] != ' ' {
+				return t[i]
+			}
+		}
+		return 0
+	}
+	listItem := func(t string) []string {
+		if c := marker(t); c == '-' || c == '*' || c == '+' || '0' <= c && c <= '9' {
+			return reListItem.FindStringSubmatch(t)
+		}
+		return nil
+	}
 	joinable := func(i int) bool {
 		l := lines[i]
-		return (linksStart < 0 || i < linksStart) && !l.InFence && !blank(l) && !isHeading(l) && !reUnderOrHR.MatchString(l.Text)
+		c := marker(l.Text)
+		return (linksStart < 0 || i < linksStart) && !l.InFence && !blank(l) && !(c == '#' && isHeading(l)) &&
+			!(strings.IndexByte("=-*_", c) >= 0 && c != 0 && reUnderOrHR.MatchString(l.Text))
 	}
 	starts := func(i int) bool {
 		t, prev := lines[i].Text, lines[i-1].Text
-		if m := reListItem.FindStringSubmatch(t); m != nil && (m[1] == "" || m[1] == "1" || reListItem.MatchString(prev)) {
+		if m := listItem(t); m != nil && (m[1] == "" || m[1] == "1" || listItem(prev) != nil) {
 			return true
 		}
-		return reTableRow.MatchString(t) && reTableRow.MatchString(prev) || reQuote.MatchString(t) && !reQuote.MatchString(prev)
+		c, p := marker(t), marker(prev)
+		return c == '|' && p == '|' && reTableRow.MatchString(t) && reTableRow.MatchString(prev) ||
+			c == '>' && reQuote.MatchString(t) && !(p == '>' && reQuote.MatchString(prev))
 	}
 	for i := 0; i < len(lines); {
 		if lines[i].InFence || blank(lines[i]) {
