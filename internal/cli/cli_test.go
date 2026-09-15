@@ -1278,29 +1278,36 @@ func TestGrepGitConfig(t *testing.T) {
 	}
 }
 
-// TestReadGitConfig checks that color and attributes settings in the git
-// configuration change neither the backlinks, the pages that ls hides as
-// deprecated, nor the pages grep finds.
+// TestReadGitConfig checks that color, attributes, template and log encoding
+// settings in the git configuration change neither the backlinks, the pages
+// that ls hides as deprecated, the pages grep finds, nor the update time. Each
+// command runs in a new mirror, which a template directory would populate.
 func TestReadGitConfig(t *testing.T) {
 	for name, conf := range map[string]string{
-		"color":      "[color]\n\tui = always\n\tgrep = always\n",
-		"attributes": "[core]\n\tattributesFile = ATTRS\n",
+		"color.ui":          "[color]\n\tui = always\n",
+		"color.grep":        "[color]\n\tgrep = always\n",
+		"attributesFile":    "[core]\n\tattributesFile = DIR/attributes\n",
+		"templateDir":       "[init]\n\ttemplateDir = DIR/template\n",
+		"logOutputEncoding": "[i18n]\n\tlogOutputEncoding = UTF-16\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			cfg := setup(t)
-			attrs := filepath.Join(t.TempDir(), "attributes")
-			os.WriteFile(attrs, []byte("*.md -diff\n"), 0o600)
-			cmds := [][]string{{"links", "-i", "global/index.md"}, {"ls", "machines/h1"}, {"grep", "-l", "lease"}}
+			dir := t.TempDir()
+			os.WriteFile(filepath.Join(dir, "attributes"), []byte("*.md -diff\n"), 0o600)
+			os.MkdirAll(filepath.Join(dir, "template", "info"), 0o755)
+			os.WriteFile(filepath.Join(dir, "template", "info", "attributes"), []byte("*.md binary\n"), 0o600)
+			cmds := [][]string{{"links", "-i", "global/index.md"}, {"ls", "machines/h1"}, {"grep", "-l", "lease"}, {"stat", "global/push.md"}}
 			want := make([]string, len(cmds))
 			for i, args := range cmds {
 				_, want[i], _ = runCLI(t, cfg, "", args...)
 			}
-			if !strings.Contains(want[0], "global/push.md") || strings.Contains(want[1], "y.md") || !strings.Contains(want[2], "projects/app/x.md") {
+			if !strings.Contains(want[0], "global/push.md") || strings.Contains(want[1], "y.md") || !strings.Contains(want[2], "projects/app/x.md") || !strings.Contains(want[3], "updated: 2") {
 				t.Fatalf("without configuration: %q", want)
 			}
-			gc := filepath.Join(t.TempDir(), "gitconfig")
-			os.WriteFile(gc, []byte(strings.ReplaceAll(conf, "ATTRS", attrs)), 0o600)
+			gc := filepath.Join(dir, "gitconfig")
+			os.WriteFile(gc, []byte(strings.ReplaceAll(conf, "DIR", dir)), 0o600)
 			t.Setenv("GIT_CONFIG_GLOBAL", gc)
+			t.Setenv("XDG_CACHE_HOME", filepath.Join(dir, "cache"))
 			for i, args := range cmds {
 				if code, out, errs := runCLI(t, cfg, "", args...); code != 0 || out != want[i] {
 					t.Errorf("%v: code=%d out=%q errs=%q, want %q", args, code, out, errs, want[i])
@@ -1321,8 +1328,10 @@ func TestWriteGitConfig(t *testing.T) {
 			cfg := setup(t)
 			hooks := t.TempDir()
 			marker := filepath.Join(hooks, "ran")
-			os.WriteFile(filepath.Join(hooks, "pre-push"), []byte("#!/bin/sh\nexit 1\n"), 0o755)
-			os.WriteFile(filepath.Join(hooks, "post-index-change"), []byte("#!/bin/sh\ntouch '"+marker+"'\n"), 0o755)
+			if strings.Contains(conf, "HOOKS") {
+				os.WriteFile(filepath.Join(hooks, "pre-push"), []byte("#!/bin/sh\nexit 1\n"), 0o755)
+				os.WriteFile(filepath.Join(hooks, "post-index-change"), []byte("#!/bin/sh\ntouch '"+marker+"'\n"), 0o755)
+			}
 			gc := filepath.Join(t.TempDir(), "gitconfig")
 			os.WriteFile(gc, []byte(strings.ReplaceAll(conf, "HOOKS", hooks)), 0o600)
 			t.Setenv("GIT_CONFIG_GLOBAL", gc)

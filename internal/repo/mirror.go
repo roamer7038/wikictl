@@ -99,7 +99,9 @@ func privateDir(dir string) error {
 // a lock on <mirror>.lock, so that concurrent processes initialize it once.
 // The repository is built in a temporary directory next to the mirror and
 // renamed into place, so that no process sees a mirror without its remote.
-// The temporary directory, and therefore the mirror, has mode 0700.
+// The temporary directory, and therefore the mirror, has mode 0700. No
+// template is used, so that a template directory in the user's configuration
+// adds no hooks or info/attributes to the mirror.
 func (r *Repo) create() error {
 	parent := filepath.Dir(r.Dir)
 	unlock, err := lockFile(r.Dir + ".lock")
@@ -126,7 +128,7 @@ func (r *Repo) create() error {
 		return err
 	}
 	t := &Repo{Dir: tmp}
-	if _, err := t.Git("init", "-q", "--bare"); err != nil {
+	if _, err := t.Git("init", "-q", "--bare", "--template="); err != nil {
 		return err
 	}
 	if _, err := t.Git("remote", "add", "origin", r.Remote); err != nil {
