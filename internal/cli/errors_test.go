@@ -36,8 +36,6 @@ func TestReport(t *testing.T) {
 		{"exit status", exitStatus(ExitInvalid), ExitInvalid, "", "", ""},
 		{"general", errors.New("boom"), ExitError, "", "wikictl: boom\n",
 			`{"error":"error","message":"boom"}` + "\n"},
-		{"not found", &notFoundError{"global/a.md"}, ExitError, "", "wikictl: page not found: global/a.md\n",
-			`{"error":"error","message":"page not found: global/a.md"}` + "\n"},
 		{"usage", &usageError{msg: "bad flag"}, ExitUsage, "", "wikictl: bad flag\n",
 			`{"error":"usage","message":"bad flag"}` + "\n"},
 		{"command usage", &usageError{links, "missing argument"}, ExitUsage, "",

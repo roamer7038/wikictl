@@ -47,18 +47,18 @@ func (a *app) cmdLint(c *command, args []string) error {
 		slices.Sort(paths)
 		paths = slices.Compact(paths)
 	}
-	checked := map[string]bool{}
-	for _, p := range paths {
-		checked[p] = true
-	}
 	read, err := a.readPages(paths)
 	if err != nil {
 		return &gitError{err}
 	}
-	for _, p := range files {
-		if !read.exists(p) {
-			return a.notFound(p)
-		}
+	missing, err := a.missing(files, read.exists)
+	if err != nil {
+		return err
+	}
+	paths = slices.DeleteFunc(paths, func(p string) bool { return slices.Contains(missing, p) })
+	checked := map[string]bool{}
+	for _, p := range paths {
+		checked[p] = true
 	}
 	items := []page.Issue{}
 	// Collisions are found against the whole tree, since the colliding name
@@ -90,6 +90,9 @@ func (a *app) cmdLint(c *command, args []string) error {
 			fmt.Fprintf(w, "%s:%d: %s: %s\n", it.Path, it.Line, it.Code, escapeControl(it.Message))
 		}
 	})
+	if len(missing) > 0 {
+		return a.reportMissing(missing, nil)
+	}
 	if len(items) > 0 {
 		return exitStatus(ExitInvalid)
 	}

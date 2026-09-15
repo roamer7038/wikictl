@@ -278,8 +278,7 @@ func (a *app) cmdFind(c *command, args []string) error {
 	exists := func(p string) bool { return t.isDir(p) || t.isFile(p) }
 	for _, ref := range q.newer {
 		if !exists(ref) {
-			fmt.Fprintf(a.stderr, "wikictl: %s: no such file or directory\n", escapeControl(ref))
-			return exitStatus(ExitError)
+			return a.reportMissing([]string{ref}, nil)
 		}
 	}
 	paths := q.paths
@@ -341,11 +340,5 @@ func (a *app) cmdFind(c *command, args []string) error {
 			fmt.Fprintln(w, escapeControl(it.Path))
 		}
 	})
-	for _, p := range missing {
-		fmt.Fprintf(a.stderr, "wikictl: %s: no such file or directory\n", escapeControl(p))
-	}
-	if len(missing) > 0 {
-		return exitStatus(ExitError)
-	}
-	return nil
+	return a.reportMissing(missing, nil)
 }
