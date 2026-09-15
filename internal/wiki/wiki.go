@@ -228,16 +228,15 @@ func Relocate(s Store, entries []repo.Entry, mapping map[string]string) ([]repo.
 		return nil, err
 	}
 	none := ""
-	mapper := func(target string) (string, bool) { nt, ok := mapping[target]; return nt, ok }
 	var changes []repo.Change
 	for _, p := range all {
 		content, base := contents[p], shas[p]
 		if np, moved := mapping[p]; moved {
-			nc, _ := page.Relocate(content, p, np, mapper)
+			nc, _ := page.Relocate(content, p, np, mapping)
 			changes = append(changes, repo.Change{Path: np, Content: nc, Base: &none}, repo.Change{Path: p, Delete: true, Base: &base})
 			continue
 		}
-		if nc, n := page.Relocate(content, p, p, mapper); n > 0 {
+		if nc, n := page.Relocate(content, p, p, mapping); n > 0 {
 			changes = append(changes, repo.Change{Path: p, Content: nc, Base: &base})
 		}
 	}

@@ -20,17 +20,18 @@ func TestResolveDest(t *testing.T) {
 		{"global/x.md", "img.png", "", false, true},
 	}
 	for _, c := range cases {
-		got, url, err := ResolveDest(c.page, c.dest)
-		if (err != nil) != c.bad || got != c.want || url != c.url {
-			t.Errorf("%s %s: got %q url=%v err=%v", c.page, c.dest, got, url, err)
+		got, url, ok := resolveDest(c.page, c.dest)
+		if ok == c.bad || got != c.want || url != c.url {
+			t.Errorf("%s %s: got %q url=%v ok=%v", c.page, c.dest, got, url, ok)
 		}
 	}
 }
 
 func TestParseLinks(t *testing.T) {
 	body := "# t\n## Links\n- part_of: [parent](../../global/p.md) | upper\n- cites: https://x.example/ | evidence\n- bad line\n\n- see_also: q.md\n"
-	ls := ScanLines([]byte(body), 4)
-	links, issues := ParseLinks(ls[LinksStart(ls):], "projects/a/x.md")
+	ls := scanLines([]byte(body), 4)
+	start, _, _ := headings(ls)
+	links, issues := parseLinks(ls[start:], "projects/a/x.md")
 	if len(links) != 3 {
 		t.Fatalf("links=%+v issues=%+v", links, issues)
 	}
@@ -47,14 +48,15 @@ func TestParseLinks(t *testing.T) {
 
 func TestBodyLinks(t *testing.T) {
 	body := "# t\nsee [a](a.md) and [b](../../global/b.md#x) and [img](i.png) and [u](https://e/)\n```\n[c](c.md)\n```\n`[d](d.md)` text\n## Links\n- see_also: [a](a.md)\n"
-	ls := ScanLines([]byte(body), 1)
-	got := BodyLinks(ls[:LinksStart(ls)], "projects/a/x.md")
+	ls := scanLines([]byte(body), 1)
+	start, _, _ := headings(ls)
+	got := bodyLinks(ls[:start], "projects/a/x.md")
 	if len(got) != 2 || got[0].Target != "projects/a/a.md" || got[1].Target != "global/b.md" || got[0].Type != "mentions" {
 		t.Errorf("%+v", got)
 	}
 }
 
-// TestBodyLinkSyntax checks that lint, backlinks and links (BodyLinks) find
+// TestBodyLinkSyntax checks that lint, backlinks and links (bodyLinks) find
 // the same links as mv rewrites (Relocate), when d/p.md moves to e/p.md.
 func TestBodyLinkSyntax(t *testing.T) {
 	for _, tc := range []struct {
@@ -123,13 +125,13 @@ func TestBodyLinkSyntax(t *testing.T) {
 		{"code span in a list continuation", "- a `x\n  [b](x.md) `y`", "", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			lines := ScanLines([]byte(tc.in), 1)
-			if ls := LinksStart(lines); ls >= 0 {
+			lines := scanLines([]byte(tc.in), 1)
+			if ls, _, _ := headings(lines); ls >= 0 {
 				lines = lines[:ls]
 			}
-			got := BodyLinks(lines, "d/p.md")
+			got := bodyLinks(lines, "d/p.md")
 			if tc.target == "" && len(got) != 0 || tc.target != "" && (len(got) != 1 || got[0].Target != tc.target) {
-				t.Errorf("BodyLinks = %+v, want target %q", got, tc.target)
+				t.Errorf("bodyLinks = %+v, want target %q", got, tc.target)
 			}
 			want, wantN := tc.out, 1
 			if tc.target == "" {
@@ -143,7 +145,7 @@ func TestBodyLinkSyntax(t *testing.T) {
 					line++
 				}
 				if len(got) == 1 && got[0].Line != line {
-					t.Errorf("BodyLinks line = %d, want %d", got[0].Line, line)
+					t.Errorf("bodyLinks line = %d, want %d", got[0].Line, line)
 				}
 			}
 			out, n := Relocate([]byte(tc.in+"\n"), "d/p.md", "e/p.md", nil)
@@ -181,8 +183,8 @@ func TestFindLinksLinearTime(t *testing.T) {
 		"lines of openers": fill("[\n"),
 	} {
 		start := time.Now()
-		lines := ScanLines([]byte(s), 1)
-		BodyLinks(lines, "d/p.md")
+		lines := scanLines([]byte(s), 1)
+		bodyLinks(lines, "d/p.md")
 		Relocate([]byte(s), "d/p.md", "e/p.md", nil)
 		if d := time.Since(start); d > 5*time.Second {
 			t.Errorf("%s: %v", name, d)
@@ -212,8 +214,9 @@ func TestParseLinksTargets(t *testing.T) {
 		{"mailto:a b", "mailto:a b", ""},
 	} {
 		for _, c := range []struct{ line, want string }{{"- see_also: " + tc.target, tc.typed}, {"- " + tc.target, tc.untyped}} {
-			ls := ScanLines([]byte("# t\n## Links\n"+c.line+"\n"), 1)
-			links, issues := ParseLinks(ls[LinksStart(ls):], "d/p.md")
+			ls := scanLines([]byte("# t\n## Links\n"+c.line+"\n"), 1)
+			start, _, _ := headings(ls)
+			links, issues := parseLinks(ls[start:], "d/p.md")
 			if c.want == "" && (len(links) != 0 || len(issues) != 1) || c.want != "" && (len(links) != 1 || links[0].Target != c.want || len(issues) != 0) {
 				t.Errorf("%q: links=%+v issues=%+v, want %q", c.line, links, issues, c.want)
 			}
@@ -223,8 +226,9 @@ func TestParseLinksTargets(t *testing.T) {
 
 func TestParseLinksBulletMarkers(t *testing.T) {
 	body := "# t\n## Links\n* cites: https://x.example/\n+ see_also: q.md\n  - part_of: [p](p.md) | upper\n\t-\tuses: r.md\n-  spaced: s.md\n"
-	ls := ScanLines([]byte(body), 1)
-	links, issues := ParseLinks(ls[LinksStart(ls):], "global/x.md")
+	ls := scanLines([]byte(body), 1)
+	start, _, _ := headings(ls)
+	links, issues := parseLinks(ls[start:], "global/x.md")
 	if len(issues) != 0 {
 		t.Fatalf("issues=%+v", issues)
 	}
@@ -247,8 +251,9 @@ func TestParseLinksBulletMarkers(t *testing.T) {
 
 func TestParseLinksUntyped(t *testing.T) {
 	body := "# t\n## Links\n- [q](q.md)\n- r.md | why\n* https://x.example/\n- img.png\n- Bad: r.md\n"
-	ls := ScanLines([]byte(body), 1)
-	links, issues := ParseLinks(ls[LinksStart(ls):], "global/x.md")
+	ls := scanLines([]byte(body), 1)
+	start, _, _ := headings(ls)
+	links, issues := parseLinks(ls[start:], "global/x.md")
 	want := []Link{
 		{Type: "see_also", Target: "global/q.md", Line: 3},
 		{Type: "see_also", Target: "global/r.md", Note: "why", Line: 4},
@@ -269,8 +274,9 @@ func TestParseLinksUntyped(t *testing.T) {
 
 func TestParseLinksUntypedEdgeCases(t *testing.T) {
 	body := "# t\n## Links\n- uses:foo.md\n- cites:\n- see_also:foo.md\n- mailto:a@b.example\n- https://\n- p.md \"title\"\n- [t](p.md \"title\")\n- see_also: [t](q.md \"title\")\n- [u](https://x.example/a)\n- see_also: [t](<r.md> 'title')\n- see_also: s.md \"title\"\n"
-	ls := ScanLines([]byte(body), 1)
-	links, issues := ParseLinks(ls[LinksStart(ls):], "global/x.md")
+	ls := scanLines([]byte(body), 1)
+	start, _, _ := headings(ls)
+	links, issues := parseLinks(ls[start:], "global/x.md")
 	want := []Link{
 		{Type: "see_also", Target: "global/p.md", Line: 9},
 		{Type: "see_also", Target: "global/q.md", Line: 10},

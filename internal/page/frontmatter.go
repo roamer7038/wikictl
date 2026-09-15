@@ -12,16 +12,16 @@ import (
 // Limits on the input given to the YAML parser, whose memory use grows
 // steeply with the nesting depth.
 const (
-	MaxFrontmatterSize  = 64 << 10 // bytes between the delimiter lines
-	MaxFrontmatterDepth = 100      // nested block and flow collections
+	maxFrontmatterSize  = 64 << 10 // bytes between the delimiter lines
+	maxFrontmatterDepth = 100      // nested block and flow collections
 )
 
-// SplitFrontmatter splits content into the frontmatter body (without the
+// splitFrontmatter splits content into the frontmatter body (without the
 // delimiter lines) and the rest. The frontmatter starts with a first line of
 // "---" and ends at the next line that is exactly "---"; a leading BOM and
 // trailing CRs are ignored. lines is the number of lines consumed, including
 // both delimiters. ok is false when there is no well-formed frontmatter.
-func SplitFrontmatter(content []byte) (fm, rest []byte, lines int, ok bool) {
+func splitFrontmatter(content []byte) (fm, rest []byte, lines int, ok bool) {
 	content = bytes.TrimPrefix(content, []byte("\xef\xbb\xbf"))
 	ls := bytes.SplitAfter(content, []byte("\n"))
 	if len(ls) == 0 || !isDashLine(ls[0]) {
@@ -39,9 +39,9 @@ func isDashLine(l []byte) bool {
 	return string(bytes.TrimRight(l, "\r\n \t")) == "---"
 }
 
-// ParseFrontmatter decodes the YAML frontmatter into a map. Frontmatter over
-// MaxFrontmatterSize or MaxFrontmatterDepth is an error.
-func ParseFrontmatter(fm []byte) (map[string]any, error) {
+// parseFrontmatter decodes the YAML frontmatter into a map. Frontmatter over
+// maxFrontmatterSize or maxFrontmatterDepth is an error.
+func parseFrontmatter(fm []byte) (map[string]any, error) {
 	if err := checkFrontmatter(fm); err != nil {
 		return nil, err
 	}
@@ -57,8 +57,8 @@ func ParseFrontmatter(fm []byte) (map[string]any, error) {
 // input: an open flow collection adds one level, and so does each block
 // sequence entry or mapping key indented further than the enclosing one.
 func checkFrontmatter(fm []byte) error {
-	if len(fm) > MaxFrontmatterSize {
-		return fmt.Errorf("frontmatter is larger than %d bytes", MaxFrontmatterSize)
+	if len(fm) > maxFrontmatterSize {
+		return fmt.Errorf("frontmatter is larger than %d bytes", maxFrontmatterSize)
 	}
 	type level struct {
 		col int
@@ -93,8 +93,8 @@ func checkFrontmatter(fm []byte) error {
 			}
 			block = append(block, cur)
 		}
-		if len(block)+flow > MaxFrontmatterDepth {
-			return fmt.Errorf("frontmatter nesting is deeper than %d levels", MaxFrontmatterDepth)
+		if len(block)+flow > maxFrontmatterDepth {
+			return fmt.Errorf("frontmatter nesting is deeper than %d levels", maxFrontmatterDepth)
 		}
 		if tk.Type != token.SpaceType && tk.Type != token.CommentType {
 			prev = tk
