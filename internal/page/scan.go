@@ -37,15 +37,19 @@ func ScanLines(body []byte, firstLine int) []Line {
 	for i, t := range raw {
 		t = strings.TrimRight(t, "\r")
 		in := fence != ""
-		if m := reFence.FindStringSubmatch(t); m != nil {
-			marker, info := m[1], m[2]
-			if fence == "" {
-				if marker[0] != '`' || !strings.Contains(info, "`") {
-					fence = marker
-					in = true
+		// Only a line starting with a backtick or a tilde after its indentation
+		// can be a fence, so other lines are not matched against reFence.
+		if c := strings.TrimLeft(t, " "); c != "" && (c[0] == '`' || c[0] == '~') {
+			if m := reFence.FindStringSubmatch(t); m != nil {
+				marker, info := m[1], m[2]
+				if fence == "" {
+					if marker[0] != '`' || !strings.Contains(info, "`") {
+						fence = marker
+						in = true
+					}
+				} else if marker[0] == fence[0] && len(marker) >= len(fence) && strings.Trim(info, " \t") == "" {
+					fence = ""
 				}
-			} else if marker[0] == fence[0] && len(marker) >= len(fence) && strings.Trim(info, " \t") == "" {
-				fence = ""
 			}
 		}
 		out = append(out, Line{N: firstLine + i, Text: t, InFence: in})
@@ -53,7 +57,9 @@ func ScanLines(body []byte, firstLine int) []Line {
 	return out
 }
 
-func isHeading(l Line) bool { return !l.InFence && reHeading.MatchString(l.Text) }
+func isHeading(l Line) bool {
+	return !l.InFence && strings.HasPrefix(l.Text, "#") && reHeading.MatchString(l.Text)
+}
 
 // LinksStart returns the index of the "## Links" heading when it is the last
 // heading outside code fences, or -1 when the page has no Links section.

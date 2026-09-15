@@ -178,7 +178,10 @@ func TestFindLinksLinearTime(t *testing.T) {
 			}
 			return b.String()
 		}(),
-		"lines of openers": fill("[\n"),
+		"lines of openers":    fill("[\n"),
+		"lines of list items": fill("- [\n"),
+		"lines of table rows": fill("| [\n"),
+		"lines of dashes":     fill("-\n"),
 	} {
 		start := time.Now()
 		lines := ScanLines([]byte(s), 1)
