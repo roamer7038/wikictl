@@ -164,20 +164,20 @@ func TestBodyLinkSyntax(t *testing.T) {
 
 // TestFindLinksLinearTime checks that pathological pages are read in time
 // proportional to their size, at a cost per byte close to that of prose in
-// long lines. Making a page four times as large must not multiply the time by
-// more than 10, and a page must not take more than eight times as long as the
+// long lines. Making a page 16 times as large must not multiply the time by
+// more than 64, and a page must not take more than eight times as long as the
 // prose of the same size. Both are ratios of times measured in the same run, so
 // they do not depend on the speed of the machine or on the race detector. A
-// quadratic scan makes the first ratio about 16, and matching regular
-// expressions on every line makes the second one over 13 for pages of short
-// lines.
+// linear scan makes the first ratio about 16 and a quadratic one about 256, and
+// matching regular expressions on every line makes the second one over 13 for
+// pages of short lines.
 //
 // The times are processor times of this process, so the tests of other
 // packages running at the same time do not count. Each time is the minimum of
 // three rounds, and the rounds measure every page in turn, so that a burst of
 // other work in the process does not affect all the rounds of one page.
 func TestFindLinksLinearTime(t *testing.T) {
-	const small, large = 1 << 15, 1 << 17
+	const small, large = 1 << 13, 1 << 17
 	fill := func(unit string) func(int) string {
 		return func(size int) string { return strings.Repeat(unit, size/len(unit)) }
 	}
@@ -206,13 +206,13 @@ func TestFindLinksLinearTime(t *testing.T) {
 	// once returns the processor time to read b once: the average over enough
 	// reads to take at least 20 ms.
 	once := func(b []byte) time.Duration {
-		n, start := 0, cpuTime()
-		for n == 0 || cpuTime()-start < 20*time.Millisecond {
+		n, start := 0, cpuTime(t)
+		for n == 0 || cpuTime(t)-start < 20*time.Millisecond {
 			bodyLinks(scanLines(b, 1), "d/p.md")
 			Relocate(b, "d/p.md", "e/p.md", nil)
 			n++
 		}
-		return (cpuTime() - start) / time.Duration(n)
+		return (cpuTime(t) - start) / time.Duration(n)
 	}
 	type sample struct {
 		name         string
@@ -234,8 +234,8 @@ func TestFindLinksLinearTime(t *testing.T) {
 	}
 	for _, s := range samples {
 		growth, perProse := float64(s.tl)/float64(s.ts), float64(s.tl)/float64(tp)
-		t.Logf("%-24s %v, %v: %.2f times for 4 times the size, %.2f times prose", s.name, s.ts, s.tl, growth, perProse)
-		if growth > 10 {
+		t.Logf("%-24s %v, %v: %.2f times for 16 times the size, %.2f times prose", s.name, s.ts, s.tl, growth, perProse)
+		if growth > 64 {
 			t.Errorf("%s: %v for %d bytes and %v for %d bytes (%.1f times)", s.name, s.ts, small, s.tl, large, growth)
 		}
 		if perProse > 8 {
