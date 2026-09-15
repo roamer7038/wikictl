@@ -306,7 +306,7 @@ func (a *app) cmdContext(c *command, args []string) error {
 		"remote": repo.RedactURL(a.remote)}
 	a.emit(out, func(w io.Writer) {
 		for _, k := range []string{"config", "profile", "profile_source", "repo", "mirror", "branch", "author", "remote"} {
-			fmt.Fprintf(w, "%s: %v\n", k, out[k])
+			fmt.Fprintf(w, "%s: %s\n", k, escapeControl(fmt.Sprint(out[k])))
 		}
 	})
 	return nil

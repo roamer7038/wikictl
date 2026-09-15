@@ -138,7 +138,7 @@ func commitMessage(cmd string, args []string) string {
 
 // warn prints a non-blocking issue on stderr.
 func (a *app) warn(is page.Issue) {
-	fmt.Fprintf(a.stderr, "wikictl: warning: %s:%d: %s: %s\n", is.Path, is.Line, is.Code, escapeControl(is.Message))
+	fmt.Fprintf(a.stderr, "wikictl: warning: %s:%d: %s: %s\n", escapeControl(is.Path), is.Line, is.Code, escapeControl(is.Message))
 }
 
 // cmdRm deletes files, and with -r directories, in one commit. As rm does, a

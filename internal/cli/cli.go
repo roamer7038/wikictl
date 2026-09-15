@@ -160,8 +160,8 @@ file, is rejected with exit code 1; a file replaced keeps its mode.
 The default commit message is "wikictl: put <path>". Nothing is printed on
 success unless -v is given.
 
-Warnings are printed as "wikictl: warning: <path>:<line>: <code>: <message>";
-control characters other than tab in the message are shown as \xNN.
+Warnings are printed as "wikictl: warning: <path>:<line>: <code>: <message>".
+Control characters other than tab are shown as \xNN in text output.
 
 On a conflict, text output prints "wikictl: conflict (<reason>): <path>
 sha=<sha>" on standard error and the current content on standard output. With
@@ -187,7 +187,8 @@ the editor fails (exit code 1), the edited content is kept in a temporary file
 whose path is printed on standard error. Standard input must be a terminal;
 otherwise the command exits with code 2.
 The default commit message is "wikictl: edit <path>". Nothing is printed on
-success unless -v is given.
+success unless -v is given. Control characters other than tab are shown as
+\xNN in text output.
 
 Output: {path, sha, commit}, printed only when the file is committed.`,
 		flags: editFlags, check: (*app).checkEdit, run: (*app).cmdEdit},
@@ -207,7 +208,8 @@ other sources are still moved, and the command exits with code 1. A file at the
 root of the wiki, the root itself, or a destination that breaks the file name
 rules (see "help lint") is rejected with exit code 4, and nothing is moved. The
 default commit message is "wikictl: mv <src>... <dst>". Nothing is printed on
-success unless -v is given.
+success unless -v is given. Control characters other than tab are shown as
+\xNN in text output.
 
 Links to a moved page from other pages, and relative links inside a moved page
 whose destination changes with the move, are rewritten in the same commit.
@@ -248,7 +250,8 @@ changed since rm read it, the command exits with code 3, deletes nothing and
 prints the current content and sha, as put does; run it again. With
 --no-fetch, a file that changed since the last fetch is reported as a
 conflict. The default commit message is "wikictl: rm <path>...". Nothing is
-printed on success unless -v is given.
+printed on success unless -v is given. Control characters other than tab are
+shown as \xNN in text output.
 
 Output: {paths, commit}; paths lists the deleted files, and commit is empty
 when nothing was deleted. With -v, text output is "<path><TAB><commit>" for
@@ -308,8 +311,7 @@ The title of a page is the text of its first heading outside code fences and
 before the Links section, else the file name. A closing sequence of # is
 removed only when a space or a tab precedes it, so "# C#" has the title "C#".
 
-Control characters other than tab in a message are shown as \xNN in text
-output.
+Control characters other than tab are shown as \xNN in text output.
 
 Output: items[] {path, line, code, message}.`,
 		run: (*app).cmdLint},
@@ -346,7 +348,8 @@ fails with exit code 2.
 
 The user information (user:token@) of an HTTPS or other URL in repo and
 remote is shown as ***@; an SSH user name without a password, such as git@, is
-shown as it is.
+shown as it is. Control characters other than tab are shown as \xNN in text
+output.
 
 Output: {config, profile, profile_source, repo, mirror, branch, author, remote}.`,
 		run: (*app).cmdContext},
@@ -553,7 +556,7 @@ func (a *app) setup() error {
 	cfg, err := config.Load(a.cfgPath, config.Selector{Profile: a.profile, Dir: dir, Remote: a.remote})
 	if cfg != nil {
 		for _, w := range cfg.Warnings {
-			fmt.Fprintln(a.stderr, "wikictl: warning: "+w)
+			fmt.Fprintln(a.stderr, "wikictl: warning: "+escapeMessage(w))
 		}
 	}
 	if err != nil {

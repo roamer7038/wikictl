@@ -119,7 +119,7 @@ func (a *app) report(err error) int {
 		if a.json {
 			a.emit(conflictOut{kind, cf.Reason, cf.Path, cf.SHA, string(cf.Content), conflictMessage(cf, ce.rerun)}, nil)
 		} else {
-			fmt.Fprintf(a.stderr, "wikictl: conflict (%s): %s sha=%s\n", cf.Reason, cf.Path, cf.SHA)
+			fmt.Fprintf(a.stderr, "wikictl: conflict (%s): %s sha=%s\n", cf.Reason, escapeControl(cf.Path), cf.SHA)
 			a.stdout.Write(cf.Content)
 		}
 	case a.json:
@@ -127,7 +127,7 @@ func (a *app) report(err error) int {
 		enc.SetEscapeHTML(false)
 		enc.Encode(errorOut{Error: kind, Message: err.Error()})
 	default:
-		fmt.Fprintln(a.stderr, "wikictl: "+err.Error())
+		fmt.Fprintln(a.stderr, "wikictl: "+escapeMessage(err.Error()))
 		if errors.As(err, &ue) && ue.cmd != nil {
 			fmt.Fprintln(a.stderr, "Usage: "+synopsis(ue.cmd))
 			fmt.Fprintf(a.stderr, "Run \"wikictl help %s\" for details.\n", ue.cmd.name)
