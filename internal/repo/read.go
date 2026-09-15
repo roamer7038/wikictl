@@ -67,25 +67,39 @@ func (r *Repo) List() ([]string, error) {
 	return stripRef(r, out), nil
 }
 
-// Files returns the paths of all files under dirs, or of the whole tree when
-// dirs is nil, pages or not. Directories that do not exist are ignored.
-func (r *Repo) Files(dirs []string) ([]string, error) {
+// Entry is a file of the tree: its path, mode, object type and object sha.
+type Entry struct{ Path, Mode, Type, SHA string }
+
+// Entries returns the files under dirs, or of the whole tree when dirs is nil,
+// pages or not. Directories that do not exist are ignored.
+func (r *Repo) Entries(dirs []string) ([]Entry, error) {
 	head, err := r.Head()
 	if err != nil || head == "" {
 		return nil, err
 	}
-	args := append([]string{"ls-tree", "-r", "-z", "--name-only", r.readRef()}, pathspec(dirs)...)
+	args := append([]string{"ls-tree", "-r", "-z", r.readRef()}, pathspec(dirs)...)
 	out, err := r.Git(args...)
 	if err != nil {
 		return nil, err
 	}
-	var res []string
-	for p := range strings.SplitSeq(out, "\x00") {
-		if p != "" {
-			res = append(res, p)
+	var res []Entry
+	for rec := range strings.SplitSeq(out, "\x00") {
+		meta, p, ok := strings.Cut(rec, "\t")
+		if f := strings.Fields(meta); ok && len(f) == 3 {
+			res = append(res, Entry{p, f[0], f[1], f[2]})
 		}
 	}
 	return res, nil
+}
+
+// Files returns the paths of Entries.
+func (r *Repo) Files(dirs []string) ([]string, error) {
+	ents, err := r.Entries(dirs)
+	var res []string
+	for _, e := range ents {
+		res = append(res, e.Path)
+	}
+	return res, err
 }
 
 // FoldPattern turns word into an extended regular expression matching word

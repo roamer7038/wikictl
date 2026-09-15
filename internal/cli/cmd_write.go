@@ -138,9 +138,14 @@ func (a *app) cmdRm(c *command, args []string) error {
 			}
 		}
 	}
-	files, err := a.repo.Files(args)
+	entries, err := a.repo.Entries(args)
 	if err != nil {
 		return &gitError{err}
+	}
+	files := make([]string, len(entries))
+	shas := map[string]string{}
+	for i, e := range entries {
+		files[i], shas[e.Path] = e.Path, e.SHA
 	}
 	under := func(p string) []string {
 		return slices.DeleteFunc(slices.Clone(files), func(f string) bool { return !strings.HasPrefix(f, p+"/") })
@@ -170,21 +175,12 @@ func (a *app) cmdRm(c *command, args []string) error {
 	targets = slices.Compact(targets)
 	deleted, commit := []string{}, ""
 	if len(targets) > 0 {
-		objs, err := a.repo.Stat(targets)
-		if err != nil {
-			return &gitError{err}
-		}
-		if _, err := a.missing(targets, func(p string) bool { _, ok := objs[p]; return ok }); err != nil {
-			return err
-		}
 		var changes []repo.Change
 		for _, p := range targets {
-			if o, ok := objs[p]; ok {
-				base := o.SHA
-				changes = append(changes, repo.Change{Path: p, Delete: true, Base: &base})
-				deleted = append(deleted, p)
-			}
+			base := shas[p]
+			changes = append(changes, repo.Change{Path: p, Delete: true, Base: &base})
 		}
+		deleted = targets
 		msg := a.msg
 		if msg == "" {
 			msg = commitMessage("rm", args)
@@ -245,10 +241,16 @@ func (a *app) cmdMv(c *command, args []string) error {
 	if err != nil {
 		return err
 	}
-	files, err := a.repo.Files(nil)
+	entries, err := a.repo.Entries(nil)
 	if err != nil {
 		return &gitError{err}
 	}
+	files := make([]string, len(entries))
+	modes := map[string]string{}
+	for i, e := range entries {
+		files[i], modes[e.Path] = e.Path, e.Mode
+	}
+	isSubmodule := func(f string) bool { return modes[f] == "160000" }
 	under := func(dir string) []string {
 		return slices.DeleteFunc(slices.Clone(files), func(f string) bool { return dir != "." && !strings.HasPrefix(f, dir+"/") })
 	}
@@ -299,6 +301,10 @@ func (a *app) cmdMv(c *command, args []string) error {
 				fail(srcs[i], "no such file or directory")
 				continue
 			}
+			if slices.ContainsFunc(sub, isSubmodule) {
+				fail(srcs[i], "cannot move a submodule")
+				continue
+			}
 			if target == src || strings.HasPrefix(target, src+"/") {
 				fail(srcs[i], "cannot move a directory into itself")
 				continue
@@ -334,6 +340,10 @@ func (a *app) cmdMv(c *command, args []string) error {
 			if !strings.Contains(src, "/") {
 				return &invalidError{"bad_path: " + src + ": a file at the wiki root cannot be moved"}
 			}
+			if isSubmodule(src) {
+				fail(srcs[i], "cannot move a submodule")
+				continue
+			}
 			if strings.HasSuffix(srcs[i], "/") {
 				fail(srcs[i], "not a directory")
 				continue
@@ -368,7 +378,7 @@ func (a *app) cmdMv(c *command, args []string) error {
 
 	moved, rewritten, commit := []movedFile{}, 0, ""
 	if len(mapping) > 0 {
-		changes, n, err := a.moveChanges(mapping)
+		changes, n, err := a.moveChanges(mapping, modes)
 		if err != nil {
 			return err
 		}
@@ -408,10 +418,11 @@ func checkFilePath(p string) error {
 }
 
 // moveChanges builds the changes that move the files of mapping (old path ->
-// new path): pages through wiki.Relocate, with the old name added to aliases
-// when it changes, and other files unchanged. It also returns the number of
-// other pages whose links were rewritten.
-func (a *app) moveChanges(mapping map[string]string) ([]repo.Change, int, error) {
+// new path), each keeping its mode from modes: pages through wiki.Relocate,
+// with the old name added to aliases when it changes, and other files
+// unchanged. It also returns the number of other pages whose links were
+// rewritten.
+func (a *app) moveChanges(mapping, modes map[string]string) ([]repo.Change, int, error) {
 	sources := slices.Collect(maps.Keys(mapping))
 	objs, err := a.repo.Stat(sources)
 	if err != nil {
@@ -434,6 +445,18 @@ func (a *app) moveChanges(mapping map[string]string) ([]repo.Change, int, error)
 			return nil, 0, &gitError{err}
 		}
 	}
+	// A symbolic link named like a page is moved like a page, so that links to
+	// it are rewritten, but its target is kept as it is.
+	var symlinks []string
+	for f := range pages {
+		if modes[f] == "120000" {
+			symlinks = append(symlinks, f)
+		}
+	}
+	targetsOf, _, err := a.repo.CatSHA(symlinks)
+	if err != nil {
+		return nil, 0, &gitError{err}
+	}
 	targets := map[string]string{}
 	for f, np := range pages {
 		targets[np] = f
@@ -441,10 +464,15 @@ func (a *app) moveChanges(mapping map[string]string) ([]repo.Change, int, error)
 	rewritten := 0
 	for i, ch := range changes {
 		from, moved := targets[ch.Path]
+		if moved {
+			changes[i].Mode = modes[from]
+		}
 		switch {
 		case ch.Delete:
 		case !moved:
 			rewritten++
+		case modes[from] == "120000":
+			changes[i].Content = targetsOf[from]
 		case strings.TrimSuffix(path.Base(from), ".md") != strings.TrimSuffix(path.Base(ch.Path), ".md"):
 			changes[i].Content = page.AddAlias(ch.Content, strings.TrimSuffix(path.Base(from), ".md"))
 		}
@@ -457,7 +485,7 @@ func (a *app) moveChanges(mapping map[string]string) ([]repo.Change, int, error)
 		none := ""
 		for _, f := range others {
 			base := shas[f]
-			changes = append(changes, repo.Change{Path: mapping[f], Content: contents[f], Base: &none}, repo.Change{Path: f, Delete: true, Base: &base})
+			changes = append(changes, repo.Change{Path: mapping[f], Content: contents[f], Base: &none, Mode: modes[f]}, repo.Change{Path: f, Delete: true, Base: &base})
 		}
 	}
 	return changes, rewritten, nil

@@ -2,12 +2,14 @@ package repo
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
 	"fmt"
 	"math/rand/v2"
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -21,6 +23,7 @@ type Change struct {
 	Content []byte
 	Delete  bool
 	Base    *string
+	Mode    string // "" keeps the mode of the file replaced, or 100644 for a new file
 }
 
 // Author is used as both author and committer of a commit.
@@ -81,17 +84,20 @@ func (r *Repo) Commit(changes []Change, msg string, au Author) (*Result, error) 
 			if c.Base == nil {
 				continue
 			}
-			cur := ""
-			if e := ents[c.Path]; e.typ == "blob" {
-				cur = e.sha
-			}
+			cur := ents[c.Path].sha
 			if *c.Base == "" && cur != "" {
 				return nil, r.conflict(c.Path, "exists", cur)
 			} else if *c.Base != "" && cur != *c.Base {
 				return nil, r.conflict(c.Path, "changed", cur)
 			}
 		}
-		res, retry, err := r.buildAndPush(head, changes, msg, au)
+		written := slices.Clone(changes)
+		for i, c := range written {
+			if c.Mode == "" {
+				written[i].Mode = cmp.Or(ents[c.Path].mode, "100644")
+			}
+		}
+		res, retry, err := r.buildAndPush(head, written, msg, au)
 		if err == nil {
 			return res, nil
 		}
@@ -110,7 +116,7 @@ type PathError struct{ Path, Reason string }
 
 func (e *PathError) Error() string { return e.Path + ": " + e.Reason }
 
-type treeEntry struct{ typ, sha string }
+type treeEntry struct{ mode, typ, sha string }
 
 // entries returns the type and object sha at commit head of the path of every
 // change and of every directory above a written path, from one "ls-tree" of
@@ -158,7 +164,7 @@ func (r *Repo) entries(head string, changes []Change) (map[string]treeEntry, err
 		if !ok || len(f) != 3 {
 			continue
 		}
-		res[p] = treeEntry{f[1], f[2]}
+		res[p] = treeEntry{f[0], f[1], f[2]}
 		for d := path.Dir(p); d != "." && res[d].typ == ""; d = path.Dir(d) {
 			res[d] = treeEntry{typ: "tree"}
 		}
@@ -166,8 +172,9 @@ func (r *Repo) entries(head string, changes []Change) (map[string]treeEntry, err
 	return res, nil
 }
 
-// checkReplace returns a PathError for a written path that is a directory or
-// a submodule, or that is below a file the changes do not delete.
+// checkReplace returns a PathError for a written path that is a directory, a
+// submodule or a symbolic link, or that is below a file the changes do not
+// delete.
 func checkReplace(changes []Change, ents map[string]treeEntry) error {
 	deleted := map[string]bool{}
 	for _, c := range changes {
@@ -177,11 +184,13 @@ func checkReplace(changes []Change, ents map[string]treeEntry) error {
 		if c.Delete {
 			continue
 		}
-		switch ents[c.Path].typ {
-		case "tree":
+		switch e := ents[c.Path]; {
+		case e.typ == "tree":
 			return &PathError{c.Path, "is a directory"}
-		case "commit":
+		case e.typ == "commit":
 			return &PathError{c.Path, "is a submodule"}
+		case e.mode == "120000":
+			return &PathError{c.Path, "is a symbolic link"}
 		}
 		for d := path.Dir(c.Path); d != "."; d = path.Dir(d) {
 			if t := ents[d].typ; t != "" && t != "tree" && !deleted[d] {
@@ -277,7 +286,7 @@ func (r *Repo) buildAndPush(head string, changes []Change, msg string, au Author
 			continue
 		}
 		shas[c.Path], blobs = blobs[0], blobs[1:]
-		fmt.Fprintf(&info, "100644 %s\t%s\x00", shas[c.Path], c.Path)
+		fmt.Fprintf(&info, "%s %s\t%s\x00", c.Mode, shas[c.Path], c.Path)
 	}
 	if _, err := git(info.Bytes(), "update-index", "-z", "--index-info"); err != nil {
 		return nil, false, err
