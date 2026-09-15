@@ -276,7 +276,7 @@ func TestNonRegularFiles(t *testing.T) {
 	}
 
 	for p, want := range map[string]string{
-		"projects/link2.md":    "wikictl: projects/link2.md: is a symbolic link\n",
+		"projects/link2.md":   "wikictl: projects/link2.md: is a symbolic link\n",
 		"global/linkdir/x.md": "wikictl: global/linkdir/x.md: global/linkdir is a file\n",
 	} {
 		if code, _, errs := runCLI(t, cfg, "x", "put", p); code != ExitError || !strings.HasSuffix(errs, want) {
