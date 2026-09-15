@@ -20,6 +20,9 @@ import (
 type Store interface {
 	// List returns the paths of all pages.
 	List() ([]string, error)
+	// Entries returns the files under dirs, or of the whole tree when dirs
+	// is nil, pages or not, with their object types.
+	Entries(dirs []string) ([]repo.Entry, error)
 	// Grep returns the pages that contain every one of words as fixed strings
 	// ignoring case.
 	Grep(words []string) ([]string, error)
@@ -179,11 +182,18 @@ func BrokenLinks(s Store, pages []*page.Page) ([]page.Issue, error) {
 // every new path requires that the path does not exist, so that a page
 // changed or created since it was read makes the commit a conflict. A page
 // that cannot be read is an error, so that no link to a moved page is left
-// unchanged.
+// unchanged. Pages that are not blobs, such as submodules, have no links and
+// are not read.
 func Relocate(s Store, mapping map[string]string) ([]repo.Change, error) {
-	all, err := s.List()
+	ents, err := s.Entries(nil)
 	if err != nil {
 		return nil, err
+	}
+	var all []string
+	for _, e := range ents {
+		if e.Type == "blob" && repo.IsPagePath(e.Path) {
+			all = append(all, e.Path)
+		}
 	}
 	contents, shas, err := s.CatSHA(all)
 	if err != nil {

@@ -21,6 +21,26 @@ type fakeStore map[string]string
 // Stat, CatSHA and CatLimit leave it out, and CheckMissing reports it.
 const unreadable = "\x00unreadable"
 
+// submodule is the content of a submodule of a fakeStore: Entries gives it
+// the type "commit", and Stat, CatSHA and CatLimit leave it out.
+const submodule = "\x00submodule"
+
+func (f fakeStore) Entries(dirs []string) ([]repo.Entry, error) {
+	var out []repo.Entry
+	for _, p := range slices.Sorted(maps.Keys(f)) {
+		if dirs != nil && !slices.ContainsFunc(dirs, func(d string) bool { return strings.HasPrefix(p, d+"/") }) {
+			continue
+		}
+		switch f[p] {
+		case submodule:
+			out = append(out, repo.Entry{Path: p, Mode: "160000", Type: "commit"})
+		default:
+			out = append(out, repo.Entry{Path: p, Mode: "100644", Type: "blob", SHA: blobSHA(f[p])})
+		}
+	}
+	return out, nil
+}
+
 func (f fakeStore) CheckMissing(paths []string) error {
 	for _, p := range paths {
 		if f[p] == unreadable {
@@ -79,7 +99,7 @@ func blobSHA(c string) string {
 func (f fakeStore) Stat(paths []string) (map[string]repo.Object, error) {
 	out := map[string]repo.Object{}
 	for _, p := range paths {
-		if c, ok := f[p]; ok && c != unreadable {
+		if c, ok := f[p]; ok && c != unreadable && c != submodule {
 			out[p] = repo.Object{SHA: blobSHA(c), Size: int64(len(c))}
 		}
 	}
@@ -89,7 +109,7 @@ func (f fakeStore) Stat(paths []string) (map[string]repo.Object, error) {
 func (f fakeStore) CatSHA(paths []string) (map[string][]byte, map[string]string, error) {
 	contents, shas := map[string][]byte{}, map[string]string{}
 	for _, p := range paths {
-		if c, ok := f[p]; ok && c != unreadable {
+		if c, ok := f[p]; ok && c != unreadable && c != submodule {
 			contents[p], shas[p] = []byte(c), blobSHA(c)
 		}
 	}
@@ -101,7 +121,7 @@ func (f fakeStore) CatLimit(paths []string, max int64) (map[string][]byte, map[s
 	for _, p := range paths {
 		c, ok := f[p]
 		switch {
-		case !ok || c == unreadable:
+		case !ok || c == unreadable || c == submodule:
 		case int64(len(c)) > max:
 			large[p] = repo.Object{SHA: blobSHA(c), Size: int64(len(c))}
 		default:
@@ -254,6 +274,28 @@ func TestRelocateUnreadable(t *testing.T) {
 	}
 	if got, err := Relocate(s, map[string]string{"global/a.md": "global/b.md"}); err == nil {
 		t.Errorf("Relocate = %+v, nil", got)
+	}
+}
+
+// TestRelocateSubmodule checks that a submodule named like a page is neither
+// changed nor checked with CheckMissing when every page can be read.
+func TestRelocateSubmodule(t *testing.T) {
+	s := &recordingStore{fakeStore: fakeStore{
+		"global/a.md":   "# a\n",
+		"global/b.md":   "# b\n[a](a.md)\n",
+		"global/sub.md": submodule,
+	}}
+	changes, err := Relocate(s, map[string]string{"global/a.md": "global/c.md"})
+	if err != nil || len(changes) != 3 {
+		t.Fatalf("Relocate = %+v, %v", changes, err)
+	}
+	for _, c := range changes {
+		if c.Path == "global/sub.md" {
+			t.Errorf("submodule changed: %+v", c)
+		}
+	}
+	if slices.ContainsFunc(s.calls, func(paths []string) bool { return len(paths) > 0 }) {
+		t.Errorf("CheckMissing calls: %q", s.calls)
 	}
 }
 

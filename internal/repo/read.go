@@ -15,9 +15,9 @@ import (
 	"unicode/utf8"
 )
 
-// isPagePath reports whether p can be a page: a .md file below the root,
+// IsPagePath reports whether p can be a page: a .md file below the root,
 // with no component starting with a dot.
-func isPagePath(p string) bool {
+func IsPagePath(p string) bool {
 	if !strings.HasSuffix(p, ".md") || !strings.Contains(p, "/") {
 		return false
 	}
@@ -47,7 +47,7 @@ func stripRef(r *Repo, lines string) []string {
 	prefix := r.readRef() + ":"
 	for _, l := range strings.Split(strings.TrimSpace(lines), "\n") {
 		p := strings.TrimPrefix(l, prefix)
-		if p != "" && isPagePath(p) {
+		if p != "" && IsPagePath(p) {
 			res = append(res, p)
 		}
 	}
