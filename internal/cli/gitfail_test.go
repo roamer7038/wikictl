@@ -198,6 +198,7 @@ func TestUnreadableObject(t *testing.T) {
 		{"mv/source blob", "global/push.md", "", "", []string{"mv", "global/push.md", "global/push2.md"}},
 		{"put/base with tree", "global", "", newPage, []string{"put", "--base", "BASE", "global/push.md"}},
 		{"put/existence with tree", "global", "", newPage, []string{"put", "global/push.md"}},
+		{"rm/files with tree", "global", "", "", []string{"rm", "global/push.md"}},
 		{"put/existence with blob", "global/push.md", "", newPage, []string{"put", "global/push.md"}},
 	}
 	for _, c := range cases {

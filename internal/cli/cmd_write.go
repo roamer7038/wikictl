@@ -419,9 +419,9 @@ func checkFilePath(p string) error {
 
 // moveChanges builds the changes that move the files of mapping (old path ->
 // new path), each keeping its mode from modes: pages through wiki.Relocate,
-// with the old name added to aliases when it changes, and other files,
-// symbolic links included, unchanged. It also returns the number of other
-// pages whose links were rewritten.
+// with the old name added to aliases when it changes, and other files
+// unchanged. It also returns the number of other pages whose links were
+// rewritten.
 func (a *app) moveChanges(mapping, modes map[string]string) ([]repo.Change, int, error) {
 	sources := slices.Collect(maps.Keys(mapping))
 	objs, err := a.repo.Stat(sources)
@@ -433,7 +433,7 @@ func (a *app) moveChanges(mapping, modes map[string]string) ([]repo.Change, int,
 	}
 	pages, others := map[string]string{}, []string{}
 	for f, np := range mapping {
-		if strings.HasSuffix(f, ".md") && modes[f] != "120000" {
+		if strings.HasSuffix(f, ".md") {
 			pages[f] = np
 		} else {
 			others = append(others, f)

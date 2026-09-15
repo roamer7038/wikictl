@@ -23,7 +23,7 @@ type Change struct {
 	Content []byte
 	Delete  bool
 	Base    *string
-	Mode    string // mode of a written file, such as 100755 or 120000; empty keeps the mode of the file replaced, else 100644
+	Mode    string // "" keeps the mode of the file replaced, or 100644 for a new file
 }
 
 // Author is used as both author and committer of a commit.

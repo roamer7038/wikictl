@@ -232,10 +232,16 @@ func TestNonRegularFiles(t *testing.T) {
 	}
 	cfg := setup(t)
 	remote, work := filepath.Join(filepath.Dir(cfg), "remote.git"), filepath.Join(filepath.Dir(cfg), "work")
-	os.WriteFile(filepath.Join(work, "global", "run.sh"), []byte("#!/bin/sh\n"), 0o755)
+	os.MkdirAll(filepath.Join(work, "tools"), 0o755)
+	os.WriteFile(filepath.Join(work, "tools", "run.sh"), []byte("#!/bin/sh\n"), 0o755)
+	os.Symlink("../global/push.md", filepath.Join(work, "tools", "push.md"))
 	os.Symlink("push.md", filepath.Join(work, "global", "link.md"))
+	os.Symlink("../projects", filepath.Join(work, "global", "linkdir"))
+	os.WriteFile(filepath.Join(work, "global", "exec.md"), []byte("---\nsummary: e\n---\n# e\n[l](link.md)\n"), 0o755)
 	mustRun(t, work, "git", "add", "-A")
-	mustRun(t, work, "git", "update-index", "--add", "--cacheinfo", "160000,"+gitOut(t, "--git-dir", remote, "rev-parse", "main")+",global/sub")
+	sub := "160000," + gitOut(t, "--git-dir", remote, "rev-parse", "main")
+	mustRun(t, work, "git", "update-index", "--add", "--cacheinfo", sub+",global/sub")
+	mustRun(t, work, "git", "update-index", "--add", "--cacheinfo", sub+",mods/lib/sub")
 	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "special")
 	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
 	mode := func(p string) string {
@@ -245,26 +251,37 @@ func TestNonRegularFiles(t *testing.T) {
 		}
 		return ""
 	}
+	blob := func(p string) string { return gitOut(t, "--git-dir", remote, "cat-file", "-p", "main:"+p) }
 
-	for _, args := range [][]string{{"mv", "global/run.sh", "global/run2.sh"}, {"mv", "global/link.md", "projects/link.md"}} {
+	// A moved symbolic link keeps its mode and target, and links to it are
+	// rewritten in pages that keep their mode.
+	for _, args := range [][]string{{"mv", "global/link.md", "projects/link.md"}, {"mv", "tools", "bin"}} {
 		if code, _, errs := runCLI(t, cfg, "", args...); code != 0 {
 			t.Fatalf("%v: code=%d %s", args, code, errs)
 		}
 	}
-	if m := mode("global/run2.sh"); m != "100755" {
-		t.Errorf("moved executable: mode %q", m)
-	}
-	if m, target := mode("projects/link.md"), gitOut(t, "--git-dir", remote, "cat-file", "-p", "main:projects/link.md"); m != "120000" || target != "push.md" {
+	if m, target := mode("projects/link.md"), blob("projects/link.md"); m != "120000" || target != "push.md" {
 		t.Errorf("moved symbolic link: mode %q, target %q", m, target)
 	}
-	if code, _, errs := runCLI(t, cfg, "#!/bin/sh\necho hi\n", "put", "--base", shaOf(t, cfg, "global/run2.sh"), "global/run2.sh"); code != 0 || mode("global/run2.sh") != "100755" {
-		t.Errorf("put over an executable: code=%d mode %q %s", code, mode("global/run2.sh"), errs)
+	if m, b := mode("global/exec.md"), blob("global/exec.md"); m != "100755" || !strings.Contains(b, "[l](../projects/link.md)") {
+		t.Errorf("rewritten executable page: mode %q, content %q", m, b)
 	}
-	if code, _, errs := runCLI(t, cfg, "x", "put", "projects/link.md"); code != ExitError || !strings.HasSuffix(errs, "wikictl: projects/link.md: is a symbolic link\n") {
-		t.Errorf("put over a symbolic link: code=%d %q", code, errs)
+	if m1, m2 := mode("bin/run.sh"), mode("bin/push.md"); m1 != "100755" || m2 != "120000" {
+		t.Errorf("moved directory: modes %q and %q", m1, m2)
+	}
+	if code, _, errs := runCLI(t, cfg, "#!/bin/sh\necho hi\n", "put", "--base", shaOf(t, cfg, "bin/run.sh"), "bin/run.sh"); code != 0 || mode("bin/run.sh") != "100755" {
+		t.Errorf("put over an executable: code=%d mode %q %s", code, mode("bin/run.sh"), errs)
 	}
 
-	for _, args := range [][]string{{"mv", "global/sub", "global/sub2"}, {"mv", "global", "machines"}} {
+	for p, want := range map[string]string{
+		"projects/link.md":    "wikictl: projects/link.md: is a symbolic link\n",
+		"global/linkdir/x.md": "wikictl: global/linkdir/x.md: global/linkdir is a file\n",
+	} {
+		if code, _, errs := runCLI(t, cfg, "x", "put", p); code != ExitError || !strings.HasSuffix(errs, want) {
+			t.Errorf("put %s: code=%d %q", p, code, errs)
+		}
+	}
+	for _, args := range [][]string{{"mv", "global/sub", "global/sub2"}, {"mv", "mods", "machines"}} {
 		if code, _, errs := runCLI(t, cfg, "", args...); code != ExitError || !strings.Contains(errs, "cannot move a submodule") {
 			t.Errorf("%v: code=%d %q", args, code, errs)
 		}
@@ -272,7 +289,7 @@ func TestNonRegularFiles(t *testing.T) {
 	if m := mode("global/sub"); m != "160000" {
 		t.Errorf("submodule after a refused mv: mode %q", m)
 	}
-	if code, _, errs := runCLI(t, cfg, "", "rm", "global/sub", "projects/link.md"); code != 0 || mode("global/sub")+mode("projects/link.md") != "" {
-		t.Errorf("rm of a submodule and a symbolic link: code=%d %s", code, errs)
+	if code, _, errs := runCLI(t, cfg, "", "rm", "-r", "global/sub", "projects/link.md", "mods"); code != 0 || mode("global/sub")+mode("projects/link.md")+mode("mods/lib/sub") != "" {
+		t.Errorf("rm of submodules and a symbolic link: code=%d %s", code, errs)
 	}
 }
