@@ -66,11 +66,11 @@ func TestSnapshot(t *testing.T) {
 	if head, err := r.Head(); err != nil || head != before {
 		t.Errorf("Head after fetch: %s %v, want %s", head, err, before)
 	}
-	if list, err := r.List(nil); err != nil || strings.Contains(strings.Join(list, "\n"), "global/new.md") {
+	if list, err := r.List(); err != nil || strings.Contains(strings.Join(list, "\n"), "global/new.md") {
 		t.Errorf("List after fetch: %v %v", list, err)
 	}
-	if c, err := r.Cat([]string{"global/new.md"}); err != nil || c["global/new.md"] != nil {
-		t.Errorf("Cat after fetch: %v %v", c, err)
+	if c, _, err := r.CatSHA([]string{"global/new.md"}); err != nil || c["global/new.md"] != nil {
+		t.Errorf("CatSHA after fetch: %v %v", c, err)
 	}
 	empty := ""
 	if _, err := r.Commit([]Change{{Path: "global/mine.md", Content: []byte("# m\n"), Base: &empty}}, "mine", Author{"a", "a@a"}); err != nil {
@@ -94,8 +94,8 @@ func TestSnapshotOfEmptyBranch(t *testing.T) {
 	if err := r.Fetch(); err != nil {
 		t.Fatal(err)
 	}
-	if c, err := r.Cat([]string{"global/new.md"}); err != nil || len(c) != 0 {
-		t.Errorf("Cat after fetch: %v %v", c, err)
+	if c, _, err := r.CatSHA([]string{"global/new.md"}); err != nil || len(c) != 0 {
+		t.Errorf("CatSHA after fetch: %v %v", c, err)
 	}
 	if s, err := r.Stat([]string{"global/new.md"}); err != nil || len(s) != 0 {
 		t.Errorf("Stat after fetch: %v %v", s, err)
@@ -323,20 +323,17 @@ func TestReadGitFailure(t *testing.T) {
 	if h, err := r.Head(); err == nil {
 		t.Errorf("Head = %q, nil", h)
 	}
-	if got, err := r.List(nil); err == nil {
+	if got, err := r.List(); err == nil {
 		t.Errorf("List = %v, nil", got)
 	}
-	if got, err := r.Grep([]string{"x"}, true, nil); err == nil {
+	if got, err := r.Grep([]string{"x"}); err == nil {
 		t.Errorf("Grep = %v, nil", got)
 	}
-	if got, err := r.GrepDeprecated(nil); err == nil {
+	if got, err := r.GrepDeprecated(); err == nil {
 		t.Errorf("GrepDeprecated = %v, nil", got)
 	}
 	if got, err := r.Updated([]string{"global/a.md"}); err == nil {
 		t.Errorf("Updated = %v, nil", got)
-	}
-	if got, err := r.BlobSHA("0123456789012345678901234567890123456789", "global/a.md"); err == nil {
-		t.Errorf("BlobSHA = %q, nil", got)
 	}
 }
 
@@ -366,43 +363,38 @@ func TestRead(t *testing.T) {
 		"global/日本語.md":      "---\nsummary: non-ascii\n---\n# 日本語\nlease\n",
 	})
 	r := openFetched(t, remote)
-	list, err := r.List([]string{"global", "projects/a", "machines/h", "nope"})
+	list, err := r.List()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(list) != 5 || list[2] != "global/日本語.md" {
 		t.Errorf("list=%v", list)
 	}
-	got, _ := r.Grep([]string{"LEASE", "force"}, true, []string{"global", "projects/a"})
+	got, _ := r.Grep([]string{"LEASE", "force"})
 	if len(got) != 1 || got[0] != "global/git-push.md" {
 		t.Errorf("all-match grep=%v", got)
 	}
-	got, _ = r.Grep([]string{"lease"}, true, []string{"global", "projects/a"})
+	got, _ = r.Grep([]string{"lease"})
 	if len(got) != 3 {
 		t.Errorf("grep=%v", got)
 	}
-	if got, _ := r.Grep([]string{"zzz-none"}, true, nil); len(got) != 0 {
+	if got, _ := r.Grep([]string{"zzz-none"}); len(got) != 0 {
 		t.Errorf("no match must be empty: %v", got)
 	}
-	dep, _ := r.GrepDeprecated([]string{"global", "projects/a"})
+	dep, _ := r.GrepDeprecated()
 	if !dep["projects/a/x.md"] || len(dep) != 1 {
 		t.Errorf("dep=%v", dep)
 	}
-	c, _ := r.Cat([]string{"global/git-push.md", "missing.md", "machines/h/y.md"})
+	c, shas, _ := r.CatSHA([]string{"global/git-push.md", "missing.md", "machines/h/y.md"})
 	if !strings.HasPrefix(string(c["global/git-push.md"]), "---") || c["missing.md"] != nil || c["machines/h/y.md"] == nil {
 		t.Errorf("cat=%v", c)
+	}
+	if len(shas["global/git-push.md"]) != 40 || shas["missing.md"] != "" {
+		t.Errorf("shas=%v", shas)
 	}
 	up, _ := r.Updated([]string{"global/git-push.md", "global/日本語.md"})
 	if up["global/git-push.md"].IsZero() || up["global/日本語.md"].IsZero() {
 		t.Errorf("updated=%v", up)
-	}
-	h, _ := r.Head()
-	sha, _ := r.BlobSHA(h, "global/git-push.md")
-	if len(sha) != 40 {
-		t.Errorf("sha=%q", sha)
-	}
-	if s, _ := r.BlobSHA(h, "none.md"); s != "" {
-		t.Error("missing must be empty")
 	}
 }
 
@@ -410,7 +402,7 @@ func TestCatSkipsTrees(t *testing.T) {
 	remote := newRemote(t, true)
 	seedRemote(t, remote, map[string]string{"global/sub.md/a.md": "---\nsummary: a\n---\n"})
 	r := openFetched(t, remote)
-	c, err := r.Cat([]string{"global/sub.md", "global/index.md"})
+	c, _, err := r.CatSHA([]string{"global/sub.md", "global/index.md"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -428,7 +420,7 @@ func TestCommitAndConflict(t *testing.T) {
 	if err != nil || len(res.Commit) != 40 || len(res.SHAs["global/a.md"]) != 40 {
 		t.Fatalf("%+v %v", res, err)
 	}
-	c, _ := r.Cat([]string{"global/a.md"})
+	c, _, _ := r.CatSHA([]string{"global/a.md"})
 	if c["global/a.md"] == nil {
 		t.Fatal("not readable after commit")
 	}
@@ -450,13 +442,13 @@ func TestCommitAndConflict(t *testing.T) {
 	if _, err := r.Commit([]Change{{Path: "global/a.md", Content: []byte("---\nsummary: a3\n---\n"), Base: &cur}}, "retry", au); err != nil {
 		t.Fatal(err)
 	}
-	if c, _ := r.Cat([]string{"global/other.md"}); c["global/other.md"] == nil {
+	if c, _, _ := r.CatSHA([]string{"global/other.md"}); c["global/other.md"] == nil {
 		t.Error("other.md must survive")
 	}
 	if _, err := r.Commit([]Change{{Path: "global/a.md", Delete: true}}, "rm", au); err != nil {
 		t.Fatal(err)
 	}
-	if c, _ := r.Cat([]string{"global/a.md"}); c["global/a.md"] != nil {
+	if c, _, _ := r.CatSHA([]string{"global/a.md"}); c["global/a.md"] != nil {
 		t.Error("not deleted")
 	}
 	if out, _ := r.Git("log", "-1", "--format=%an <%ae>", r.trackingRef()); strings.TrimSpace(out) != "agent@h <agent@h.invalid>" {
@@ -477,13 +469,13 @@ func TestCommitEmptyRemote(t *testing.T) {
 	}
 }
 
-// Directory names may contain '*' and '[', so dirs must match literally
+// Directory names may contain '*' and '[', so paths must match literally
 // rather than as git wildcards.
 func TestReadLiteralDirs(t *testing.T) {
 	remote := newRemote(t, true)
 	seedRemote(t, remote, map[string]string{
-		"projects/a*/p.md":   "---\nsummary: p\nstatus: deprecated\n---\n# p\nlease\n",
-		"projects/app/x.md":  "---\nsummary: x\nstatus: deprecated\n---\n# x\nlease\n",
+		"projects/a*/p.md":   "---\nsummary: p\n---\n# p\nlease\n",
+		"projects/app/x.md":  "---\nsummary: x\n---\n# x\nlease\n",
 		"projects/[ab]/q.md": "---\nsummary: q\n---\n# q\nlease\n",
 		"projects/a/y.md":    "---\nsummary: y\n---\n# y\nlease\n",
 	})
@@ -493,10 +485,10 @@ func TestReadLiteralDirs(t *testing.T) {
 		{"projects/[ab]", "projects/[ab]/q.md"},
 	} {
 		dirs := []string{tc.dir}
-		if got, _ := r.List(dirs); len(got) != 1 || got[0] != tc.want {
-			t.Errorf("list %s=%v", tc.dir, got)
+		if got, _ := r.Files(dirs); len(got) != 1 || got[0] != tc.want {
+			t.Errorf("files %s=%v", tc.dir, got)
 		}
-		if got, _ := r.Grep([]string{"lease"}, false, dirs); len(got) != 1 || got[0] != tc.want {
+		if got, _ := r.GrepRecords([]string{"-l"}, []string{"lease"}, dirs); len(got) != 1 || got[0][0] != tc.want {
 			t.Errorf("grep %s=%v", tc.dir, got)
 		}
 		up, _ := r.Updated([]string{tc.want})
@@ -504,8 +496,8 @@ func TestReadLiteralDirs(t *testing.T) {
 			t.Errorf("updated %s=%v", tc.dir, up)
 		}
 	}
-	if dep, _ := r.GrepDeprecated([]string{"projects/a*"}); len(dep) != 1 || !dep["projects/a*/p.md"] {
-		t.Errorf("dep=%v", dep)
+	if got, err := r.Files([]string{"nope", "projects/a*"}); err != nil || len(got) != 1 {
+		t.Errorf("a directory that does not exist must be ignored: %v %v", got, err)
 	}
 }
 
@@ -521,19 +513,17 @@ func TestGrepFoldsNonASCII(t *testing.T) {
 	r := openFetched(t, remote)
 	for _, tc := range []struct {
 		words []string
-		all   bool
 		want  string
 	}{
-		{[]string{"äpfel"}, true, "global/apfel.md"},
-		{[]string{"ÄPFEL"}, true, "global/apfel.md"},
-		{[]string{"273 k"}, true, "global/kelvin.md"},
-		{[]string{"οδος"}, true, "global/sigma.md"},
-		{[]string{"A.B", "[X]"}, true, "global/a.b.md"},
-		{[]string{"äpfel", "zzz-none"}, false, "global/apfel.md"},
+		{[]string{"äpfel"}, "global/apfel.md"},
+		{[]string{"ÄPFEL"}, "global/apfel.md"},
+		{[]string{"273 k"}, "global/kelvin.md"},
+		{[]string{"οδος"}, "global/sigma.md"},
+		{[]string{"A.B", "[X]"}, "global/a.b.md"},
 	} {
-		got, err := r.Grep(tc.words, tc.all, []string{"global"})
+		got, err := r.Grep(tc.words)
 		if err != nil || len(got) != 1 || got[0] != tc.want {
-			t.Errorf("Grep(%q, %v)=%v, %v; want [%s]", tc.words, tc.all, got, err, tc.want)
+			t.Errorf("Grep(%q)=%v, %v; want [%s]", tc.words, got, err, tc.want)
 		}
 	}
 }
