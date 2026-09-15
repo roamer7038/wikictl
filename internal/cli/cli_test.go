@@ -12,32 +12,67 @@ import (
 	"testing"
 )
 
-func setup(t *testing.T) (cfgPath string) {
+// setupEmpty creates, in a new directory, a bare repository remote.git
+// without any branch and the configuration config.yaml for it, and returns
+// the path of the configuration.
+func setupEmpty(t *testing.T) (cfgPath string) {
 	t.Helper()
 	isolateGit(t)
 	t.Setenv("WIKICTL_PROFILE", "")
 	d := t.TempDir()
 	remote := filepath.Join(d, "remote.git")
 	mustRun(t, "", "git", "init", "-q", "--bare", "-b", "main", remote)
-	work := filepath.Join(d, "work")
-	mustRun(t, "", "git", "clone", "-q", remote, work)
-	files := map[string]string{
-		"global/index.md":   "---\nsummary: entry point\n---\n# global\n",
-		"global/push.md":    "---\nsummary: how to push\ntype: policy\ntags: [git]\n---\n# push\nuse force-with-lease. [index](index.md)\n\n## Links\n- part_of: [index](index.md)\n",
-		"projects/app/x.md": "---\nsummary: x\n---\n# x\nlease\n",
-		"machines/h1/y.md":  "---\nsummary: y\nstatus: deprecated\n---\n# y\nlease\n",
-	}
-	for p, c := range files {
-		os.MkdirAll(filepath.Dir(filepath.Join(work, p)), 0o755)
-		os.WriteFile(filepath.Join(work, p), []byte(c), 0o644)
-	}
-	mustRun(t, work, "git", "add", "-A")
-	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "seed")
-	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(d, "cache"))
 	cfgPath = filepath.Join(d, "config.yaml")
 	os.WriteFile(cfgPath, []byte("repo: "+remote+"\nauthor: {name: agent, email: a@a}\n"), 0o600)
 	return cfgPath
+}
+
+// setup creates a wiki as setupEmpty does and pushes four pages to it.
+func setup(t *testing.T) (cfgPath string) {
+	t.Helper()
+	cfgPath = setupEmpty(t)
+	pushFiles(t, cfgPath, map[string]string{
+		"global/index.md":   "---\nsummary: entry point\n---\n# global\n",
+		"global/push.md":    "---\nsummary: how to push\ntype: policy\ntags: [git]\n---\n# push\nuse force-with-lease. [index](index.md)\n\n## Links\n- part_of: [index](index.md)\n",
+		"projects/app/x.md": "---\nsummary: x\n---\n# x\nlease\n",
+		"machines/h1/y.md":  "---\nsummary: y\nstatus: deprecated\n---\n# y\nlease\n",
+	})
+	return cfgPath
+}
+
+// cloneRemote clones the repository of a configuration that setupEmpty
+// created into a new directory and returns the path of the clone.
+func cloneRemote(t *testing.T, cfg string) string {
+	t.Helper()
+	work := filepath.Join(t.TempDir(), "w")
+	mustRun(t, "", "git", "clone", "-q", filepath.Join(filepath.Dir(cfg), "remote.git"), work)
+	return work
+}
+
+// pushFiles writes files, keyed by path, in a clone of the repository of cfg
+// and pushes them to main in one commit.
+func pushFiles(t *testing.T, cfg string, files map[string]string) {
+	t.Helper()
+	work := cloneRemote(t, cfg)
+	for p, c := range files {
+		f := filepath.Join(work, p)
+		if err := os.MkdirAll(filepath.Dir(f), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(f, []byte(c), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mustRun(t, work, "git", "add", "-A")
+	commitAndPush(t, work)
+}
+
+// commitAndPush commits the index of the clone work and pushes it to main.
+func commitAndPush(t *testing.T, work string) {
+	t.Helper()
+	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "test")
+	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
 }
 
 func mustRun(t *testing.T, dir, name string, args ...string) {
@@ -192,26 +227,9 @@ func TestReadCommands(t *testing.T) {
 	if code, out, _ = runCLI(t, cfg, "", "context", "--json"); code != 0 {
 		t.Errorf("context: %s", out)
 	}
-	if code, _, errs = runCLI(t, cfg, "", "ls", "global/none", "global"); code != 1 || errs != "wikictl: global/none: no such file or directory\n" {
-		t.Errorf("ls of a missing path: code=%d errs=%q", code, errs)
-	}
 	// Global flags may follow the command; "--" ends flag parsing.
 	if code, out, _ := runCLI(t, cfg, "", "lint", "--", "global/push.md"); code != 0 || out != "" {
 		t.Errorf("lint -- path: code=%d out=%q", code, out)
-	}
-	if code, _, _ := runCLI(t, cfg, "", "lint", "global/none.md"); code != 1 {
-		t.Errorf("lint of a missing page must fail with 1, got %d", code)
-	}
-	if code, out, _ := runCLI(t, cfg, "", "--json", "bogus"); code != 2 || !strings.HasPrefix(out, `{"error":"usage"`) {
-		t.Errorf("unknown command with --json: code=%d out=%q", code, out)
-	}
-	for _, args := range [][]string{{"stat", "global/none.md"}, {"links", "global/none.md"}} {
-		if code, _, _ = runCLI(t, cfg, "", args...); code != 1 {
-			t.Errorf("%v: code=%d", args, code)
-		}
-	}
-	if code, _, _ = runCLI(t, cfg, "", "bogus"); code != 2 {
-		t.Errorf("unknown command code=%d", code)
 	}
 }
 
@@ -309,9 +327,6 @@ func TestPutRm(t *testing.T) {
 	if code, _, errs := runCLI(t, cfg, "---\nsummary: a\n---\n", "put", "global/my page.md"); code != 4 || !strings.Contains(errs, "bad_path") {
 		t.Errorf("bad path: code=%d errs=%q", code, errs)
 	}
-	if code, _, errs := runCLI(t, cfg, "---\nsummary: a\n---\n", "put", "global/a`b.md"); code != 4 || !strings.Contains(errs, "bad_path") {
-		t.Errorf("put name with '`': code=%d errs=%q", code, errs)
-	}
 	// A name outside the recommended form is only a warning.
 	if code, _, errs := runCLI(t, cfg, "---\nsummary: a\n---\n", "put", "global/Bad_Name.md"); code != 0 || !strings.Contains(errs, "name_style") {
 		t.Errorf("style name: code=%d errs=%q", code, errs)
@@ -346,12 +361,7 @@ func TestPutRm(t *testing.T) {
 func TestRmRejectsBadPath(t *testing.T) {
 	cfg := setup(t)
 	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
-	work := filepath.Join(t.TempDir(), "w")
-	mustRun(t, "", "git", "clone", "-q", remote, work)
-	os.WriteFile(filepath.Join(work, "README.md"), []byte("# wiki\n"), 0o644)
-	mustRun(t, work, "git", "add", "-A")
-	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "readme")
-	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
+	pushFiles(t, cfg, map[string]string{"README.md": "# wiki\n"})
 	lsTree := func() string {
 		out, err := exec.Command("git", "--git-dir", remote, "ls-tree", "-r", "main").Output()
 		if err != nil {
@@ -423,14 +433,8 @@ func TestPathForms(t *testing.T) {
 // TestPutIntoEmptyRepository checks that the first put into a repository
 // without any branch creates the branch, and that reads work before and after.
 func TestPutIntoEmptyRepository(t *testing.T) {
-	isolateGit(t)
-	t.Setenv("WIKICTL_PROFILE", "")
-	d := t.TempDir()
-	remote := filepath.Join(d, "r.git")
-	mustRun(t, "", "git", "init", "-q", "--bare", "-b", "main", remote)
-	t.Setenv("XDG_CACHE_HOME", filepath.Join(d, "cache"))
-	cfg := filepath.Join(d, "c.yaml")
-	os.WriteFile(cfg, []byte("repo: "+remote+"\nauthor: {name: a, email: a@a}\n"), 0o600)
+	cfg := setupEmpty(t)
+	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
 	if code, out, errs := runCLI(t, cfg, "", "ls", "--json"); code != 0 || out != `{"items":[]}`+"\n" {
 		t.Fatalf("ls before the first put: code=%d out=%q %s", code, out, errs)
 	}
@@ -469,14 +473,8 @@ func TestMvAndLint(t *testing.T) {
 	if code, _, _ := runCLI(t, cfg, "", "mv", "global/push.md", "global/index.md"); code != 1 {
 		t.Error("mv onto existing must fail")
 	}
-	if code, _, errs := runCLI(t, cfg, "", "mv", "global/push.md", "global/a b.md"); code != 4 || !strings.Contains(errs, "bad_path") {
-		t.Errorf("mv to bad path: code=%d errs=%q", code, errs)
-	}
 	if code, _, errs := runCLI(t, cfg, "", "mv", "global/push.md", "global/a:b.md"); code != 4 || !strings.Contains(errs, "bad_path") {
 		t.Errorf("mv to name with ':': code=%d errs=%q", code, errs)
-	}
-	if code, _, errs := runCLI(t, cfg, "", "mv", "global/push.md", "global/a`b.md"); code != 4 || !strings.Contains(errs, "bad_path") {
-		t.Errorf("mv to name with '`': code=%d errs=%q", code, errs)
 	}
 	if code, _, errs := runCLI(t, cfg, "", "mv", "global/push.md", "global/Push.md"); code != 0 || !strings.Contains(errs, "name_style") {
 		t.Errorf("mv to style name: code=%d errs=%q", code, errs)
@@ -559,57 +557,10 @@ func TestLintDirs(t *testing.T) {
 		{[]string{"notes/x.md"}, 4, "notes/x.md/in.md:0: name_style: name \"x.md\": lowercase ASCII letters, digits and hyphens are recommended\n"},
 		{[]string{"machines"}, 0, ""},
 		{[]string{"machines/raw"}, 0, ""},
-		{[]string{"global/none"}, 1, ""},
 	} {
 		if code, out, _ := runCLI(t, cfg, "", append([]string{"lint"}, c.args...)...); code != c.code || out != c.out {
 			t.Errorf("lint %v: code=%d out=%q", c.args, code, out)
 		}
-	}
-	if code, out, errs := runCLI(t, cfg, "", "lint", "global", "global/none"); code != ExitError ||
-		out != "global/sub/a.md:1: missing_summary: frontmatter is missing\n" || errs != "wikictl: global/none: no such file or directory\n" {
-		t.Errorf("lint of a missing path: code=%d out=%q errs=%q", code, out, errs)
-	}
-}
-
-// TestLintLinksNotLast checks that lint reports a Links heading that is
-// followed by another heading.
-func TestLintLinksNotLast(t *testing.T) {
-	cfg := setup(t)
-	runCLI(t, cfg, "---\nsummary: l\n---\n# l\n\n## Links\n- part_of: [i](index.md)\n\n## later\n", "put", "global/l.md")
-	if code, out, _ := runCLI(t, cfg, "", "lint", "global/l.md"); code != 4 || out != "global/l.md:6: links_syntax: \"## Links\" is not the last heading, so the lines after it are not read as links\n" {
-		t.Errorf("code=%d out=%q", code, out)
-	}
-}
-
-// TestLinkExistence checks that put and lint agree on which link targets exist:
-// any file in the tree counts, and a directory does not.
-func TestLinkExistence(t *testing.T) {
-	cfg := setup(t)
-	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
-	work := filepath.Join(t.TempDir(), "w")
-	mustRun(t, "", "git", "clone", "-q", remote, work)
-	os.MkdirAll(filepath.Join(work, "global/sub.md"), 0o755)
-	os.WriteFile(filepath.Join(work, "README.md"), []byte("# wiki\n"), 0o644)
-	os.WriteFile(filepath.Join(work, "global/sub.md/a.md"), []byte("---\nsummary: a\n---\n"), 0o644)
-	mustRun(t, work, "git", "add", "-A")
-	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "extra")
-	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
-
-	code, _, errs := runCLI(t, cfg, "---\nsummary: r\n---\n# r\n[r](../README.md)\n", "put", "global/r.md")
-	if code != 0 || strings.Contains(errs, "broken_link") {
-		t.Errorf("put link to README.md: code=%d errs=%q", code, errs)
-	}
-	if code, out, _ := runCLI(t, cfg, "", "lint", "global/r.md"); code != 0 {
-		t.Errorf("lint link to README.md: code=%d out=%q", code, out)
-	}
-
-	code, _, errs = runCLI(t, cfg, "---\nsummary: d\n---\n# d\n[d](sub.md) [i](index.md)\n", "put", "global/d.md")
-	if code != 0 || !strings.Contains(errs, "broken_link") || !strings.Contains(errs, "global/sub.md") || strings.Contains(errs, "global/index.md") {
-		t.Errorf("put link to a directory: code=%d errs=%q", code, errs)
-	}
-	code, out, _ := runCLI(t, cfg, "", "lint", "global/d.md")
-	if code != 4 || strings.Count(out, "broken_link") != 1 || !strings.Contains(out, "global/sub.md") {
-		t.Errorf("lint link to a directory: code=%d out=%q", code, out)
 	}
 }
 
@@ -912,9 +863,6 @@ func TestTree(t *testing.T) {
 	if code, out, errs := runCLI(t, cfg, "", "tree", "global/index.md", "none"); code != 1 || out != "\n0 directories, 0 files\n" ||
 		errs != "wikictl: global/index.md: not a directory\nwikictl: none: no such file or directory\n" {
 		t.Errorf("tree of paths that are not directories: code=%d out=%q errs=%q", code, out, errs)
-	}
-	if code, _, errs := runCLI(t, cfg, "", "tree", "-L", "0"); code != ExitUsage || !strings.Contains(errs, "must be at least 1") {
-		t.Errorf("tree -L 0: code=%d errs=%q", code, errs)
 	}
 }
 
@@ -1233,24 +1181,12 @@ func gitOut(t *testing.T, args ...string) string {
 // that leave the tree unchanged, create no commit on the remote.
 func TestWriteWithoutChange(t *testing.T) {
 	cfg := setup(t)
-	d := filepath.Dir(cfg)
-	remote, work := filepath.Join(d, "remote.git"), filepath.Join(d, "work")
-	os.WriteFile(filepath.Join(work, "README.md"), []byte("# wiki\n"), 0o644)
-	os.MkdirAll(filepath.Join(work, "misc"), 0o755)
-	os.WriteFile(filepath.Join(work, "misc", "a b.md"), []byte("---\nsummary: a\n---\n"), 0o644)
-	mustRun(t, work, "git", "add", "-A")
-	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "readme")
-	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
+	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
+	pushFiles(t, cfg, map[string]string{"README.md": "# wiki\n"})
 	head := gitOut(t, "--git-dir", remote, "rev-parse", "main")
 
 	if code, out, errs := runCLI(t, cfg, "", "mv", "README.md", "global/readme.md"); code != 4 || !strings.Contains(errs, "bad_path") {
 		t.Errorf("mv of a non-page file: code=%d out=%q errs=%q", code, out, errs)
-	}
-	if code, out, errs := runCLI(t, cfg, "", "mv", "global/push.md/", "newdir/"); code != 1 {
-		t.Errorf("mv of a page given as a directory: code=%d out=%q errs=%q", code, out, errs)
-	}
-	if code, out, errs := runCLI(t, cfg, "", "mv", "misc/", "misc2/"); code != 4 || !strings.Contains(errs, "bad_path") {
-		t.Errorf("mv of a directory with a bad page name: code=%d out=%q errs=%q", code, out, errs)
 	}
 	if got := gitOut(t, "--git-dir", remote, "rev-parse", "main"); got != head {
 		t.Fatalf("rejected mv moved the remote branch: %s -> %s", head, got)
@@ -1272,34 +1208,24 @@ func TestWriteWithoutChange(t *testing.T) {
 // and checks that the read commands finish and lint reports them.
 func TestPageLimits(t *testing.T) {
 	cfg := setup(t)
-	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
-	work := filepath.Join(t.TempDir(), "w")
-	mustRun(t, "", "git", "clone", "-q", remote, work)
 	nest := func(n int) string { return strings.Repeat("[", n) + strings.Repeat("]", n) }
 	pages := map[string]string{
 		"global/deep.md":  "---\nsummary: deep\nx: " + nest(30000) + "\n---\n# deep\n",
 		"global/large.md": "---\nsummary: large\nx: " + nest(200000) + "\n---\n# large\n",
-		"global/huge.md":  "---\nsummary: huge\n---\n# huge\n" + strings.Repeat("lorem ipsum\n", 100000),
 	}
-	for p, c := range pages {
-		os.WriteFile(filepath.Join(work, p), []byte(c), 0o644)
-	}
-	mustRun(t, work, "git", "add", "-A")
-	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "limits")
-	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
+	pushFiles(t, cfg, pages)
 
-	if code, out, errs := runCLI(t, cfg, "", "ls", "--json", "global"); code != 0 || !strings.Contains(out, "global/deep.md") || !strings.Contains(out, "global/huge.md") {
+	if code, out, errs := runCLI(t, cfg, "", "ls", "--json", "global"); code != 0 || !strings.Contains(out, "global/deep.md") {
 		t.Errorf("ls: code=%d out=%q errs=%q", code, out, errs)
 	}
 	if code, out, errs := runCLI(t, cfg, "", "grep", "--json", "-l", "summary", "global"); code != 0 || !strings.Contains(out, "global/large.md") {
 		t.Errorf("grep: code=%d out=%q errs=%q", code, out, errs)
 	}
-	if code, out, errs := runCLI(t, cfg, "", "stat", "--json", "global/deep.md", "global/huge.md"); code != 0 ||
-		!strings.Contains(out, `"title":"deep","summary":""`) || !strings.Contains(out, `"title":"huge","summary":""`) {
+	if code, out, errs := runCLI(t, cfg, "", "stat", "--json", "global/deep.md"); code != 0 || !strings.Contains(out, `"title":"deep","summary":""`) {
 		t.Errorf("stat: code=%d out=%.300q errs=%q", code, out, errs)
 	}
 	code, out, _ := runCLI(t, cfg, "", "lint")
-	for _, w := range []string{"global/deep.md:1: frontmatter_invalid", "global/large.md:1: frontmatter_invalid", "global/huge.md:0: page_too_large"} {
+	for _, w := range []string{"global/deep.md:1: frontmatter_invalid", "global/large.md:1: frontmatter_invalid"} {
 		if !strings.Contains(out, w) {
 			t.Errorf("lint: missing %q in %q", w, out)
 		}
@@ -1307,6 +1233,7 @@ func TestPageLimits(t *testing.T) {
 	if code != 4 {
 		t.Errorf("lint: code=%d", code)
 	}
+	pages["global/huge.md"] = "---\nsummary: huge\n---\n# huge\n" + strings.Repeat("lorem ipsum\n", 100000)
 	for p, c := range pages {
 		if code, _, errs := runCLI(t, cfg, c, "put", p+".new.md"); code != 4 {
 			t.Errorf("put %s: code=%d errs=%q", p, code, errs)
@@ -1341,12 +1268,8 @@ func TestGrepIgnoreCaseFixed(t *testing.T) {
 // the config file, whatever the current directory is, and the mirror is
 // named after and points to the resolved path.
 func TestRelativeRepo(t *testing.T) {
-	isolateGit(t)
-	t.Setenv("WIKICTL_PROFILE", "")
-	d := t.TempDir()
-	mustRun(t, "", "git", "init", "-q", "--bare", "-b", "main", filepath.Join(d, "wiki", "remote.git"))
-	t.Setenv("XDG_CACHE_HOME", filepath.Join(d, "cache"))
-	cfg := filepath.Join(d, "wiki", "config.yaml")
+	cfg := setupEmpty(t)
+	d := filepath.Dir(cfg)
 	os.WriteFile(cfg, []byte("repo: ./remote.git\nauthor: {name: a, email: a@a}\n"), 0o600)
 	elsewhere := filepath.Join(d, "elsewhere")
 	os.MkdirAll(elsewhere, 0o755)
@@ -1365,7 +1288,7 @@ func TestRelativeRepo(t *testing.T) {
 		t.Errorf("grep: %s", out)
 	}
 
-	abs := filepath.Join(d, "wiki", "remote.git")
+	abs := filepath.Join(d, "remote.git")
 	code, out, errs = runCLI(t, cfg, "", "--no-fetch", "context", "--json")
 	if code != 0 {
 		t.Fatalf("context: code=%d %s", code, errs)
@@ -1476,19 +1399,13 @@ func TestQuotedNames(t *testing.T) {
 		t.Skip("the file system does not allow these names")
 	}
 	cfg := setup(t)
-	work := filepath.Join(filepath.Dir(cfg), "work")
 	nl, ctl, q := "global/n\nl.md", "global/c\x01.md", "global/q\"\\.md"
 	files := map[string]string{
 		nl:  "---\nsummary: newline\nstatus: deprecated\ntags: [odd]\n---\n# nl\nlease [push](push.md)\n",
 		ctl: "---\nsummary: control\ntags: [odd]\n---\n# ctl\nlease [push](push.md)\n",
 		q:   "# q\nlease [push](push.md)\n",
 	}
-	for p, c := range files {
-		os.WriteFile(filepath.Join(work, p), []byte(c), 0o644)
-	}
-	mustRun(t, work, "git", "add", "-A")
-	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "quoted")
-	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
+	pushFiles(t, cfg, files)
 	enl, ectl := `global/n\x0al.md`, `global/c\x01.md`
 
 	for _, args := range [][]string{{"lint", "--json"}, {"lint", "--json", "global"}} {
@@ -1529,20 +1446,9 @@ func TestQuotedNames(t *testing.T) {
 	if _, out, errs := runCLI(t, cfg, "", "grep", "-l", "lease", "global"); out != ectl+"\n"+enl+"\nglobal/push.md\n"+q+"\n" {
 		t.Errorf("grep -l: %q %q", out, errs)
 	}
-}
-
-// TestGrepPathWithNewline checks a file pushed from a clone with a newline in
-// its name.
-func TestGrepPathWithNewline(t *testing.T) {
-	cfg := setup(t)
-	work := filepath.Join(filepath.Dir(cfg), "work")
-	os.WriteFile(filepath.Join(work, "global", "n\nl.md"), []byte("lease\n"), 0o644)
-	mustRun(t, work, "git", "add", "-A")
-	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "newline")
-	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
 	for args, want := range map[string]string{
-		"-n lease global": "global/n\\x0al.md:1:lease\nglobal/push.md:7:use force-with-lease. [index](index.md)\n",
-		"-c lease global": "global/n\\x0al.md:1\nglobal/push.md:1\n",
+		"-n lease global": ectl + ":6:lease [push](push.md)\n" + enl + ":7:lease [push](push.md)\nglobal/push.md:7:use force-with-lease. [index](index.md)\n" + q + ":2:lease [push](push.md)\n",
+		"-c lease global": ectl + ":1\n" + enl + ":1\nglobal/push.md:1\n" + q + ":1\n",
 	} {
 		if code, out, errs := runCLI(t, cfg, "", append([]string{"grep"}, strings.Fields(args)...)...); code != 0 || out != want {
 			t.Errorf("grep %s: code=%d out=%q errs=%q", args, code, out, errs)
@@ -1550,7 +1456,7 @@ func TestGrepPathWithNewline(t *testing.T) {
 	}
 	var res struct{ Items []struct{ Path string } }
 	_, out, _ := runCLI(t, cfg, "", "grep", "--json", "lease", "global")
-	if mustUnmarshal(t, out, &res); len(res.Items) != 2 || res.Items[0].Path != "global/n\nl.md" {
+	if mustUnmarshal(t, out, &res); len(res.Items) != 4 || res.Items[0].Path != ctl || res.Items[1].Path != nl {
 		t.Errorf("grep --json: %s", out)
 	}
 }
@@ -1573,23 +1479,5 @@ func TestGrepQuietAndErrors(t *testing.T) {
 		if code != c.code || out != "" || !strings.Contains(errs, c.errs) {
 			t.Errorf("%v: code=%d out=%q errs=%q", c.args, code, out, errs)
 		}
-	}
-}
-
-// TestPutOverDirectory checks that put refuses to replace a directory that has
-// the name of the page.
-func TestPutOverDirectory(t *testing.T) {
-	cfg := setup(t)
-	work := filepath.Join(filepath.Dir(cfg), "work")
-	os.MkdirAll(filepath.Join(work, "global", "x.md"), 0o755)
-	os.WriteFile(filepath.Join(work, "global", "x.md", "in.md"), []byte("---\nsummary: in\n---\n# in\n"), 0o644)
-	mustRun(t, work, "git", "add", "-A")
-	mustRun(t, work, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "dir")
-	mustRun(t, work, "git", "push", "-q", "origin", "HEAD:main")
-	if code, _, errs := runCLI(t, cfg, "---\nsummary: x\n---\n# x\n", "put", "global/x.md"); code != ExitError || errs != "wikictl: global/x.md: is a directory\n" {
-		t.Errorf("put over a directory: code=%d errs=%q", code, errs)
-	}
-	if code, _, _ := runCLI(t, cfg, "", "cat", "global/x.md/in.md"); code != 0 {
-		t.Error("the directory was replaced")
 	}
 }

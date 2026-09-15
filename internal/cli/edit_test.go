@@ -132,7 +132,7 @@ printf -- '---\nsummary: edited\n---\n# push\n' > "$1"
 	}
 
 	// A file changed by another writer while it is edited is a conflict.
-	work := filepath.Join(filepath.Dir(cfg), "work")
+	work := cloneRemote(t, cfg)
 	editWith(t, "printf 'mine\\n' > \"$1\"\ncd "+shQuote(work)+" && git pull -q origin main && printf 'theirs\\n' > projects/app/x.md && git -c user.name=t -c user.email=t@t commit -qam theirs && git push -q origin HEAD:main\n")
 	code, out, errs := runCLI(t, cfg, "", "edit", "projects/app/x.md")
 	if code != ExitConflict || out != "theirs\n" || keptFile(t, errs) != "mine\n" {

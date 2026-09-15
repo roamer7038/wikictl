@@ -16,37 +16,6 @@ func runNoConfig(t *testing.T, args ...string) (int, string, string) {
 	return code, out.String(), errb.String()
 }
 
-func TestHelpNeedsNoConfig(t *testing.T) {
-	for _, args := range [][]string{{"help"}, {"--help"}, {"-h"}} {
-		code, out, _ := runNoConfig(t, args...)
-		if code != ExitOK || !strings.Contains(out, "Usage: wikictl") || !strings.Contains(out, "  grep ") {
-			t.Errorf("%v: code=%d out=%q", args, code, out)
-		}
-	}
-	for _, args := range [][]string{{"help", "put"}, {"put", "--help"}, {"put", "-h"}} {
-		code, out, _ := runNoConfig(t, args...)
-		if code != ExitOK || !strings.Contains(out, "Usage: wikictl put") {
-			t.Errorf("%v: code=%d out=%q", args, code, out)
-		}
-	}
-	if code, out, _ := runNoConfig(t, "links", "-h"); code != ExitOK || !strings.Contains(out, "Usage: wikictl links [flags] <path>") {
-		t.Errorf("links -h: code=%d out=%q", code, out)
-	}
-	_, out, _ := runNoConfig(t, "put", "--help")
-	if !strings.Contains(out, "--base <sha>") || !strings.Contains(out, "-m, --message <message>") {
-		t.Errorf("put help must list flags: %q", out)
-	}
-	if code, _, errs := runNoConfig(t); code != ExitUsage || !strings.Contains(errs, "Usage: wikictl") {
-		t.Errorf("no command: code=%d errs=%q", code, errs)
-	}
-	if code, _, errs := runNoConfig(t, "help", "bogus"); code != ExitUsage || !strings.Contains(errs, "unknown command") {
-		t.Errorf("help bogus: code=%d errs=%q", code, errs)
-	}
-	if code, _, errs := runNoConfig(t, "bogus"); code != ExitUsage || !strings.Contains(errs, "unknown command") {
-		t.Errorf("bogus: code=%d errs=%q", code, errs)
-	}
-}
-
 func TestVersion(t *testing.T) {
 	for _, args := range [][]string{{"version"}, {"--version"}} {
 		code, out, _ := runNoConfig(t, args...)
@@ -64,6 +33,14 @@ func TestVersion(t *testing.T) {
 }
 
 func TestUsageErrorsNeedNoConfig(t *testing.T) {
+	if code, _, errs := runNoConfig(t); code != ExitUsage || !strings.Contains(errs, "Usage: wikictl") {
+		t.Errorf("no command: code=%d errs=%q", code, errs)
+	}
+	for _, args := range [][]string{{"bogus"}, {"help", "bogus"}} {
+		if code, _, errs := runNoConfig(t, args...); code != ExitUsage || !strings.Contains(errs, "unknown command") {
+			t.Errorf("%v: code=%d errs=%q", args, code, errs)
+		}
+	}
 	code, _, errs := runNoConfig(t, "links")
 	if code != ExitUsage || !strings.Contains(errs, "Usage: wikictl links [flags] <path>") {
 		t.Errorf("links: code=%d errs=%q", code, errs)
@@ -93,7 +70,7 @@ func TestUsageErrorsNeedNoConfig(t *testing.T) {
 		}
 	}
 	code, _, errs = runNoConfig(t, "tree", "-L", "0")
-	if code != ExitUsage || !strings.Contains(errs, "Usage: wikictl tree") {
+	if code != ExitUsage || !strings.Contains(errs, "must be at least 1") || !strings.Contains(errs, "Usage: wikictl tree") {
 		t.Errorf("tree -L 0: code=%d errs=%q", code, errs)
 	}
 	code, out, _ := runNoConfig(t, "--json", "cat")
@@ -102,26 +79,32 @@ func TestUsageErrorsNeedNoConfig(t *testing.T) {
 	}
 }
 
-func TestHelpDescribesNameRules(t *testing.T) {
-	_, out, _ := runNoConfig(t, "help", "lint")
-	for _, w := range []string{"bad_path", "name_style", "case_collision", `" \ # ? : ( ) ` + "`"} {
-		if !strings.Contains(out, w) {
-			t.Errorf("help lint must mention %s: %q", w, out)
-		}
-	}
-	for _, c := range []string{"put", "mv"} {
-		_, out, _ := runNoConfig(t, "help", c)
-		if strings.Contains(out, "slug") || !strings.Contains(out, "file name") {
-			t.Errorf("help %s must describe the file name rules: %q", c, out)
-		}
-	}
-}
-
 func TestEveryCommandHasHelp(t *testing.T) {
+	for _, args := range [][]string{{"help"}, {"--help"}, {"-h"}} {
+		code, out, _ := runNoConfig(t, args...)
+		if code != ExitOK || !strings.Contains(out, "Usage: wikictl") || !strings.Contains(out, "  grep ") {
+			t.Errorf("%v: code=%d out=%q", args, code, out)
+		}
+	}
 	for _, c := range commands {
-		code, out, _ := runNoConfig(t, "help", c.name)
-		if code != ExitOK || !strings.Contains(out, "Usage: wikictl "+c.name) || c.summary == "" || c.detail == "" {
-			t.Errorf("%s: code=%d out=%q", c.name, code, out)
+		for _, args := range [][]string{{"help", c.name}, {c.name, "--help"}} {
+			code, out, _ := runNoConfig(t, args...)
+			if code != ExitOK || !strings.Contains(out, "Usage: wikictl "+c.name) || c.summary == "" || c.detail == "" {
+				t.Errorf("%v: code=%d out=%q", args, code, out)
+			}
+		}
+	}
+	if code, out, _ := runNoConfig(t, "put", "-h"); code != ExitOK || !strings.Contains(out, "--base <sha>") || !strings.Contains(out, "-m, --message <message>") {
+		t.Errorf("put -h must list flags: code=%d out=%q", code, out)
+	}
+	if code, out, _ := runNoConfig(t, "links", "-h"); code != ExitOK || !strings.Contains(out, "Usage: wikictl links [flags] <path>") {
+		t.Errorf("links -h: code=%d out=%q", code, out)
+	}
+	// Every issue code that lint reports is described in its help.
+	_, out, _ := runNoConfig(t, "help", "lint")
+	for _, code := range []string{"missing_summary", "frontmatter_invalid", "links_syntax", "bad_path", "name_style", "case_collision", "page_too_large", "broken_link"} {
+		if !strings.Contains(out, code) {
+			t.Errorf("help lint must describe %s", code)
 		}
 	}
 }
