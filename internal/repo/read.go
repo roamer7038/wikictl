@@ -143,15 +143,14 @@ func (r *Repo) Grep(words []string, all bool, dirs []string) ([]string, error) {
 // GrepRecords runs "git grep -I -z" with flags and the patterns, each given
 // with -e, on the files under dirs at the commit that reads use, and returns
 // one record per entry of the output: a path with -l or -L, a path and a count
-// with -c, and otherwise a path, a line number and the line. Color and column
-// output are turned off whatever the git configuration says. No match is not
-// an error.
+// with -c, and otherwise a path, a line number and the line. Column output is
+// turned off whatever the git configuration says. No match is not an error.
 func (r *Repo) GrepRecords(flags, patterns, dirs []string) ([][]string, error) {
 	head, err := r.Head()
 	if err != nil || head == "" {
 		return nil, err
 	}
-	args := append([]string{"grep", "-I", "-z", "--no-color", "--no-column"}, flags...)
+	args := append([]string{"grep", "-I", "-z", "--no-column"}, flags...)
 	for _, p := range patterns {
 		args = append(args, "-e", p)
 	}

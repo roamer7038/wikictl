@@ -110,11 +110,19 @@ func (r *Repo) run(extraEnv []string, stdin []byte, args ...string) (string, err
 
 // command returns git to be run in the mirror. core.quotePath is turned off so
 // that ls-tree, grep and log print non-ASCII paths verbatim instead of quoting
-// them. --literal-pathspecs makes directory names containing '*', '?' or
-// '[' match only themselves instead of acting as wildcards. --git-dir=.
-// keeps git from searching parent directories for a repository.
+// them. The user's git configuration is overridden where it would change the
+// output that is parsed or make writes fail: color.ui and color.grep would
+// color the paths grep prints, a core.attributesFile marking pages binary or
+// -diff would hide them from grep -I, core.hooksPath would run the user's hooks
+// in the mirror (a path under /dev/null is no executable file, so no hook
+// runs), and push.gpgSign would sign pushes that the remote may not accept.
+// --literal-pathspecs makes directory names containing '*', '?' or '[' match
+// only themselves instead of acting as wildcards. --git-dir=. keeps git from
+// searching parent directories for a repository.
 func (r *Repo) command(extraEnv []string, args []string) *exec.Cmd {
-	c := exec.Command("git", append([]string{"--git-dir=.", "--literal-pathspecs", "-c", "core.quotePath=false"}, args...)...)
+	c := exec.Command("git", append([]string{"--git-dir=.", "--literal-pathspecs",
+		"-c", "core.quotePath=false", "-c", "color.ui=false", "-c", "color.grep=false",
+		"-c", "core.attributesFile=/dev/null", "-c", "core.hooksPath=/dev/null", "-c", "push.gpgSign=false"}, args...)...)
 	c.Dir = r.Dir
 	c.Env = append(baseEnv(), extraEnv...)
 	return c
