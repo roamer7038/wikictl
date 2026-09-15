@@ -83,6 +83,11 @@ func TestReadCommands(t *testing.T) {
 	}
 	for args, want := range map[string]string{
 		"-in LEASE projects":                  "projects/app/x.md:5:lease\n",
+		"-h lease projects":                   "lease\n",
+		"-hn lease projects":                  "5:lease\n",
+		"-hc lease global":                    "1\n",
+		"-hl lease global":                    "global/push.md\n",
+		"--no-filename -i LEASE projects":     "lease\n",
 		"-c lease global":                     "global/push.md:1\n",
 		"-L lease global":                     "global/index.md\n",
 		"-v -c lease projects":                "projects/app/x.md:4\n",

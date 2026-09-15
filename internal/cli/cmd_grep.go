@@ -34,6 +34,7 @@ func grepFlags(a *app, fs *pflag.FlagSet) {
 	fs.BoolVarP(&a.filesWithout, "files-without-match", "L", false, "print only the paths of the files without a matching line")
 	fs.BoolVarP(&a.countLines, "count", "c", false, "print the number of matching lines of each file that has one")
 	fs.BoolVarP(&a.lineNumber, "line-number", "n", false, "print the line number before each line")
+	fs.BoolVarP(&a.noFilename, "no-filename", "h", false, "print the lines and counts without the path")
 	fs.BoolVarP(&a.word, "word-regexp", "w", false, "match whole words only")
 	fs.BoolVarP(&a.invert, "invert-match", "v", false, "select the lines that do not match")
 	fs.BoolVarP(&a.quiet, "quiet", "q", false, "print nothing, also with --json; the exit code tells whether anything was selected")
@@ -140,6 +141,10 @@ func (a *app) cmdGrep(c *command, args []string) error {
 	var text strings.Builder
 	for _, r := range records {
 		p := escapeControl(r[0])
+		prefix := p + ":"
+		if a.noFilename {
+			prefix = ""
+		}
 		switch {
 		case len(r) == 1:
 			items = append(items, grepPath{r[0]})
@@ -147,14 +152,14 @@ func (a *app) cmdGrep(c *command, args []string) error {
 		case len(r) == 2:
 			n, _ := strconv.Atoi(r[1])
 			items = append(items, grepCount{r[0], n})
-			fmt.Fprintf(&text, "%s:%d\n", p, n)
+			fmt.Fprintf(&text, "%s%d\n", prefix, n)
 		default:
 			n, _ := strconv.Atoi(r[1])
 			items = append(items, grepLine{r[0], n, r[2]})
 			if a.lineNumber {
-				fmt.Fprintf(&text, "%s:%d:%s\n", p, n, escapeControl(r[2]))
+				fmt.Fprintf(&text, "%s%d:%s\n", prefix, n, escapeControl(r[2]))
 			} else {
-				fmt.Fprintf(&text, "%s:%s\n", p, escapeControl(r[2]))
+				fmt.Fprintf(&text, "%s%s\n", prefix, escapeControl(r[2]))
 			}
 		}
 	}

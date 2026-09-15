@@ -43,16 +43,17 @@ var commands = []*command{
 		detail: `Search the files under each path, or the whole wiki without paths, for the
 lines that match the pattern, as "grep -r" does: the pattern is a basic regular
 expression unless -E or -F is given, and each matching line is printed as
-"<path>:<line>", or "<path>:<number>:<line>" with -n. With -e, which may be
-given more than once, every argument is a path. Binary files are skipped, and
-pages with status: deprecated are searched too. With -i, the case of letters
-other than ASCII is ignored only together with -F. -E and -F, and -L and
---all-match, cannot be combined. The command exits with code 0 when anything
-is selected and 1 when nothing is; a pattern that does not compile is a usage
-error. A path that does not exist is reported on standard error, the other
-paths are still searched, and the command exits with code 2, or with 0 when -q
-selected anything. Control characters other than tab are shown as \xNN in
-text output.
+"<path>:<line>", or "<path>:<number>:<line>" with -n. As in GNU grep, -h
+leaves out "<path>:" before the lines and the counts of -c, and --help prints
+this help. With -e, which may be given more than once, every argument is a
+path. Binary files are skipped, and pages with status: deprecated are searched
+too. With -i, the case of letters other than ASCII is ignored only together
+with -F. -E and -F, and -L and --all-match, cannot be combined. The command
+exits with code 0 when anything is selected and 1 when nothing is; a pattern
+that does not compile is a usage error. A path that does not exist is reported
+on standard error, the other paths are still searched, and the command exits
+with code 2, or with 0 when -q selected anything. Control characters other
+than tab are shown as \xNN in text output.
 
 Output: items[] {path, line, text}; with -l or -L, items[] {path}; with -c,
 items[] {path, count}; with -q, nothing.`,
@@ -378,6 +379,7 @@ type app struct {
 	lineNumber   bool
 	word         bool
 	invert       bool
+	noFilename   bool
 	quiet        bool
 	extended     bool
 	fixed        bool
