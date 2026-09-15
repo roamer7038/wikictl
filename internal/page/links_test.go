@@ -1,6 +1,7 @@
 package page
 
 import (
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -161,33 +162,84 @@ func TestBodyLinkSyntax(t *testing.T) {
 	}
 }
 
-// TestFindLinksLinearTime checks that pathological pages of 1 MiB, the page
-// size limit, are read in time proportional to their size. A quadratic scan
-// takes tens of seconds for each of them.
+// TestFindLinksLinearTime checks that pathological pages are read in time
+// proportional to their size, at a cost per byte close to that of prose in
+// long lines. Making a page 16 times as large must not multiply the time by
+// more than 64, and a page must not take more than eight times as long as the
+// prose of the same size. Both are ratios of times measured in the same run, so
+// they do not depend on the speed of the machine or on the race detector. A
+// linear scan makes the first ratio about 16 and a quadratic one about 256, and
+// matching regular expressions on every line makes the second one over 13 for
+// pages of short lines.
+//
+// The times are processor times of this process, so the tests of other
+// packages running at the same time do not count. Each time is the minimum of
+// three rounds, and the rounds measure every page in turn, so that a burst of
+// other work in the process does not affect all the rounds of one page.
 func TestFindLinksLinearTime(t *testing.T) {
-	const size = 1 << 20
-	fill := func(unit string) string { return strings.Repeat(unit, size/len(unit)) }
-	for name, s := range map[string]string{
-		"openers before links":   strings.Repeat("[", size/2) + strings.Repeat("[a](x.md)", size/2/9),
+	const small, large = 1 << 13, 1 << 17
+	fill := func(unit string) func(int) string {
+		return func(size int) string { return strings.Repeat(unit, size/len(unit)) }
+	}
+	pages := map[string]func(size int) string{
+		"openers before links": func(size int) string {
+			return strings.Repeat("[", size/2) + strings.Repeat("[a](x.md)", size/2/9)
+		},
 		"unclosed parentheses":   fill("[]("),
 		"unclosed angle bracket": fill("[](<"),
 		"unclosed titles":        fill("[](x.md '"),
 		"backtick runs":          fill("`a``a```a"),
-		"growing backtick runs": func() string {
+		"growing backtick runs": func(size int) string {
 			var b strings.Builder
 			for n := 1; b.Len() < size; n++ {
 				b.WriteString(strings.Repeat("`", n) + "a")
 			}
 			return b.String()
-		}(),
-		"lines of openers": fill("[\n"),
-	} {
-		start := time.Now()
-		lines := scanLines([]byte(s), 1)
-		bodyLinks(lines, "d/p.md")
-		Relocate([]byte(s), "d/p.md", "e/p.md", nil)
-		if d := time.Since(start); d > 5*time.Second {
-			t.Errorf("%s: %v", name, d)
+		},
+		"lines of openers":    fill("[\n"),
+		"lines of list items": fill("- [\n"),
+		"lines of table rows": fill("| [\n"),
+		"lines of dashes":     fill("-\n"),
+		"lines of headings":   fill("# [\n"),
+		"lines of fences":     fill("```\n"),
+	}
+	// once returns the processor time to read b once: the average over enough
+	// reads to take at least 20 ms.
+	once := func(b []byte) time.Duration {
+		n, start := 0, cpuTime(t)
+		for n == 0 || cpuTime(t)-start < 20*time.Millisecond {
+			bodyLinks(scanLines(b, 1), "d/p.md")
+			Relocate(b, "d/p.md", "e/p.md", nil)
+			n++
+		}
+		return (cpuTime(t) - start) / time.Duration(n)
+	}
+	type sample struct {
+		name         string
+		small, large []byte
+		ts, tl       time.Duration
+	}
+	var samples []*sample
+	for name, page := range pages {
+		samples = append(samples, &sample{name: name, small: []byte(page(small)), large: []byte(page(large)), ts: math.MaxInt64, tl: math.MaxInt64})
+	}
+	prose := []byte(fill(strings.Repeat("See [a](x.md) and `code` in this line of text. ", 21) + "\n")(large))
+	tp := time.Duration(math.MaxInt64)
+	for range 3 {
+		tp = min(tp, once(prose))
+		for _, s := range samples {
+			s.ts = min(s.ts, once(s.small))
+			s.tl = min(s.tl, once(s.large))
+		}
+	}
+	for _, s := range samples {
+		growth, perProse := float64(s.tl)/float64(s.ts), float64(s.tl)/float64(tp)
+		t.Logf("%-24s %v, %v: %.2f times for 16 times the size, %.2f times prose", s.name, s.ts, s.tl, growth, perProse)
+		if growth > 64 {
+			t.Errorf("%s: %v for %d bytes and %v for %d bytes (%.1f times)", s.name, s.ts, small, s.tl, large, growth)
+		}
+		if perProse > 8 {
+			t.Errorf("%s: %v for %d bytes, %.1f times prose of the same size (%v)", s.name, s.tl, large, perProse, tp)
 		}
 	}
 }

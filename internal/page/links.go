@@ -134,12 +134,85 @@ func bodyLinks(lines []Line, pagePath string) []Link {
 	return out
 }
 
-var (
-	reListItem  = regexp.MustCompile(`^ {0,3}(?:[-*+]|(\d{1,9})[.)])[ \t]`)
-	reQuote     = regexp.MustCompile(`^ {0,3}>`)
-	reTableRow  = regexp.MustCompile(`^ {0,3}\|`)
-	reUnderOrHR = regexp.MustCompile(`^ {0,3}(?:=+[ \t]*|-+[ \t]*|(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$`)
-)
+// indent returns the index of the first byte of t after up to three spaces, or
+// -1 when t has no such byte.
+func indent(t string) int {
+	for i := 0; i < len(t) && i <= 3; i++ {
+		if t[i] != ' ' {
+			return i
+		}
+	}
+	return -1
+}
+
+// blockStart reports whether c is the first byte of t after up to three
+// spaces.
+func blockStart(t string, c byte) bool {
+	i := indent(t)
+	return i >= 0 && t[i] == c
+}
+
+// listItem reports whether t starts a list item: "-", "*", "+", or up to nine
+// digits followed by "." or ")", indented by up to three spaces and followed by
+// a space or a tab. num is the number of an ordered item, and "" otherwise.
+func listItem(t string) (num string, ok bool) {
+	i := indent(t)
+	if i < 0 {
+		return "", false
+	}
+	j := i
+	if c := t[i]; c == '-' || c == '*' || c == '+' {
+		j++
+	} else {
+		for j < len(t) && j-i < 9 && '0' <= t[j] && t[j] <= '9' {
+			j++
+		}
+		if j == i || j == len(t) || t[j] != '.' && t[j] != ')' {
+			return "", false
+		}
+		num = t[i:j]
+		j++
+	}
+	if j == len(t) || t[j] != ' ' && t[j] != '\t' {
+		return "", false
+	}
+	return num, true
+}
+
+// underlineOrBreak reports whether t, indented by up to three spaces, is a
+// setext underline ("=" or "-" repeated, then spaces and tabs) or a thematic
+// break (three or more "*", "-" or "_", with spaces and tabs between them).
+func underlineOrBreak(t string) bool {
+	i := indent(t)
+	if i < 0 {
+		return false
+	}
+	c := t[i]
+	if c != '=' && c != '-' && c != '*' && c != '_' {
+		return false
+	}
+	// n counts c. gap is set after a space or a tab, and inner when c follows
+	// such a gap, that is, when the run of c is interrupted by white space.
+	n, gap, inner := 0, false, false
+	for k := i; k < len(t); k++ {
+		switch t[k] {
+		case c:
+			inner = inner || gap
+			n++
+		case ' ', '\t':
+			gap = true
+		default:
+			return false
+		}
+	}
+	switch c {
+	case '=':
+		return !inner
+	case '-':
+		return !inner || n >= 3
+	}
+	return n >= 3
+}
 
 // eachParagraph calls fn for each paragraph of lines: a run of lines outside
 // code fences without blank lines and headings. A heading, a setext underline,
@@ -149,39 +222,23 @@ var (
 // one only after another list item or when it is numbered 1), at a table row
 // after another table row, and at a block quote line after a line outside a
 // block quote. fn receives the range of the lines, their text joined with
-// "\n", and the byte offset of each line in that text.
+// "\n", and the byte offset of each line in that text; fn must not change the
+// offsets.
 func eachParagraph(lines []Line, linksStart int, fn func(from, to int, text string, offsets []int)) {
+	oneLine := []int{0} // the offsets of every paragraph of one line
 	blank := func(l Line) bool { return strings.Trim(l.Text, " \t") == "" }
-	// The regular expressions are matched only on lines whose first byte after
-	// up to three spaces can start the block they match.
-	marker := func(t string) byte {
-		for i := 0; i < len(t) && i <= 3; i++ {
-			if t[i] != ' ' {
-				return t[i]
-			}
-		}
-		return 0
-	}
-	listItem := func(t string) []string {
-		if c := marker(t); c == '-' || c == '*' || c == '+' || '0' <= c && c <= '9' {
-			return reListItem.FindStringSubmatch(t)
-		}
-		return nil
-	}
 	joinable := func(i int) bool {
 		l := lines[i]
-		c := marker(l.Text)
-		return (linksStart < 0 || i < linksStart) && !l.InFence && !blank(l) && !(c == '#' && isHeading(l)) &&
-			!(strings.IndexByte("=-*_", c) >= 0 && c != 0 && reUnderOrHR.MatchString(l.Text))
+		return (linksStart < 0 || i < linksStart) && !l.InFence && !blank(l) && !isHeading(l) && !underlineOrBreak(l.Text)
 	}
 	starts := func(i int) bool {
 		t, prev := lines[i].Text, lines[i-1].Text
-		if m := listItem(t); m != nil && (m[1] == "" || m[1] == "1" || listItem(prev) != nil) {
-			return true
+		if num, ok := listItem(t); ok {
+			if _, after := listItem(prev); num == "" || num == "1" || after {
+				return true
+			}
 		}
-		c, p := marker(t), marker(prev)
-		return c == '|' && p == '|' && reTableRow.MatchString(t) && reTableRow.MatchString(prev) ||
-			c == '>' && reQuote.MatchString(t) && !(p == '>' && reQuote.MatchString(prev))
+		return blockStart(t, '|') && blockStart(prev, '|') || blockStart(t, '>') && !blockStart(prev, '>')
 	}
 	for i := 0; i < len(lines); {
 		if lines[i].InFence || blank(lines[i]) {
@@ -193,6 +250,11 @@ func eachParagraph(lines []Line, linksStart int, fn func(from, to int, text stri
 			for j < len(lines) && joinable(j) && !starts(j) {
 				j++
 			}
+		}
+		if j == i+1 {
+			fn(i, j, lines[i].Text, oneLine)
+			i = j
+			continue
 		}
 		var b strings.Builder
 		offsets := make([]int, 0, j-i)
