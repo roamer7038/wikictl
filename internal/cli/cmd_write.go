@@ -105,7 +105,7 @@ func (a *app) writeFile(p string, content []byte, base, cmd string) error {
 	}
 	msg := a.msg
 	if msg == "" {
-		msg = "wikictl: " + cmd + " " + p
+		msg = commitMessage(cmd, []string{p})
 	}
 	// put resolves a conflict by reapplying the change; edit is run again.
 	rerun := ""
@@ -161,11 +161,6 @@ func (a *app) cmdRm(c *command, args []string) error {
 		files[i], shas[e.Path] = e.Path, e.SHA
 	}
 	slices.Sort(files)
-	// under returns the files below directory p: they sort from p+"/" up to
-	// p+"0", as '0' follows '/'.
-	under := func(p string) []string {
-		return files[sort.SearchStrings(files, p+"/"):sort.SearchStrings(files, p+"0")]
-	}
 	for _, p := range args {
 		if !strings.Contains(p, "/") && shas[p] != "" {
 			return &invalidError{"bad_path: " + p + ": a file at the wiki root cannot be deleted"}
@@ -174,7 +169,7 @@ func (a *app) cmdRm(c *command, args []string) error {
 	var targets []string
 	failed := false
 	for _, p := range args {
-		switch sub := under(p); {
+		switch sub := filesUnder(files, p); {
 		case len(sub) > 0 && !a.recursive:
 			fmt.Fprintf(a.stderr, "wikictl: %s: is a directory\n", escapeControl(p))
 			failed = true
@@ -232,10 +227,6 @@ type movedFile struct {
 	To   string `json:"to"`
 }
 
-// cmdMv moves files and directories as mv does and rewrites the links to the
-// moved pages, in one commit. A destination that exists is never replaced; as
-// mv does, a source that cannot be moved is reported and the others are still
-// moved.
 func (a *app) checkMv(c *command, args []string) error {
 	switch {
 	case a.targetDir != "" && a.noTargetDir:
@@ -254,6 +245,10 @@ func (a *app) checkMv(c *command, args []string) error {
 	return err
 }
 
+// cmdMv moves files and directories as mv does and rewrites the links to the
+// moved pages, in one commit. A destination that exists is never replaced; as
+// mv does, a source that cannot be moved is reported and the others are still
+// moved.
 func (a *app) cmdMv(c *command, args []string) error {
 	srcs, dst := args, a.targetDir
 	if dst == "" {
@@ -271,13 +266,12 @@ func (a *app) cmdMv(c *command, args []string) error {
 	}
 	slices.Sort(files)
 	isSubmodule := func(f string) bool { return modes[f] == "160000" }
-	// under returns the files below dir: they sort from dir+"/" up to dir+"0",
-	// as '0' follows '/'.
+	// under returns the files below dir, or every file for the root.
 	under := func(dir string) []string {
 		if dir == "." {
 			return files
 		}
-		return files[sort.SearchStrings(files, dir+"/"):sort.SearchStrings(files, dir+"0")]
+		return filesUnder(files, dir)
 	}
 	to := cleaned[len(cleaned)-1]
 	into := !a.noTargetDir && len(under(to)) > 0
@@ -546,6 +540,12 @@ func (a *app) moveChanges(mapping, modes map[string]string) ([]repo.Change, int,
 		}
 	}
 	return changes, rewritten, nil
+}
+
+// filesUnder returns the files below directory dir from the sorted files: they
+// sort from dir+"/" up to dir+"0", as '0' follows '/'.
+func filesUnder(files []string, dir string) []string {
+	return files[sort.SearchStrings(files, dir+"/"):sort.SearchStrings(files, dir+"0")]
 }
 
 // cleanPaths applies wiki.Clean to paths given on the command line.
