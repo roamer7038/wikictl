@@ -4,6 +4,7 @@ import (
 	"errors"
 	"path"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -26,14 +27,11 @@ type Issue struct {
 }
 
 var (
-	reScheme  = regexp.MustCompile(`^[a-z][a-z0-9+.-]*:`)
-	reBullet  = regexp.MustCompile(`^\s*[-*+]\s+(.+)$`)
-	reTyped   = regexp.MustCompile(`^([a-z][a-z0-9_]*): (.+)$`)
-	reMDLink  = regexp.MustCompile(`\]\(([^)]*)\)`)
-	reInline  = regexp.MustCompile("`[^`]*`")
-	reBracket = regexp.MustCompile(`^\[[^\]]*\]\(([^)]*)\)$`)
-	rePrefix  = regexp.MustCompile(`^[a-z][a-z0-9_+.-]*:`)
-	reURL     = regexp.MustCompile(`^[a-z][a-z0-9+.-]*://\S`)
+	reScheme = regexp.MustCompile(`^[a-z][a-z0-9+.-]*:`)
+	reBullet = regexp.MustCompile(`^\s*[-*+]\s+(.+)$`)
+	reTyped  = regexp.MustCompile(`^([a-z][a-z0-9_]*): (.+)$`)
+	rePrefix = regexp.MustCompile(`^[a-z][a-z0-9_+.-]*:`)
+	reURL    = regexp.MustCompile(`^[a-z][a-z0-9+.-]*://\S`)
 )
 
 // ErrBadDest is returned for link destinations that cannot refer to a page:
@@ -41,19 +39,14 @@ var (
 var ErrBadDest = errors.New("bad link destination")
 
 // ResolveDest normalizes a link destination written in pagePath to a path
-// relative to the wiki root. URLs are returned unchanged with isURL set.
-// A "#fragment" and a "title" are dropped.
+// relative to the wiki root. dest is the destination without angle brackets
+// and title. URLs are returned unchanged with isURL set. A query and a
+// fragment are dropped.
 func ResolveDest(pagePath, dest string) (target string, isURL bool, err error) {
-	dest = strings.TrimSpace(dest)
 	if reScheme.MatchString(dest) {
 		return dest, true, nil
 	}
-	if i := strings.Index(dest, " \""); i >= 0 {
-		dest = dest[:i]
-	}
-	if i := strings.Index(dest, "#"); i >= 0 {
-		dest = dest[:i]
-	}
+	dest = destPath(dest)
 	if dest == "" || strings.HasPrefix(dest, "/") || !strings.HasSuffix(dest, ".md") {
 		return "", false, ErrBadDest
 	}
@@ -70,6 +63,7 @@ func ResolveDest(pagePath, dest string) (target string, isURL bool, err error) {
 // an untyped relation of type "see_also". In an untyped line, a target that
 // starts with "<word>:" must be a URL of the form "<scheme>://...", so that a
 // mistyped "<type>:<target>" is reported instead of being taken as a URL.
+// A target that starts with a scheme is taken as a URL as it is written.
 func ParseLinks(lines []Line, pagePath string) ([]Link, []Issue) {
 	var links []Link
 	var issues []Issue
@@ -94,16 +88,20 @@ func ParseLinks(lines []Line, pagePath string) ([]Link, []Issue) {
 			target, note = target[:i], strings.TrimSpace(target[i+3:])
 		}
 		target = strings.TrimSpace(target)
-		bracket := false
-		if b := reBracket.FindStringSubmatch(target); b != nil {
-			target, bracket = b[1], true
+		dest, bracket := "", false
+		if ls := findLinks(target); len(ls) == 1 && ls[0].start == 0 && ls[0].end == len(target) && target[0] == '[' {
+			dest, bracket = target[ls[0].destStart:ls[0].destEnd], true
+		} else if reScheme.MatchString(target) {
+			dest = target
+		} else if start, end, next, ok := parseDest(target, 0); ok && next == len(target) {
+			dest = target[start:end]
 		}
 		if typ == "" && ((!bracket && strings.ContainsAny(target, " \t")) ||
 			(rePrefix.MatchString(target) && !reURL.MatchString(target))) {
 			issues = append(issues, Issue{Path: pagePath, Line: l.N, Code: "links_syntax", Message: syntaxMsg})
 			continue
 		}
-		got, isURL, err := ResolveDest(pagePath, target)
+		got, isURL, err := ResolveDest(pagePath, dest)
 		if err != nil {
 			msg := syntaxMsg
 			if typ != "" {
@@ -121,23 +119,286 @@ func ParseLinks(lines []Line, pagePath string) ([]Link, []Issue) {
 }
 
 // BodyLinks returns the page references in the body (outside code fences and
-// code spans) as links of type "mentions", one per distinct target.
+// code spans) as links of type "mentions", one per distinct target. The line
+// of a link is the line where its destination starts.
 func BodyLinks(lines []Line, pagePath string) []Link {
 	var out []Link
 	seen := map[string]bool{}
-	for _, l := range lines {
-		if l.InFence {
-			continue
-		}
-		text := reInline.ReplaceAllString(l.Text, "")
-		for _, m := range reMDLink.FindAllStringSubmatch(text, -1) {
-			got, isURL, err := ResolveDest(pagePath, m[1])
+	eachParagraph(lines, -1, func(from, _ int, text string, offsets []int) {
+		for _, m := range findLinks(text) {
+			got, isURL, err := ResolveDest(pagePath, text[m.destStart:m.destEnd])
 			if err != nil || isURL || seen[got] {
 				continue
 			}
 			seen[got] = true
-			out = append(out, Link{Type: "mentions", Target: got, Line: l.N})
+			n := lines[from+sort.SearchInts(offsets, m.destStart+1)-1].N
+			out = append(out, Link{Type: "mentions", Target: got, Line: n})
+		}
+	})
+	return out
+}
+
+var (
+	reListItem  = regexp.MustCompile(`^ {0,3}(?:[-*+]|(\d{1,9})[.)])[ \t]`)
+	reQuote     = regexp.MustCompile(`^ {0,3}>`)
+	reTableRow  = regexp.MustCompile(`^ {0,3}\|`)
+	reUnderOrHR = regexp.MustCompile(`^ {0,3}(?:=+[ \t]*|-+[ \t]*|(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$`)
+)
+
+// eachParagraph calls fn for each paragraph of lines: a run of lines outside
+// code fences without blank lines and headings. A heading, a setext underline,
+// a thematic break, and each line from linksStart on (the Links section is
+// read line by line) is a paragraph of its own; linksStart is -1 when there is
+// no Links section. A new paragraph also starts at a list item (an ordered
+// one only after another list item or when it is numbered 1), at a table row
+// after another table row, and at a block quote line after a line outside a
+// block quote. fn receives the range of the lines, their text joined with
+// "\n", and the byte offset of each line in that text.
+func eachParagraph(lines []Line, linksStart int, fn func(from, to int, text string, offsets []int)) {
+	blank := func(l Line) bool { return strings.Trim(l.Text, " \t") == "" }
+	// The regular expressions are matched only on lines whose first byte after
+	// up to three spaces can start the block they match.
+	marker := func(t string) byte {
+		for i := 0; i < len(t) && i <= 3; i++ {
+			if t[i] != ' ' {
+				return t[i]
+			}
+		}
+		return 0
+	}
+	listItem := func(t string) []string {
+		if c := marker(t); c == '-' || c == '*' || c == '+' || '0' <= c && c <= '9' {
+			return reListItem.FindStringSubmatch(t)
+		}
+		return nil
+	}
+	joinable := func(i int) bool {
+		l := lines[i]
+		c := marker(l.Text)
+		return (linksStart < 0 || i < linksStart) && !l.InFence && !blank(l) && !(c == '#' && isHeading(l)) &&
+			!(strings.IndexByte("=-*_", c) >= 0 && c != 0 && reUnderOrHR.MatchString(l.Text))
+	}
+	starts := func(i int) bool {
+		t, prev := lines[i].Text, lines[i-1].Text
+		if m := listItem(t); m != nil && (m[1] == "" || m[1] == "1" || listItem(prev) != nil) {
+			return true
+		}
+		c, p := marker(t), marker(prev)
+		return c == '|' && p == '|' && reTableRow.MatchString(t) && reTableRow.MatchString(prev) ||
+			c == '>' && reQuote.MatchString(t) && !(p == '>' && reQuote.MatchString(prev))
+	}
+	for i := 0; i < len(lines); {
+		if lines[i].InFence || blank(lines[i]) {
+			i++
+			continue
+		}
+		j := i + 1
+		if joinable(i) {
+			for j < len(lines) && joinable(j) && !starts(j) {
+				j++
+			}
+		}
+		var b strings.Builder
+		offsets := make([]int, 0, j-i)
+		for k := i; k < j; k++ {
+			if k > i {
+				b.WriteByte('\n')
+			}
+			offsets = append(offsets, b.Len())
+			b.WriteString(lines[k].Text)
+		}
+		fn(i, j, b.String(), offsets)
+		i = j
+	}
+}
+
+// inlineLink is the position of an inline link or image in a paragraph.
+type inlineLink struct {
+	start, end         int // from "[" or "![" to the closing ")"
+	destStart, destEnd int // the destination without angle brackets and title
+}
+
+// findLinks returns the inline links and images of a paragraph, whose lines
+// are joined with "\n", following the CommonMark rules for code spans,
+// backslash escapes, link text and inline links: a code span takes precedence
+// over a link that starts before it and ends inside it, and a link cannot
+// contain another link. Reference links, autolinks, raw HTML and entity
+// references are not recognized, backslash escapes are kept in the
+// destination, and a destination without angle brackets ends only at a space,
+// a tab or a line break, so it may contain other control characters. The time
+// is linear in the length of s.
+func findLinks(s string) []inlineLink {
+	type opener struct {
+		pos   int
+		image bool
+	}
+	var out []inlineLink
+	var openers []opener
+	// Openers of links (not images) below index inactive may not start a link,
+	// because a link was found after them.
+	inactive := 0
+	// runs holds the start of every backtick run of s by its length, and
+	// resume[n] the index in runs[n] where the search for a closing run resumes.
+	var runs map[int][]int
+	var resume map[int]int
+	for i := 0; i < len(s); {
+		switch {
+		case escaped(s, i):
+			i += 2
+		case s[i] == '`':
+			if runs == nil {
+				runs, resume = map[int][]int{}, map[int]int{}
+				for j := i; j < len(s); {
+					n := backtickRun(s, j)
+					if n == 0 {
+						j++
+						continue
+					}
+					runs[n] = append(runs[n], j)
+					j += n
+				}
+			}
+			n := backtickRun(s, i)
+			i += n
+			ps, c := runs[n], resume[n]
+			for c < len(ps) && ps[c] < i {
+				c++
+			}
+			resume[n] = c
+			if c < len(ps) {
+				i = ps[c] + n
+			}
+		case s[i] == '[' || s[i] == '!' && i+1 < len(s) && s[i+1] == '[':
+			image := s[i] == '!'
+			openers = append(openers, opener{pos: i, image: image})
+			i++
+			if image {
+				i++
+			}
+		case s[i] == ']' && len(openers) > 0:
+			k := len(openers) - 1
+			o := openers[k]
+			openers = openers[:k]
+			active := o.image || k >= inactive
+			inactive = min(inactive, k)
+			if active && i+1 < len(s) && s[i+1] == '(' {
+				if start, end, next, ok := parseDest(s, i+2); ok && next < len(s) && s[next] == ')' {
+					out = append(out, inlineLink{start: o.pos, end: next + 1, destStart: start, destEnd: end})
+					if !o.image {
+						inactive = k
+					}
+					i = next + 1
+					continue
+				}
+			}
+			i++
+		default:
+			i++
 		}
 	}
 	return out
+}
+
+// maxParenDepth is the deepest nesting of parentheses accepted in a
+// destination without angle brackets, as in cmark.
+const maxParenDepth = 32
+
+// parseDest parses the destination and the optional title of an inline link,
+// starting at byte i of s just after "(". It returns the byte range of the
+// destination, without angle brackets, and the index of the first byte after
+// the title and the white space that follows it.
+func parseDest(s string, i int) (start, end, next int, ok bool) {
+	i = skipSpace(s, i)
+	if i < len(s) && s[i] == '<' {
+		j := i + 1
+		for ; j < len(s) && s[j] != '>'; j++ {
+			if s[j] == '<' || s[j] == '\n' {
+				return 0, 0, 0, false
+			}
+			if escaped(s, j) {
+				j++
+			}
+		}
+		if j == len(s) {
+			return 0, 0, 0, false
+		}
+		start, end, i = i+1, j, j+1
+	} else {
+		depth, j := 0, i
+		for ; j < len(s) && s[j] != ' ' && s[j] != '\t' && s[j] != '\n'; j++ {
+			if escaped(s, j) {
+				j++
+			} else if s[j] == '(' {
+				if depth++; depth > maxParenDepth {
+					return 0, 0, 0, false
+				}
+			} else if s[j] == ')' {
+				if depth == 0 {
+					break
+				}
+				depth--
+			}
+		}
+		if depth != 0 {
+			return 0, 0, 0, false
+		}
+		start, end, i = i, j, j
+	}
+	t := skipSpace(s, i)
+	if t > i && t < len(s) && strings.IndexByte("\"'(", s[t]) >= 0 {
+		closer := s[t]
+		if closer == '(' {
+			closer = ')'
+		}
+		k := t + 1
+		for ; k < len(s) && s[k] != closer; k++ {
+			if s[t] == '(' && s[k] == '(' {
+				return 0, 0, 0, false
+			}
+			if escaped(s, k) {
+				k++
+			}
+		}
+		if k == len(s) {
+			return 0, 0, 0, false
+		}
+		t = skipSpace(s, k+1)
+	}
+	return start, end, t, true
+}
+
+// destPath returns the path of a link destination: the text before a query or
+// a fragment.
+func destPath(dest string) string {
+	if i := strings.IndexAny(dest, "?#"); i >= 0 {
+		return dest[:i]
+	}
+	return dest
+}
+
+// escaped reports whether byte i of s is a backslash that escapes the ASCII
+// punctuation character after it.
+func escaped(s string, i int) bool {
+	return s[i] == '\\' && i+1 < len(s) && strings.IndexByte("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~", s[i+1]) >= 0
+}
+
+// backtickRun returns the length of the run of backticks starting at byte i of
+// s.
+func backtickRun(s string, i int) int {
+	j := i
+	for j < len(s) && s[j] == '`' {
+		j++
+	}
+	return j - i
+}
+
+// skipSpace returns the index of the first byte at or after byte i of s that
+// is not a space or a tab, allowing one line break among them.
+func skipSpace(s string, i int) int {
+	nl := false
+	for i < len(s) && (s[i] == ' ' || s[i] == '\t' || s[i] == '\n' && !nl) {
+		nl = nl || s[i] == '\n'
+		i++
+	}
+	return i
 }
