@@ -57,7 +57,8 @@ func (a *app) grepArgs(args []string) (patterns, paths []string) {
 }
 
 func (a *app) checkGrep(c *command, args []string) error {
-	switch patterns, _ := a.grepArgs(args); {
+	patterns, paths := a.grepArgs(args)
+	switch {
 	case len(patterns) == 0:
 		return &usageError{c, "missing pattern"}
 	case a.extended && a.fixed:
@@ -65,18 +66,17 @@ func (a *app) checkGrep(c *command, args []string) error {
 	case a.filesWithout && a.allMatch:
 		return &usageError{c, "-L and --all-match cannot be combined"}
 	}
-	return nil
+	var err error
+	a.cleaned, err = cleanPaths(paths)
+	return err
 }
 
 // cmdGrep searches the files under the paths with git grep, taking the options
 // of GNU grep. It exits with 0 when anything is selected, 1 when nothing is,
 // and 2 when a path does not exist, unless -q selected anything.
 func (a *app) cmdGrep(c *command, args []string) error {
-	patterns, paths := a.grepArgs(args)
-	paths, err := cleanPaths(paths)
-	if err != nil {
-		return err
-	}
+	patterns, _ := a.grepArgs(args)
+	paths := a.cleaned
 	missing, err := a.absent(paths)
 	if err != nil {
 		return err
