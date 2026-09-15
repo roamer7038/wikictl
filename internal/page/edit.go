@@ -316,58 +316,27 @@ func relocate(content []byte, fromPage, toPage string, mapper func(target string
 	})
 }
 
-// splitDest splits a link destination as written into its path and the text
-// before and after it. The path is enclosed in angle brackets when the
-// destination starts with "<", and otherwise ends at a space or a tab; in both
-// forms it also ends at a query or a fragment.
-func splitDest(dest string) (before, p, after string) {
-	start := len(dest) - len(strings.TrimLeft(dest, " \t"))
-	end := len(dest)
-	stops := "?# \t"
-	if strings.HasPrefix(dest[start:], "<") {
-		if i := strings.IndexByte(dest[start+1:], '>'); i >= 0 {
-			start++
-			end = start + i
-			stops = "?#"
-		}
-	}
-	if i := strings.IndexAny(dest[start:end], stops); i >= 0 {
-		end = start + i
-	}
-	return dest[:start], dest[start:end], dest[end:]
-}
-
 // rewriteLinks applies fn to every page link of text outside code spans and
 // replaces the path of the destination with the result.
 func rewriteLinks(text, pagePath string, fn func(p, target string) (string, bool)) (string, int) {
-	spans := reInline.FindAllStringIndex(text, -1)
 	changed := 0
 	var b strings.Builder
 	last := 0
-	for _, m := range reMDLink.FindAllStringSubmatchIndex(text, -1) {
-		inSpan := false
-		for _, s := range spans {
-			if m[0] < s[1] && s[0] < m[1] {
-				inSpan = true
-				break
-			}
-		}
-		if inSpan {
-			continue
-		}
-		before, p, after := splitDest(text[m[2]:m[3]])
-		target, isURL, err := ResolveDest(pagePath, p)
+	for _, m := range findLinks(text) {
+		dest := text[m.destStart:m.destEnd]
+		target, isURL, err := ResolveDest(pagePath, dest)
 		if err != nil || isURL {
 			continue
 		}
+		p := destPath(dest)
 		np, ok := fn(p, target)
 		if !ok {
 			continue
 		}
 		changed++
-		b.WriteString(text[last:m[2]])
-		b.WriteString(before + np + after)
-		last = m[3]
+		b.WriteString(text[last:m.destStart])
+		b.WriteString(np)
+		last = m.destStart + len(p)
 	}
 	if changed == 0 {
 		return text, 0

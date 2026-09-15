@@ -292,8 +292,9 @@ be "-", "*" or "+" and may be indented. The "## Links" heading must be the last
 heading of the page; one followed by another heading is reported as
 links_syntax.
 
-A page link is a relative path ending in .md, optionally followed by
-#fragment; absolute paths and paths that leave the wiki are not page links.
+A page link is a relative path ending in .md, optionally followed by a
+?query or a #fragment; absolute paths and paths that leave the wiki are not
+page links.
 Links of the form [text](path) in the body are also read, except inside code
 fences and code spans: links lists them as "mentions", and lint
 reports them as broken_link when the page is missing. Code fences are never
