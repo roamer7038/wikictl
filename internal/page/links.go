@@ -191,6 +191,8 @@ func underlineOrBreak(t string) bool {
 	if c != '=' && c != '-' && c != '*' && c != '_' {
 		return false
 	}
+	// n counts c. gap is set after a space or a tab, and inner when c follows
+	// such a gap, that is, when the run of c is interrupted by white space.
 	n, gap, inner := 0, false, false
 	for k := i; k < len(t); k++ {
 		switch t[k] {
@@ -220,8 +222,10 @@ func underlineOrBreak(t string) bool {
 // one only after another list item or when it is numbered 1), at a table row
 // after another table row, and at a block quote line after a line outside a
 // block quote. fn receives the range of the lines, their text joined with
-// "\n", and the byte offset of each line in that text.
+// "\n", and the byte offset of each line in that text; fn must not change the
+// offsets.
 func eachParagraph(lines []Line, linksStart int, fn func(from, to int, text string, offsets []int)) {
+	oneLine := []int{0} // the offsets of every paragraph of one line
 	blank := func(l Line) bool { return strings.Trim(l.Text, " \t") == "" }
 	joinable := func(i int) bool {
 		l := lines[i]
@@ -246,6 +250,11 @@ func eachParagraph(lines []Line, linksStart int, fn func(from, to int, text stri
 			for j < len(lines) && joinable(j) && !starts(j) {
 				j++
 			}
+		}
+		if j == i+1 {
+			fn(i, j, lines[i].Text, oneLine)
+			i = j
+			continue
 		}
 		var b strings.Builder
 		offsets := make([]int, 0, j-i)
