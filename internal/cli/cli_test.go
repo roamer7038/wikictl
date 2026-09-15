@@ -502,6 +502,7 @@ func TestLintDirs(t *testing.T) {
 	runCLI(t, cfg, "# a\n", "put", "global/sub/a.md")
 	runCLI(t, cfg, "# b\n", "put", "projects/app/b.md")
 	runCLI(t, cfg, "png", "put", "machines/raw/img.png")
+	runCLI(t, cfg, "---\nsummary: in\n---\n# in\n", "put", "notes/x.md/in.md")
 	for _, c := range []struct {
 		args []string
 		code int
@@ -511,6 +512,10 @@ func TestLintDirs(t *testing.T) {
 		{[]string{"/global/", "projects/app/x.md"}, 4, "global/sub/a.md:1: missing_summary: frontmatter is missing\n"},
 		{[]string{"global", "global/sub/a.md"}, 4, "global/sub/a.md:1: missing_summary: frontmatter is missing\n"},
 		{[]string{"projects", "global/push.md"}, 4, "projects/app/b.md:1: missing_summary: frontmatter is missing\n"},
+		{[]string{"global/push.md", "global/push.md"}, 0, ""},
+		{[]string{"global/sub/a.md", "global/sub/a.md"}, 4, "global/sub/a.md:1: missing_summary: frontmatter is missing\n"},
+		{[]string{"."}, 4, "global/sub/a.md:1: missing_summary: frontmatter is missing\nnotes/x.md/in.md:0: name_style: name \"x.md\": lowercase ASCII letters, digits and hyphens are recommended\nprojects/app/b.md:1: missing_summary: frontmatter is missing\n"},
+		{[]string{"notes/x.md"}, 4, "notes/x.md/in.md:0: name_style: name \"x.md\": lowercase ASCII letters, digits and hyphens are recommended\n"},
 		{[]string{"machines"}, 0, ""},
 		{[]string{"machines/raw"}, 0, ""},
 		{[]string{"global/none"}, 1, ""},

@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"path"
 	"slices"
 	"sort"
 	"strings"
@@ -23,21 +24,25 @@ func (a *app) cmdLint(c *command, args []string) error {
 		if err != nil {
 			return &gitError{err}
 		}
+		isDir := map[string]bool{".": true}
+		for _, f := range tree {
+			for d := path.Dir(f); d != "."; d = path.Dir(d) {
+				isDir[d] = true
+			}
+		}
 		var dirs []string
 		for _, p := range args {
-			if p == "." || slices.ContainsFunc(tree, func(f string) bool { return strings.HasPrefix(f, p+"/") }) {
+			if isDir[p] {
 				dirs = append(dirs, p)
 			} else {
 				files = append(files, p)
 			}
 		}
-		paths = files
-		if len(dirs) > 0 {
-			under, err := a.repo.List(dirs)
-			if err != nil {
-				return &gitError{err}
+		paths = slices.Clone(files)
+		for _, p := range all {
+			if slices.ContainsFunc(dirs, func(d string) bool { return d == "." || strings.HasPrefix(p, d+"/") }) {
+				paths = append(paths, p)
 			}
-			paths = append(under, files...)
 		}
 		slices.Sort(paths)
 		paths = slices.Compact(paths)
