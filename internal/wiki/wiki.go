@@ -18,8 +18,6 @@ import (
 
 // Store reads the files of one state of the wiki. *repo.Repo implements it.
 type Store interface {
-	// List returns the paths of all pages.
-	List() ([]string, error)
 	// Entries returns the files under dirs, or of the whole tree when dirs
 	// is nil, pages or not, with their object types.
 	Entries(dirs []string) ([]repo.Entry, error)
