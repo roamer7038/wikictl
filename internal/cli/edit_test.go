@@ -106,6 +106,12 @@ printf -- '---\nsummary: edited\n---\n# push\n' > "$1"
 	if code, _, errs := runCLI(t, cfg, "", "edit", "global/push.md/x.md"); code != ExitError || errs != "wikictl: global/push.md/x.md: global/push.md is a file\n" {
 		t.Errorf("edit below a file: code=%d errs=%q", code, errs)
 	}
+	if code, _, errs := runCLI(t, cfg, "", "edit", "global"); code != ExitError || errs != "wikictl: global: is a directory\n" {
+		t.Errorf("edit of a directory at the root: code=%d errs=%q", code, errs)
+	}
+	if code, _, errs := runCLI(t, cfg, "", "edit", "newtop"); code != ExitInvalid || !strings.Contains(errs, "bad_path: ") {
+		t.Errorf("edit of a file at the root: code=%d errs=%q", code, errs)
+	}
 
 	// A failing editor and content that put rejects keep the edited file.
 	editWith(t, "printf draft > \"$1\"; exit 3\n")

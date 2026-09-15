@@ -46,7 +46,7 @@ func (a *app) cmdEdit(c *command, args []string) error {
 		check = page.CheckPath
 	}
 	if err := check(p); err != nil {
-		return &invalidError{"bad_path: " + err.Error()}
+		return a.badPath(p, err)
 	}
 	var dirs []string
 	for d := path.Dir(p); d != "."; d = path.Dir(d) {

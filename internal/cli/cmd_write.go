@@ -88,7 +88,7 @@ func (a *app) writeFile(p string, content []byte, base, cmd string) error {
 			a.warn(is)
 		}
 	} else if err := page.CheckFilePath(p); err != nil {
-		return &invalidError{"bad_path: " + err.Error()}
+		return a.badPath(p, err)
 	}
 	msg := a.msg
 	if msg == "" {
@@ -110,6 +110,22 @@ func (a *app) writeFile(p string, content []byte, base, cmd string) error {
 		}
 	})
 	return nil
+}
+
+// badPath returns the error for p, a path that the path check rejected with
+// err. A directory at the wiki root is reported as a directory, as a deeper
+// one is; any other path is bad_path.
+func (a *app) badPath(p string, err error) error {
+	if !strings.Contains(p, "/") && page.CheckName(p) == nil {
+		files, ferr := a.repo.Files([]string{p})
+		if ferr != nil {
+			return &gitError{ferr}
+		}
+		if slices.ContainsFunc(files, func(f string) bool { return strings.HasPrefix(f, p+"/") }) {
+			return fmt.Errorf("%s: is a directory", p)
+		}
+	}
+	return &invalidError{"bad_path: " + err.Error()}
 }
 
 // commitMessage returns the default commit message "wikictl: <cmd> <args>",

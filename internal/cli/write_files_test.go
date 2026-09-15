@@ -192,11 +192,18 @@ func TestWriteOverDirectoryOrFile(t *testing.T) {
 	}{
 		{[]string{"mv", "global/d.md/z.md", "global/d.md"}, "wikictl: global/d.md/z.md: not replacing\n"},
 		{[]string{"put", "projects/app"}, "wikictl: projects/app: is a directory\n"},
+		{[]string{"put", "global"}, "wikictl: global: is a directory\n"},
 		{[]string{"put", "global/push.md/child.png"}, "wikictl: global/push.md/child.png: global/push.md is a file\n"},
 		{[]string{"mv", "global/index.md", "global/push.md/index.md"}, "wikictl: global/push.md/index.md: not a directory\n"},
 	} {
 		if code, _, errs := runCLI(t, cfg, "x", c.args...); code != ExitError || !strings.HasSuffix(errs, c.errs) {
 			t.Errorf("%v: code=%d errs=%q", c.args, code, errs)
+		}
+	}
+	// A path at the root that is not a directory is still a file at the root.
+	for _, p := range []string{"README.md", "newtop"} {
+		if code, _, errs := runCLI(t, cfg, "x", "put", p); code != ExitInvalid || !strings.Contains(errs, "bad_path: ") {
+			t.Errorf("put %s: code=%d errs=%q", p, code, errs)
 		}
 	}
 	if got := gitOut(t, "--git-dir", remote, "rev-parse", "main"); got != head {
