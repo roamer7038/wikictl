@@ -40,7 +40,7 @@ func (a *app) checkEdit(c *command, args []string) error {
 func (a *app) cmdEdit(c *command, args []string) error {
 	p := args[0]
 	if err := checkFilePath(p); err != nil {
-		return &invalidError{"bad_path: " + err.Error()}
+		return a.badPath(p, err)
 	}
 	var dirs []string
 	for d := path.Dir(p); d != "."; d = path.Dir(d) {

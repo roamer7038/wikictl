@@ -71,13 +71,25 @@ func (a *app) cmdPut(c *command, args []string) error {
 func (a *app) writeFile(p string, content []byte, base, cmd string) error {
 	if strings.HasSuffix(p, ".md") {
 		pg := page.Parse(p, content)
+		var blocking []page.Issue
 		for _, is := range pg.Issues {
 			switch is.Code {
 			case "bad_path", "frontmatter_invalid", "page_too_large":
-				return &invalidError{is.Code + ": " + is.Message}
+				blocking = append(blocking, is)
 			default:
-				a.warn(is)
+				if len(blocking) == 0 {
+					a.warn(is)
+				}
 			}
+		}
+		// bad_path comes first in Issues. A page path at the root that is a
+		// directory is reported as edit reports it, unless the content is
+		// also rejected.
+		switch {
+		case len(blocking) == 1 && blocking[0].Code == "bad_path":
+			return a.badPath(p, errors.New(blocking[0].Message))
+		case len(blocking) > 0:
+			return &invalidError{blocking[0].Code + ": " + blocking[0].Message}
 		}
 		// Broken links never block the write, so that link targets can be created afterwards.
 		broken, err := wiki.BrokenLinks(a.repo, []*page.Page{pg})
@@ -87,8 +99,8 @@ func (a *app) writeFile(p string, content []byte, base, cmd string) error {
 		for _, is := range broken {
 			a.warn(is)
 		}
-	} else if err := page.CheckFilePath(p); err != nil {
-		return &invalidError{"bad_path: " + err.Error()}
+	} else if err := checkFilePath(p); err != nil {
+		return a.badPath(p, err)
 	}
 	msg := a.msg
 	if msg == "" {
@@ -418,6 +430,22 @@ func checkFilePath(p string) error {
 		return page.CheckPath(p)
 	}
 	return page.CheckFilePath(p)
+}
+
+// badPath returns the error for p, a path that the path check rejected with
+// err. A directory at the wiki root is reported as a directory, as a deeper
+// one is; any other path is bad_path.
+func (a *app) badPath(p string, err error) error {
+	if !strings.Contains(p, "/") && page.CheckName(p) == nil {
+		files, ferr := a.repo.Files([]string{p})
+		if ferr != nil {
+			return &gitError{ferr}
+		}
+		if slices.ContainsFunc(files, func(f string) bool { return strings.HasPrefix(f, p+"/") }) {
+			return fmt.Errorf("%s: is a directory", p)
+		}
+	}
+	return &invalidError{"bad_path: " + err.Error()}
 }
 
 // moveChanges builds the changes that move the files of mapping (old path ->
