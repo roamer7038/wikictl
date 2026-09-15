@@ -538,6 +538,11 @@ func (a *app) setup() error {
 	a.remote = cwdRemote()
 	dir, _ := os.Getwd()
 	cfg, err := config.Load(a.cfgPath, config.Selector{Profile: a.profile, Dir: dir, Remote: a.remote})
+	if cfg != nil {
+		for _, w := range cfg.Warnings {
+			fmt.Fprintln(a.stderr, "wikictl: warning: "+w)
+		}
+	}
 	if err != nil {
 		return &usageError{msg: err.Error()}
 	}

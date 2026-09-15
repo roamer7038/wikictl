@@ -936,8 +936,16 @@ profiles:
 	}
 
 	os.WriteFile(cfg, []byte("repo: "+home+"\nprofiles:\n  work:\n    match: {remote: [\"gitlab.example.com/team/*\"]}\n"), 0o600)
-	if code, _, errs := runCLI(t, cfg, "", "context"); code != ExitUsage || !strings.Contains(errs, `unknown field "remote"`) {
-		t.Errorf("unknown key: code=%d %s", code, errs)
+	if code, _, errs := runCLI(t, cfg, "", "context"); code != 0 || errs != "wikictl: warning: config file "+cfg+": unknown key \"profiles.work.match.remote\" is ignored\n" {
+		t.Errorf("unknown key: code=%d %q", code, errs)
+	}
+	if code, out, errs := runCLI(t, cfg, "", "--json", "context"); code != 0 || !json.Valid([]byte(out)) || !strings.Contains(errs, `unknown key "profiles.work.match.remote"`) {
+		t.Errorf("unknown key with --json: code=%d out=%q errs=%q", code, out, errs)
+	}
+	os.WriteFile(cfg, []byte("reop: "+home+"\n"), 0o600)
+	if code, _, errs := runCLI(t, cfg, "", "context"); code != ExitUsage ||
+		!strings.HasPrefix(errs, "wikictl: warning: config file "+cfg+": unknown key \"reop\" is ignored\n") || !strings.Contains(errs, "repo is not set") {
+		t.Errorf("unknown key with a config error: code=%d %q", code, errs)
 	}
 }
 
