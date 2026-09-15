@@ -1,7 +1,7 @@
 // Package wiki implements what the commands do with the pages of a wiki,
 // independent of how the files are stored: cleaning the paths given on the
-// command line, finding the links between pages, and building the changes
-// that moving pages needs.
+// command line, finding the links between pages, broken links and deprecated
+// pages, and building the changes that moving pages needs.
 package wiki
 
 import (
@@ -17,12 +17,11 @@ import (
 
 // Store reads the files of one state of the wiki. *repo.Repo implements it.
 type Store interface {
-	// List returns the page paths under dirs, or of the whole wiki when dirs
-	// is nil.
-	List(dirs []string) ([]string, error)
-	// Grep returns the pages under dirs that contain the words as fixed
-	// strings ignoring case; with all set, every one of them.
-	Grep(words []string, all bool, dirs []string) ([]string, error)
+	// List returns the paths of all pages.
+	List() ([]string, error)
+	// Grep returns the pages that contain every one of words as fixed strings
+	// ignoring case.
+	Grep(words []string) ([]string, error)
 	// Stat returns the sha and size of every path that is a file.
 	Stat(paths []string) (map[string]repo.Object, error)
 	// CatSHA returns the contents and blob shas of the paths that are files.
@@ -30,9 +29,9 @@ type Store interface {
 	// CatLimit returns the contents of the files of at most max bytes, and
 	// the sha and size of the larger ones.
 	CatLimit(paths []string, max int64) (map[string][]byte, map[string]repo.Object, error)
-	// GrepDeprecated returns the pages under dirs that may have status:
-	// deprecated in their frontmatter.
-	GrepDeprecated(dirs []string) (map[string]bool, error)
+	// GrepDeprecated returns the pages that may have status: deprecated in
+	// their frontmatter.
+	GrepDeprecated() (map[string]bool, error)
 }
 
 // Deprecated returns the set of pages whose frontmatter has status:
@@ -40,7 +39,7 @@ type Store interface {
 // decides, so that such a line in the body does not count and a quoted value
 // does.
 func Deprecated(s Store) (map[string]bool, error) {
-	cands, err := s.GrepDeprecated(nil)
+	cands, err := s.GrepDeprecated()
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +92,7 @@ type Backlink struct {
 // pages, then parses each candidate and keeps those whose links resolve to
 // target. Typed links win over body mentions.
 func Backlinks(s Store, target string) ([]Backlink, error) {
-	cands, err := s.Grep([]string{path.Base(target)}, true, nil)
+	cands, err := s.Grep([]string{path.Base(target)})
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +163,7 @@ func BrokenLinks(s Store, pages []*page.Page) ([]page.Issue, error) {
 // every new path requires that the path does not exist, so that a page
 // changed or created since it was read makes the commit a conflict.
 func Relocate(s Store, mapping map[string]string) ([]repo.Change, error) {
-	all, err := s.List(nil)
+	all, err := s.List()
 	if err != nil {
 		return nil, err
 	}

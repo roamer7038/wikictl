@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -120,10 +119,5 @@ func TestHelpAndVersionFlags(t *testing.T) {
 
 func lastCommitMessage(t *testing.T, cfg string) string {
 	t.Helper()
-	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
-	out, err := exec.Command("git", "--git-dir", remote, "log", "-1", "--format=%s", "main").Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return strings.TrimSpace(string(out))
+	return gitOut(t, "--git-dir", filepath.Join(filepath.Dir(cfg), "remote.git"), "log", "-1", "--format=%s", "main")
 }

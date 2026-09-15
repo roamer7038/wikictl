@@ -17,22 +17,20 @@ import (
 // fakeStore is a Store over files kept in memory, keyed by path.
 type fakeStore map[string]string
 
-func (f fakeStore) List(dirs []string) ([]string, error) {
+func (f fakeStore) List() ([]string, error) {
 	var out []string
 	for p := range f {
 		if !strings.HasSuffix(p, ".md") || !strings.Contains(p, "/") || strings.HasPrefix(p, ".") || strings.Contains(p, "/.") {
 			continue
 		}
-		if dirs == nil || slices.ContainsFunc(dirs, func(d string) bool { return strings.HasPrefix(p, d+"/") }) {
-			out = append(out, p)
-		}
+		out = append(out, p)
 	}
 	slices.Sort(out)
 	return out, nil
 }
 
-func (f fakeStore) Grep(words []string, all bool, dirs []string) ([]string, error) {
-	paths, _ := f.List(dirs)
+func (f fakeStore) Grep(words []string) ([]string, error) {
+	paths, _ := f.List()
 	var out []string
 	for _, p := range paths {
 		n := 0
@@ -41,7 +39,7 @@ func (f fakeStore) Grep(words []string, all bool, dirs []string) ([]string, erro
 				n++
 			}
 		}
-		if (all && n == len(words)) || (!all && n > 0) {
+		if n == len(words) {
 			out = append(out, p)
 		}
 	}
@@ -88,8 +86,8 @@ func (f fakeStore) CatLimit(paths []string, max int64) (map[string][]byte, map[s
 	return contents, large, nil
 }
 
-func (f fakeStore) GrepDeprecated(dirs []string) (map[string]bool, error) {
-	paths, _ := f.List(dirs)
+func (f fakeStore) GrepDeprecated() (map[string]bool, error) {
+	paths, _ := f.List()
 	out := map[string]bool{}
 	for _, p := range paths {
 		if strings.Contains(f[p], "deprecated") {

@@ -100,11 +100,9 @@ func (a *app) cmdStat(c *command, args []string) error {
 	if err != nil {
 		return &gitError{err}
 	}
-	updated := map[string]time.Time{}
-	if len(found) > 0 {
-		if updated, err = a.repo.Updated(found); err != nil {
-			return &gitError{err}
-		}
+	updated, err := a.repo.Updated(found)
+	if err != nil {
+		return &gitError{err}
 	}
 	items := []statItem{}
 	for _, p := range found {

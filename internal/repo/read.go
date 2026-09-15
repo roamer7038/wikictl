@@ -54,15 +54,13 @@ func stripRef(r *Repo, lines string) []string {
 	return res
 }
 
-// List returns the page paths under dirs (or the whole tree when dirs is nil).
-// Directories that do not exist are ignored.
-func (r *Repo) List(dirs []string) ([]string, error) {
+// List returns the paths of all pages.
+func (r *Repo) List() ([]string, error) {
 	head, err := r.Head()
 	if err != nil || head == "" {
 		return nil, err
 	}
-	args := append([]string{"ls-tree", "-r", "--name-only", r.readRef()}, pathspec(dirs)...)
-	out, err := r.Git(args...)
+	out, err := r.Git("ls-tree", "-r", "--name-only", r.readRef())
 	if err != nil {
 		return nil, err
 	}
@@ -113,24 +111,18 @@ func FoldPattern(word string) string {
 	return b.String()
 }
 
-// Grep returns the pages under dirs that contain the words as fixed strings,
-// ignoring case as FoldPattern does. With all set, a page must contain every word
-// (--all-match).
-func (r *Repo) Grep(words []string, all bool, dirs []string) ([]string, error) {
+// Grep returns the pages that contain every one of words as fixed strings,
+// ignoring case as FoldPattern does.
+func (r *Repo) Grep(words []string) ([]string, error) {
 	head, err := r.Head()
 	if err != nil || head == "" || len(words) == 0 {
 		return nil, err
 	}
-	args := []string{"grep", "-E", "-l"}
-	if all {
-		args = append(args, "--all-match")
-	}
+	args := []string{"grep", "-E", "-l", "--all-match"}
 	for _, w := range words {
 		args = append(args, "-e", FoldPattern(w))
 	}
-	args = append(args, r.readRef())
-	args = append(args, pathspec(dirs)...)
-	out, err := r.gitStrict(args...)
+	out, err := r.gitStrict(append(args, r.readRef())...)
 	if noResult(err) {
 		return nil, nil
 	}
@@ -188,10 +180,10 @@ func (r *Repo) GrepRecords(flags, patterns, dirs []string) ([][]string, error) {
 	return res, nil
 }
 
-// GrepDeprecated returns the set of pages under dirs that contain the word
-// "deprecated": the candidates whose frontmatter wiki.Deprecated reads. Any
-// way of writing status: deprecated in YAML contains the word.
-func (r *Repo) GrepDeprecated(dirs []string) (map[string]bool, error) {
+// GrepDeprecated returns the set of pages that contain the word "deprecated":
+// the candidates whose frontmatter wiki.Deprecated reads. Any way of writing
+// status: deprecated in YAML contains the word.
+func (r *Repo) GrepDeprecated() (map[string]bool, error) {
 	res := map[string]bool{}
 	head, err := r.Head()
 	if err != nil {
@@ -200,8 +192,7 @@ func (r *Repo) GrepDeprecated(dirs []string) (map[string]bool, error) {
 	if head == "" {
 		return res, nil
 	}
-	args := append([]string{"grep", "-l", "-F", "-e", "deprecated", r.readRef()}, pathspec(dirs)...)
-	out, err := r.gitStrict(args...)
+	out, err := r.gitStrict("grep", "-l", "-F", "-e", "deprecated", r.readRef())
 	if noResult(err) {
 		return res, nil
 	}
@@ -214,15 +205,10 @@ func (r *Repo) GrepDeprecated(dirs []string) (map[string]bool, error) {
 	return res, nil
 }
 
-// Cat returns the contents of paths using one "cat-file --batch" call.
-// Paths that do not exist or are not files are absent from the result.
-func (r *Repo) Cat(paths []string) (map[string][]byte, error) {
-	res, _, err := r.CatSHA(paths)
-	return res, err
-}
-
-// CatSHA is Cat that also returns the blob sha of every path it read, so that
-// a change built from the contents can use the sha as its Base.
+// CatSHA returns the contents and the blob sha of paths using one "cat-file
+// --batch" call, so that a change built from the contents can use the sha as
+// its Base. Paths that do not exist or are not files are absent from the
+// result.
 func (r *Repo) CatSHA(paths []string) (map[string][]byte, map[string]string, error) {
 	res, shas := map[string][]byte{}, map[string]string{}
 	ents, err := r.catFile(r.refPaths(paths), true)
@@ -262,7 +248,7 @@ func (r *Repo) Stat(paths []string) (map[string]Object, error) {
 	return res, nil
 }
 
-// CatLimit is Cat that reads only the blobs of at most max bytes. It finds
+// CatLimit returns the contents of the files of at most max bytes. It finds
 // the sizes with Stat first; the files over max are returned in large, and
 // their contents are not read.
 func (r *Repo) CatLimit(paths []string, max int64) (contents map[string][]byte, large map[string]Object, err error) {
@@ -444,20 +430,10 @@ func (r *Repo) treeEntry(head, path string) (typ, sha string, err error) {
 	return "", "", nil
 }
 
-// BlobSHA returns the object sha of path at commit head, or "" when absent.
-// A failure of git is an error.
-func (r *Repo) BlobSHA(head, path string) (string, error) {
-	if head == "" {
-		return "", nil
-	}
-	_, sha, err := r.treeEntry(head, path)
-	return sha, err
-}
-
-// CheckMissing is called for paths that Cat did not return. It returns an
-// error when git cannot tell whether a path exists at the commit that reads
-// use, or when a path is a blob there that the mirror cannot read; cat-file
-// --batch reports both as "missing". A path that does not exist or is not a
+// CheckMissing is called for paths that CatSHA or CatLimit did not return. It
+// returns an error when git cannot tell whether a path exists at the commit
+// that reads use, or when a path is a blob there that the mirror cannot read;
+// cat-file --batch reports both as "missing". A path that does not exist or is not a
 // file is not an error.
 func (r *Repo) CheckMissing(paths []string) error {
 	head, err := r.Head()

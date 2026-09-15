@@ -37,7 +37,7 @@ type notFoundError struct{ path string }
 
 func (e *notFoundError) Error() string { return "page not found: " + e.path }
 
-// notFound returns notFoundError for a page that Cat did not return, or
+// notFound returns notFoundError for a page that was not read, or
 // gitError when the page may exist but git cannot read it.
 func (a *app) notFound(p string) error {
 	if err := a.repo.CheckMissing([]string{p}); err != nil {
