@@ -231,7 +231,7 @@ func (r *Repo) conflict(path, reason, sha string) error {
 
 // buildAndPush creates the commit with plumbing commands in a temporary index
 // and pushes it. retry is true when the push was rejected because another push
-// moved or locked the remote branch.
+// moved or locked the remote branch. Commit has checked the paths in entries.
 func (r *Repo) buildAndPush(head string, changes []Change, msg string, au Author) (res *Result, retry bool, err error) {
 	// The index lives in a new directory inside the mirror, where no other
 	// user or process can create or replace it.
