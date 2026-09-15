@@ -358,14 +358,20 @@ func rewrite(content []byte, pagePath string, fn func(p, target string) (string,
 		b.Write(fm)
 		b.WriteString("---\n")
 	}
-	for _, l := range lines {
-		text := l.Text
-		if !l.InFence {
-			var n int
-			text, n = rewriteLinks(text, pagePath, fn)
-			changed += n
+	last := 0
+	eachParagraph(lines, LinksStart(lines), func(from, to int, text string, _ []int) {
+		for _, l := range lines[last:from] {
+			b.WriteString(l.Text)
+			b.WriteByte('\n')
 		}
+		text, n := rewriteLinks(text, pagePath, fn)
+		changed += n
 		b.WriteString(text)
+		b.WriteByte('\n')
+		last = to
+	})
+	for _, l := range lines[last:] {
+		b.WriteString(l.Text)
 		b.WriteByte('\n')
 	}
 	return b.Bytes(), changed

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"path"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -62,6 +63,7 @@ func ResolveDest(pagePath, dest string) (target string, isURL bool, err error) {
 // an untyped relation of type "see_also". In an untyped line, a target that
 // starts with "<word>:" must be a URL of the form "<scheme>://...", so that a
 // mistyped "<type>:<target>" is reported instead of being taken as a URL.
+// A target that starts with a scheme is taken as a URL as it is written.
 func ParseLinks(lines []Line, pagePath string) ([]Link, []Issue) {
 	var links []Link
 	var issues []Issue
@@ -89,6 +91,8 @@ func ParseLinks(lines []Line, pagePath string) ([]Link, []Issue) {
 		dest, bracket := "", false
 		if ls := findLinks(target); len(ls) == 1 && ls[0].start == 0 && ls[0].end == len(target) && target[0] == '[' {
 			dest, bracket = target[ls[0].destStart:ls[0].destEnd], true
+		} else if reScheme.MatchString(target) {
+			dest = target
 		} else if start, end, next, ok := parseDest(target, 0); ok && next == len(target) {
 			dest = target[start:end]
 		}
@@ -115,82 +119,135 @@ func ParseLinks(lines []Line, pagePath string) ([]Link, []Issue) {
 }
 
 // BodyLinks returns the page references in the body (outside code fences and
-// code spans) as links of type "mentions", one per distinct target.
+// code spans) as links of type "mentions", one per distinct target. The line
+// of a link is the line where its destination starts.
 func BodyLinks(lines []Line, pagePath string) []Link {
 	var out []Link
 	seen := map[string]bool{}
-	for _, l := range lines {
-		if l.InFence {
-			continue
-		}
-		for _, m := range findLinks(l.Text) {
-			got, isURL, err := ResolveDest(pagePath, l.Text[m.destStart:m.destEnd])
+	eachParagraph(lines, -1, func(from, _ int, text string, offsets []int) {
+		for _, m := range findLinks(text) {
+			got, isURL, err := ResolveDest(pagePath, text[m.destStart:m.destEnd])
 			if err != nil || isURL || seen[got] {
 				continue
 			}
 			seen[got] = true
-			out = append(out, Link{Type: "mentions", Target: got, Line: l.N})
+			n := lines[from+sort.SearchInts(offsets, m.destStart+1)-1].N
+			out = append(out, Link{Type: "mentions", Target: got, Line: n})
 		}
-	}
+	})
 	return out
 }
 
-// inlineLink is the position of an inline link or image in a line.
+// eachParagraph calls fn for each paragraph of lines: a run of lines outside
+// code fences without blank lines and headings. A heading, and each line from
+// linksStart on (the Links section is read line by line), is a paragraph of
+// its own; linksStart is -1 when there is no Links section. fn receives the
+// range of the lines, their text joined with "\n", and the byte offset of each
+// line in that text.
+func eachParagraph(lines []Line, linksStart int, fn func(from, to int, text string, offsets []int)) {
+	blank := func(l Line) bool { return strings.Trim(l.Text, " \t") == "" }
+	joinable := func(i int) bool {
+		return (linksStart < 0 || i < linksStart) && !lines[i].InFence && !blank(lines[i]) && !isHeading(lines[i])
+	}
+	for i := 0; i < len(lines); {
+		if lines[i].InFence || blank(lines[i]) {
+			i++
+			continue
+		}
+		j := i + 1
+		if joinable(i) {
+			for j < len(lines) && joinable(j) {
+				j++
+			}
+		}
+		var b strings.Builder
+		offsets := make([]int, 0, j-i)
+		for k := i; k < j; k++ {
+			if k > i {
+				b.WriteByte('\n')
+			}
+			offsets = append(offsets, b.Len())
+			b.WriteString(lines[k].Text)
+		}
+		fn(i, j, b.String(), offsets)
+		i = j
+	}
+}
+
+// inlineLink is the position of an inline link or image in a paragraph.
 type inlineLink struct {
 	start, end         int // from "[" or "![" to the closing ")"
 	destStart, destEnd int // the destination without angle brackets and title
 }
 
-// findLinks returns the inline links and images of a line, following the
-// CommonMark rules for code spans, backslash escapes, link text and inline
-// links: a code span takes precedence over a link that starts before it and
-// ends inside it, and a link cannot contain another link. Reference links,
-// autolinks, raw HTML, and links spanning several lines are not recognized,
-// and a destination without angle brackets ends only at a space or a tab, so
-// it may contain control characters.
+// findLinks returns the inline links and images of a paragraph, whose lines
+// are joined with "\n", following the CommonMark rules for code spans,
+// backslash escapes, link text and inline links: a code span takes precedence
+// over a link that starts before it and ends inside it, and a link cannot
+// contain another link. Reference links, autolinks, raw HTML and entity
+// references are not recognized, backslash escapes are kept in the
+// destination, and a destination without angle brackets ends only at a space,
+// a tab or a line break, so it may contain other control characters. The time
+// is linear in the length of s.
 func findLinks(s string) []inlineLink {
 	type opener struct {
-		pos           int
-		image, active bool
+		pos   int
+		image bool
 	}
 	var out []inlineLink
 	var openers []opener
+	// Openers of links (not images) below index inactive may not start a link,
+	// because a link was found after them.
+	inactive := 0
+	// runs holds the start of every backtick run of s by its length, and
+	// resume[n] the index in runs[n] where the search for a closing run resumes.
+	var runs map[int][]int
+	var resume map[int]int
 	for i := 0; i < len(s); {
 		switch {
 		case escaped(s, i):
 			i += 2
 		case s[i] == '`':
+			if runs == nil {
+				runs, resume = map[int][]int{}, map[int]int{}
+				for j := i; j < len(s); {
+					n := backtickRun(s, j)
+					if n == 0 {
+						j++
+						continue
+					}
+					runs[n] = append(runs[n], j)
+					j += n
+				}
+			}
 			n := backtickRun(s, i)
 			i += n
-			for j := i; j < len(s); {
-				if m := backtickRun(s, j); m == 0 {
-					j++
-				} else if m == n {
-					i = j + m
-					break
-				} else {
-					j += m
-				}
+			ps, c := runs[n], resume[n]
+			for c < len(ps) && ps[c] < i {
+				c++
+			}
+			resume[n] = c
+			if c < len(ps) {
+				i = ps[c] + n
 			}
 		case s[i] == '[' || s[i] == '!' && i+1 < len(s) && s[i+1] == '[':
 			image := s[i] == '!'
-			openers = append(openers, opener{pos: i, image: image, active: true})
+			openers = append(openers, opener{pos: i, image: image})
 			i++
 			if image {
 				i++
 			}
 		case s[i] == ']' && len(openers) > 0:
-			o := openers[len(openers)-1]
-			openers = openers[:len(openers)-1]
-			if o.active && i+1 < len(s) && s[i+1] == '(' {
+			k := len(openers) - 1
+			o := openers[k]
+			openers = openers[:k]
+			active := o.image || k >= inactive
+			inactive = min(inactive, k)
+			if active && i+1 < len(s) && s[i+1] == '(' {
 				if start, end, next, ok := parseDest(s, i+2); ok && next < len(s) && s[next] == ')' {
 					out = append(out, inlineLink{start: o.pos, end: next + 1, destStart: start, destEnd: end})
 					if !o.image {
-						for k := range openers {
-							if !openers[k].image {
-								openers[k].active = false
-							}
-						}
+						inactive = k
 					}
 					i = next + 1
 					continue
@@ -204,16 +261,20 @@ func findLinks(s string) []inlineLink {
 	return out
 }
 
+// maxParenDepth is the deepest nesting of parentheses accepted in a
+// destination without angle brackets, as in cmark.
+const maxParenDepth = 32
+
 // parseDest parses the destination and the optional title of an inline link,
 // starting at byte i of s just after "(". It returns the byte range of the
 // destination, without angle brackets, and the index of the first byte after
-// the title and the spaces and tabs that follow it.
+// the title and the white space that follows it.
 func parseDest(s string, i int) (start, end, next int, ok bool) {
 	i = skipSpace(s, i)
 	if i < len(s) && s[i] == '<' {
 		j := i + 1
 		for ; j < len(s) && s[j] != '>'; j++ {
-			if s[j] == '<' {
+			if s[j] == '<' || s[j] == '\n' {
 				return 0, 0, 0, false
 			}
 			if escaped(s, j) {
@@ -226,11 +287,13 @@ func parseDest(s string, i int) (start, end, next int, ok bool) {
 		start, end, i = i+1, j, j+1
 	} else {
 		depth, j := 0, i
-		for ; j < len(s) && s[j] != ' ' && s[j] != '\t'; j++ {
+		for ; j < len(s) && s[j] != ' ' && s[j] != '\t' && s[j] != '\n'; j++ {
 			if escaped(s, j) {
 				j++
 			} else if s[j] == '(' {
-				depth++
+				if depth++; depth > maxParenDepth {
+					return 0, 0, 0, false
+				}
 			} else if s[j] == ')' {
 				if depth == 0 {
 					break
@@ -291,8 +354,12 @@ func backtickRun(s string, i int) int {
 	return j - i
 }
 
+// skipSpace returns the index of the first byte at or after byte i of s that
+// is not a space or a tab, allowing one line break among them.
 func skipSpace(s string, i int) int {
-	for i < len(s) && (s[i] == ' ' || s[i] == '\t') {
+	nl := false
+	for i < len(s) && (s[i] == ' ' || s[i] == '\t' || s[i] == '\n' && !nl) {
+		nl = nl || s[i] == '\n'
 		i++
 	}
 	return i
