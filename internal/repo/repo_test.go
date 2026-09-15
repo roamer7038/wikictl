@@ -58,9 +58,6 @@ func run(t *testing.T, dir string, name string, args ...string) string {
 func TestSnapshot(t *testing.T) {
 	remote := newRemote(t, true)
 	r := openFetched(t, remote)
-	if err := r.Snapshot(); err != nil {
-		t.Fatal(err)
-	}
 	seedRemote(t, remote, map[string]string{"global/new.md": "---\nsummary: n\n---\n# n\n"})
 	if err := r.Fetch(); err != nil {
 		t.Fatal(err)
@@ -86,9 +83,6 @@ func TestSnapshot(t *testing.T) {
 func TestSnapshotOfEmptyBranch(t *testing.T) {
 	remote := newRemote(t, false)
 	r := openFetched(t, remote)
-	if err := r.Snapshot(); err != nil {
-		t.Fatal(err)
-	}
 	seedRemote(t, remote, map[string]string{"global/new.md": "# n\n"})
 	if err := r.Fetch(); err != nil {
 		t.Fatal(err)
@@ -117,26 +111,16 @@ func openFetched(t *testing.T, remote string) *Repo {
 	return r
 }
 
-// grepPages returns the pages that contain every one of words, ignoring case
-// as wiki.Backlinks searches.
-func grepPages(t *testing.T, r *Repo, flags []string, words ...string) []string {
+// grepFiles returns the paths that GrepRecords lists with flags and pattern.
+func grepFiles(t *testing.T, r *Repo, flags []string, pattern string) []string {
 	t.Helper()
-	var patterns []string
-	for _, w := range words {
-		patterns = append(patterns, FoldPattern(w))
-	}
-	if slices.Contains(flags, "-F") {
-		patterns = words
-	}
-	records, err := r.GrepRecords(append(flags, "-l", "--all-match"), patterns, nil)
+	records, err := r.GrepRecords(flags, []string{pattern}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var out []string
 	for _, rec := range records {
-		if IsPagePath(rec[0]) {
-			out = append(out, rec[0])
-		}
+		out = append(out, rec[0])
 	}
 	return out
 }
@@ -415,18 +399,14 @@ func TestRead(t *testing.T) {
 	if len(list) != 8 || list[5] != "global/日本語.md" {
 		t.Errorf("list=%v", list)
 	}
-	got := grepPages(t, r, []string{"-E"}, "LEASE", "force")
-	if len(got) != 1 || got[0] != "global/git-push.md" {
-		t.Errorf("all-match grep=%v", got)
-	}
-	got = grepPages(t, r, []string{"-E"}, "lease")
-	if len(got) != 3 {
+	want := []string{"global/git-push.md", "global/notes.txt", "global/日本語.md", "projects/a/x.md"}
+	if got := grepFiles(t, r, []string{"-E", "-l"}, FoldPattern("LEASE")); !slices.Equal(got, want) {
 		t.Errorf("grep=%v", got)
 	}
-	if got := grepPages(t, r, []string{"-E"}, "zzz-none"); len(got) != 0 {
+	if got := grepFiles(t, r, []string{"-E", "-l"}, "zzz-none"); len(got) != 0 {
 		t.Errorf("no match must be empty: %v", got)
 	}
-	if dep := grepPages(t, r, []string{"-F"}, "deprecated"); !slices.Equal(dep, []string{"projects/a/x.md"}) {
+	if dep := grepFiles(t, r, []string{"-F", "-l"}, "deprecated"); !slices.Equal(dep, []string{"projects/a/x.md"}) {
 		t.Errorf("dep=%v", dep)
 	}
 	c, shas, _ := r.CatSHA([]string{"global/git-push.md", "missing.md", "machines/h/y.md"})
@@ -461,10 +441,10 @@ func TestReadQuotedNames(t *testing.T) {
 	if want := []string{names[0], names[1], "global/index.md", names[2], names[3]}; err != nil || !slices.Equal(list, want) {
 		t.Errorf("Files = %q, %v", list, err)
 	}
-	if got := grepPages(t, r, []string{"-E"}, "lease"); !slices.Equal(got, names) {
+	if got := grepFiles(t, r, []string{"-E", "-l"}, FoldPattern("lease")); !slices.Equal(got, names) {
 		t.Errorf("grep = %q", got)
 	}
-	if dep := grepPages(t, r, []string{"-F"}, "deprecated"); !slices.Equal(dep, names) {
+	if dep := grepFiles(t, r, []string{"-F", "-l"}, "deprecated"); !slices.Equal(dep, names) {
 		t.Errorf("grep deprecated = %q", dep)
 	}
 	// Absent paths with and without a newline and a directory are mixed with
@@ -527,7 +507,9 @@ func TestCommitAndConflict(t *testing.T) {
 	if err != nil || len(res.Commit) != 40 || len(res.SHAs["global/a.md"]) != 40 {
 		t.Fatalf("%+v %v", res, err)
 	}
-	r.Snapshot()
+	if err := r.Snapshot(); err != nil {
+		t.Fatal(err)
+	}
 	c, _, _ := r.CatSHA([]string{"global/a.md"})
 	if c["global/a.md"] == nil {
 		t.Fatal("not readable after commit")
@@ -550,14 +532,18 @@ func TestCommitAndConflict(t *testing.T) {
 	if _, err := r.Commit([]Change{{Path: "global/a.md", Content: []byte("---\nsummary: a3\n---\n"), Base: &cur}}, "retry", au); err != nil {
 		t.Fatal(err)
 	}
-	r.Snapshot()
+	if err := r.Snapshot(); err != nil {
+		t.Fatal(err)
+	}
 	if c, _, _ := r.CatSHA([]string{"global/other.md"}); c["global/other.md"] == nil {
 		t.Error("other.md must survive")
 	}
 	if _, err := r.Commit([]Change{{Path: "global/a.md", Delete: true}}, "rm", au); err != nil {
 		t.Fatal(err)
 	}
-	r.Snapshot()
+	if err := r.Snapshot(); err != nil {
+		t.Fatal(err)
+	}
 	if c, _, _ := r.CatSHA([]string{"global/a.md"}); c["global/a.md"] != nil {
 		t.Error("not deleted")
 	}
@@ -621,18 +607,15 @@ func TestGrepFoldsNonASCII(t *testing.T) {
 		"global/axb.md":    "---\nsummary: axb x\n---\n",
 	})
 	r := openFetched(t, remote)
-	for _, tc := range []struct {
-		words []string
-		want  string
-	}{
-		{[]string{"äpfel"}, "global/apfel.md"},
-		{[]string{"ÄPFEL"}, "global/apfel.md"},
-		{[]string{"273 k"}, "global/kelvin.md"},
-		{[]string{"οδος"}, "global/sigma.md"},
-		{[]string{"A.B", "[X]"}, "global/a.b.md"},
+	for _, tc := range []struct{ word, want string }{
+		{"äpfel", "global/apfel.md"},
+		{"ÄPFEL", "global/apfel.md"},
+		{"273 k", "global/kelvin.md"},
+		{"οδος", "global/sigma.md"},
+		{"A.B [X]", "global/a.b.md"},
 	} {
-		if got := grepPages(t, r, []string{"-E"}, tc.words...); len(got) != 1 || got[0] != tc.want {
-			t.Errorf("grep %q=%v; want [%s]", tc.words, got, tc.want)
+		if got := grepFiles(t, r, []string{"-E", "-l"}, FoldPattern(tc.word)); len(got) != 1 || got[0] != tc.want {
+			t.Errorf("grep %q=%v; want [%s]", tc.word, got, tc.want)
 		}
 	}
 }

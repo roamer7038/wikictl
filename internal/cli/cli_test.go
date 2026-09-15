@@ -249,6 +249,30 @@ func TestDeprecatedStatus(t *testing.T) {
 	check([]string{"tree", "-a"}, []string{"quoted.md", "y.md"}, nil)
 }
 
+// TestBinaryPage checks that a page with a NUL, which git grep -I takes as
+// binary, is still found when links -i and ls search for candidates, while
+// grep skips it.
+func TestBinaryPage(t *testing.T) {
+	cfg := setup(t)
+	for p, c := range map[string]string{
+		"global/bin.md": "---\nsummary: bin\n---\n# bin\n\x00 lease [index](index.md)\n",
+		"global/old.md": "---\nsummary: old\nstatus: deprecated\n---\n# old\n\x00\n",
+	} {
+		if code, _, errs := runCLI(t, cfg, c, "put", p); code != 0 {
+			t.Fatalf("put %s: code=%d %s", p, code, errs)
+		}
+	}
+	if _, out, _ := runCLI(t, cfg, "", "links", "-i", "global/index.md"); !strings.Contains(out, "global/bin.md") {
+		t.Errorf("links -i must list global/bin.md: %q", out)
+	}
+	if _, out, _ := runCLI(t, cfg, "", "ls", "global"); !strings.Contains(out, "bin.md") || strings.Contains(out, "old.md") {
+		t.Errorf("ls must list bin.md and hide old.md: %q", out)
+	}
+	if _, out, _ := runCLI(t, cfg, "", "grep", "-l", "lease"); strings.Contains(out, "bin.md") {
+		t.Errorf("grep must skip bin.md: %q", out)
+	}
+}
+
 func TestPutRm(t *testing.T) {
 	cfg := setup(t)
 	code, out, _ := runCLI(t, cfg, "---\nsummary: new page\n---\n# n\n", "put", "--json", "global/new.md")
