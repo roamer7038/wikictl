@@ -14,8 +14,6 @@ import (
 
 	"github.com/spf13/pflag"
 	"golang.org/x/term"
-
-	"github.com/roamer7038/wikictl/internal/page"
 )
 
 // isTerminal reports whether r is a terminal. Tests replace it.
@@ -41,11 +39,7 @@ func (a *app) checkEdit(c *command, args []string) error {
 // committed, the edited file is kept and its path printed.
 func (a *app) cmdEdit(c *command, args []string) error {
 	p := args[0]
-	check := page.CheckFilePath
-	if strings.HasSuffix(p, ".md") {
-		check = page.CheckPath
-	}
-	if err := check(p); err != nil {
+	if err := checkFilePath(p); err != nil {
 		return a.badPath(p, err)
 	}
 	var dirs []string
