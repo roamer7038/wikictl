@@ -218,7 +218,11 @@ func (r *Repo) GrepDeprecated() (map[string]bool, error) {
 // result.
 func (r *Repo) CatSHA(paths []string) (map[string][]byte, map[string]string, error) {
 	res, shas := map[string][]byte{}, map[string]string{}
-	ents, err := r.catFile(r.refPaths(paths), true)
+	names, err := r.refPaths(paths)
+	if err != nil {
+		return nil, nil, err
+	}
+	ents, err := r.catFile(names, true)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -243,7 +247,11 @@ type Object struct {
 // Paths that do not exist or are not files are absent from the result.
 func (r *Repo) Stat(paths []string) (map[string]Object, error) {
 	res := map[string]Object{}
-	ents, err := r.catFile(r.refPaths(paths), false)
+	names, err := r.refPaths(paths)
+	if err != nil {
+		return nil, err
+	}
+	ents, err := r.catFile(names, false)
 	if err != nil {
 		return nil, err
 	}
@@ -294,13 +302,40 @@ func (r *Repo) CatLimit(paths []string, max int64) (contents map[string][]byte, 
 	return contents, large, nil
 }
 
-// refPaths turns paths into object names at the commit that reads use.
-func (r *Repo) refPaths(paths []string) []string {
+// refPaths turns paths into object names at the commit that reads use, for
+// catFile. cat-file reads one name per line and drops a trailing carriage
+// return, so a path with a newline or a carriage return is looked up with
+// ls-tree instead and named by its blob sha, or by zeroSHA, which cat-file
+// reports missing, when it is not a blob. git is run only for such paths.
+func (r *Repo) refPaths(paths []string) ([]string, error) {
 	names := make([]string, len(paths))
+	var odd []string
 	for i, p := range paths {
 		names[i] = r.readRef() + ":" + p
+		if strings.ContainsAny(p, "\n\r") {
+			odd = append(odd, p)
+		}
 	}
-	return names
+	if len(odd) == 0 || r.pinned && r.snapshot == "" {
+		return names, nil
+	}
+	head, err := r.Head()
+	if err != nil || head == "" {
+		return names, err
+	}
+	ents, err := r.treeEntries(head, odd)
+	if err != nil {
+		return nil, err
+	}
+	for i, p := range paths {
+		if strings.ContainsAny(p, "\n\r") {
+			names[i] = zeroSHA
+			if e := ents[p]; e.Type == "blob" {
+				names[i] = e.SHA
+			}
+		}
+	}
+	return names, nil
 }
 
 // catEntry is the answer of cat-file for one object name. typ is empty when
@@ -315,11 +350,8 @@ type catEntry struct {
 // "cat-file --batch-check" when withContent is false, and returns one entry
 // per name. When Snapshot found no branch, every name is missing and git is
 // not run, so that a branch fetched since then is not read.
-//
-// The names are given one per line, or ending with NUL (-z, git 2.38 or
-// later) when one of them contains a newline. The output is the same either
-// way: a header line per name, "<name> missing" when the object does not
-// exist, where the name may contain a newline.
+// The names are given one per line, so none may contain a newline or a
+// carriage return; see refPaths.
 func (r *Repo) catFile(names []string, withContent bool) ([]catEntry, error) {
 	res := make([]catEntry, len(names))
 	if len(names) == 0 || r.pinned && r.snapshot == "" {
@@ -329,35 +361,23 @@ func (r *Repo) catFile(names []string, withContent bool) ([]catEntry, error) {
 	if withContent {
 		args[1] = "--batch"
 	}
-	sep := "\n"
-	if slices.ContainsFunc(names, func(n string) bool { return strings.Contains(n, "\n") }) {
-		args, sep = append(args, "-z"), "\x00"
-	}
 	var in bytes.Buffer
 	for _, n := range names {
-		in.WriteString(n + sep)
+		in.WriteString(n + "\n")
 	}
 	out, err := r.GitIn(in.Bytes(), args...)
 	if err != nil {
 		return nil, err
 	}
-	size := 0
-	for _, n := range names {
-		size = max(size, len(n+" missing\n"))
-	}
-	rd := bufio.NewReaderSize(strings.NewReader(out), size)
-	for i, name := range names {
-		if b, _ := rd.Peek(len(name) + len(" missing\n")); string(b) == name+" missing\n" {
-			rd.Discard(len(b))
-			continue
-		}
+	rd := bufio.NewReader(strings.NewReader(out))
+	for i := range names {
 		hdr, err := rd.ReadString('\n')
 		if err != nil {
 			break
 		}
 		f := strings.Fields(hdr)
 		if len(f) < 3 {
-			continue
+			continue // "<object> missing"
 		}
 		n, _ := strconv.ParseInt(f[2], 10, 64)
 		e := catEntry{Object: Object{SHA: f[0], Size: n}, typ: f[1]}

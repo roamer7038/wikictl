@@ -433,7 +433,7 @@ func TestReadQuotedNames(t *testing.T) {
 		t.Skip("the file system does not allow these names")
 	}
 	remote := newRemote(t, true)
-	names := []string{"global/a\nb.md", "global/c\x01.md", "global/q\"\\.md"}
+	names := []string{"global/a\nb.md", "global/c\x01.md", "global/q\"\\.md", "global/r\r.md"}
 	files := map[string]string{}
 	for _, n := range names {
 		files[n] = "---\nsummary: s\nstatus: deprecated\n---\nlease\n" + n + "\n"
@@ -441,20 +441,24 @@ func TestReadQuotedNames(t *testing.T) {
 	seedRemote(t, remote, files)
 	r := openFetched(t, remote)
 	list, err := r.List()
-	if want := []string{names[0], names[1], "global/index.md", names[2]}; err != nil || !slices.Equal(list, want) {
+	if want := []string{names[0], names[1], "global/index.md", names[2], names[3]}; err != nil || !slices.Equal(list, want) {
 		t.Errorf("List = %q, %v", list, err)
 	}
 	if got, err := r.Grep([]string{"lease"}); err != nil || !slices.Equal(got, names) {
 		t.Errorf("Grep = %q, %v", got, err)
 	}
 	dep, err := r.GrepDeprecated()
-	if err != nil || len(dep) != 3 || !dep[names[0]] || !dep[names[1]] || !dep[names[2]] {
+	if err != nil || len(dep) != len(names) || !dep[names[0]] || !dep[names[1]] || !dep[names[2]] || !dep[names[3]] {
 		t.Errorf("GrepDeprecated = %v, %v", dep, err)
 	}
-	paths := append([]string{"global/no\nne.md", "global/a"}, names...)
+	// Absent paths with and without a newline and a directory are mixed with
+	// the pages. git before 2.38 has no cat-file -z, so it must not be used.
+	paths := append([]string{"global/no\nne.md", "global/a", "global", "global\n"}, names...)
 	paths = append(paths, "global/index.md")
+	trace := filepath.Join(t.TempDir(), "trace")
+	t.Setenv("GIT_TRACE", trace)
 	c, shas, err := r.CatSHA(paths)
-	if err != nil || len(c) != 4 || len(shas) != 4 {
+	if err != nil || len(c) != 5 || len(shas) != 5 {
 		t.Fatalf("CatSHA = %q, %q, %v", c, shas, err)
 	}
 	for _, n := range names {
@@ -463,13 +467,25 @@ func TestReadQuotedNames(t *testing.T) {
 		}
 	}
 	objs, err := r.Stat(paths)
-	if err != nil || len(objs) != 4 {
+	if err != nil || len(objs) != 5 {
 		t.Fatalf("Stat = %v, %v", objs, err)
 	}
 	for _, n := range names {
 		if objs[n].SHA != shas[n] || objs[n].Size != int64(len(files[n])) {
 			t.Errorf("Stat[%q] = %v", n, objs[n])
 		}
+	}
+	out, _ := os.ReadFile(trace)
+	for l := range strings.Lines(string(out)) {
+		if strings.Contains(l, " cat-file ") && strings.Contains(l, " -z") {
+			t.Errorf("cat-file must not use -z: %s", l)
+		}
+	}
+	if n := strings.Count(string(out), " ls-tree -z "); n != 2 {
+		t.Errorf("%d ls-tree calls, want 2\n%s", n, out)
+	}
+	if err := r.CheckMissing([]string{"global/no\nne.md", "global\n"}); err != nil {
+		t.Error(err)
 	}
 }
 
