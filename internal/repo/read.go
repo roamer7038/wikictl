@@ -41,13 +41,13 @@ func pathspec(dirs []string) []string {
 	return out
 }
 
-// stripRef removes the "<ref>:" prefix that ls-tree and grep print, and drops non-pages.
-func stripRef(r *Repo, lines string) []string {
+// stripRef takes the output of "git grep -l -z", removes the "<ref>:" prefix
+// of each path, and drops non-pages.
+func stripRef(r *Repo, out string) []string {
 	var res []string
 	prefix := r.readRef() + ":"
-	for _, l := range strings.Split(strings.TrimSpace(lines), "\n") {
-		p := strings.TrimPrefix(l, prefix)
-		if p != "" && IsPagePath(p) {
+	for rec := range strings.SplitSeq(out, "\x00") {
+		if p := strings.TrimPrefix(rec, prefix); IsPagePath(p) {
 			res = append(res, p)
 		}
 	}
@@ -56,15 +56,8 @@ func stripRef(r *Repo, lines string) []string {
 
 // List returns the paths of all pages.
 func (r *Repo) List() ([]string, error) {
-	head, err := r.Head()
-	if err != nil || head == "" {
-		return nil, err
-	}
-	out, err := r.Git("ls-tree", "-r", "--name-only", r.readRef())
-	if err != nil {
-		return nil, err
-	}
-	return stripRef(r, out), nil
+	files, err := r.Files(nil)
+	return slices.DeleteFunc(files, func(p string) bool { return !IsPagePath(p) }), err
 }
 
 // Entry is a file of the tree: its path, mode, object type and object sha.
@@ -132,7 +125,7 @@ func (r *Repo) Grep(words []string) ([]string, error) {
 	if err != nil || head == "" || len(words) == 0 {
 		return nil, err
 	}
-	args := []string{"grep", "-E", "-l", "--all-match"}
+	args := []string{"grep", "-E", "-l", "-z", "--all-match"}
 	for _, w := range words {
 		args = append(args, "-e", FoldPattern(w))
 	}
@@ -206,7 +199,7 @@ func (r *Repo) GrepDeprecated() (map[string]bool, error) {
 	if head == "" {
 		return res, nil
 	}
-	out, err := r.gitStrict("grep", "-l", "-F", "-e", "deprecated", r.readRef())
+	out, err := r.gitStrict("grep", "-l", "-z", "-F", "-e", "deprecated", r.readRef())
 	if noResult(err) {
 		return res, nil
 	}
@@ -225,7 +218,11 @@ func (r *Repo) GrepDeprecated() (map[string]bool, error) {
 // result.
 func (r *Repo) CatSHA(paths []string) (map[string][]byte, map[string]string, error) {
 	res, shas := map[string][]byte{}, map[string]string{}
-	ents, err := r.catFile(r.refPaths(paths), true)
+	names, err := r.refPaths(paths)
+	if err != nil {
+		return nil, nil, err
+	}
+	ents, err := r.catFile(names, true)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -250,7 +247,11 @@ type Object struct {
 // Paths that do not exist or are not files are absent from the result.
 func (r *Repo) Stat(paths []string) (map[string]Object, error) {
 	res := map[string]Object{}
-	ents, err := r.catFile(r.refPaths(paths), false)
+	names, err := r.refPaths(paths)
+	if err != nil {
+		return nil, err
+	}
+	ents, err := r.catFile(names, false)
 	if err != nil {
 		return nil, err
 	}
@@ -301,13 +302,40 @@ func (r *Repo) CatLimit(paths []string, max int64) (contents map[string][]byte, 
 	return contents, large, nil
 }
 
-// refPaths turns paths into object names at the commit that reads use.
-func (r *Repo) refPaths(paths []string) []string {
+// refPaths turns paths into object names at the commit that reads use, for
+// catFile. cat-file reads one name per line and drops a trailing carriage
+// return, so a path with a newline or a carriage return is looked up with
+// ls-tree instead and named by its blob sha, or by zeroSHA, which cat-file
+// reports missing, when it is not a blob. git is run only for such paths.
+func (r *Repo) refPaths(paths []string) ([]string, error) {
 	names := make([]string, len(paths))
+	var odd []string
 	for i, p := range paths {
 		names[i] = r.readRef() + ":" + p
+		if strings.ContainsAny(p, "\n\r") {
+			odd = append(odd, p)
+		}
 	}
-	return names
+	if len(odd) == 0 || r.pinned && r.snapshot == "" {
+		return names, nil
+	}
+	head, err := r.Head()
+	if err != nil || head == "" {
+		return names, err
+	}
+	ents, err := r.treeEntries(head, odd)
+	if err != nil {
+		return nil, err
+	}
+	for i, p := range paths {
+		if strings.ContainsAny(p, "\n\r") {
+			names[i] = zeroSHA
+			if e := ents[p]; e.Type == "blob" {
+				names[i] = e.SHA
+			}
+		}
+	}
+	return names, nil
 }
 
 // catEntry is the answer of cat-file for one object name. typ is empty when
@@ -322,20 +350,22 @@ type catEntry struct {
 // "cat-file --batch-check" when withContent is false, and returns one entry
 // per name. When Snapshot found no branch, every name is missing and git is
 // not run, so that a branch fetched since then is not read.
+// The names are given one per line, so none may contain a newline or a
+// carriage return; see refPaths.
 func (r *Repo) catFile(names []string, withContent bool) ([]catEntry, error) {
 	res := make([]catEntry, len(names))
 	if len(names) == 0 || r.pinned && r.snapshot == "" {
 		return res, nil
 	}
-	mode := "--batch-check"
+	args := []string{"cat-file", "--batch-check"}
 	if withContent {
-		mode = "--batch"
+		args[1] = "--batch"
 	}
 	var in bytes.Buffer
 	for _, n := range names {
 		in.WriteString(n + "\n")
 	}
-	out, err := r.GitIn(in.Bytes(), "cat-file", mode)
+	out, err := r.GitIn(in.Bytes(), args...)
 	if err != nil {
 		return nil, err
 	}
