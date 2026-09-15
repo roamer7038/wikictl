@@ -164,15 +164,20 @@ func TestBodyLinkSyntax(t *testing.T) {
 
 // TestFindLinksLinearTime checks that pathological pages are read in time
 // proportional to their size, at a cost per byte close to that of prose in
-// long lines. Doubling the size of a page must not multiply the time by more
-// than 3.5, and a page must not take more than eight times as long as the prose
-// of the same size. Both are ratios of times measured in the same run, so they
-// do not depend on the speed of the machine or on the race detector. A
-// quadratic scan makes the first ratio about 4, and matching regular
+// long lines. Making a page four times as large must not multiply the time by
+// more than 10, and a page must not take more than eight times as long as the
+// prose of the same size. Both are ratios of times measured in the same run, so
+// they do not depend on the speed of the machine or on the race detector. A
+// quadratic scan makes the first ratio about 16, and matching regular
 // expressions on every line makes the second one over 13 for pages of short
 // lines.
+//
+// The times are processor times of this process, so the tests of other
+// packages running at the same time do not count. Each time is the minimum of
+// three rounds, and the rounds measure every page in turn, so that a burst of
+// other work in the process does not affect all the rounds of one page.
 func TestFindLinksLinearTime(t *testing.T) {
-	const small, large = 1 << 16, 1 << 17
+	const small, large = 1 << 15, 1 << 17
 	fill := func(unit string) func(int) string {
 		return func(size int) string { return strings.Repeat(unit, size/len(unit)) }
 	}
@@ -198,32 +203,43 @@ func TestFindLinksLinearTime(t *testing.T) {
 		"lines of headings":   fill("# [\n"),
 		"lines of fences":     fill("```\n"),
 	}
-	// measure returns the time to read s once: the minimum over three rounds of
-	// the average over enough reads to take at least 20 ms.
-	measure := func(s string) time.Duration {
-		b := []byte(s)
-		best := time.Duration(math.MaxInt64)
-		for range 3 {
-			n, start := 0, time.Now()
-			for n == 0 || time.Since(start) < 20*time.Millisecond {
-				bodyLinks(scanLines(b, 1), "d/p.md")
-				Relocate(b, "d/p.md", "e/p.md", nil)
-				n++
-			}
-			best = min(best, time.Since(start)/time.Duration(n))
+	// once returns the processor time to read b once: the average over enough
+	// reads to take at least 20 ms.
+	once := func(b []byte) time.Duration {
+		n, start := 0, cpuTime()
+		for n == 0 || cpuTime()-start < 20*time.Millisecond {
+			bodyLinks(scanLines(b, 1), "d/p.md")
+			Relocate(b, "d/p.md", "e/p.md", nil)
+			n++
 		}
-		return best
+		return (cpuTime() - start) / time.Duration(n)
 	}
-	prose := measure(fill(strings.Repeat("See [a](x.md) and `code` in this line of text. ", 21) + "\n")(large))
+	type sample struct {
+		name         string
+		small, large []byte
+		ts, tl       time.Duration
+	}
+	var samples []*sample
 	for name, page := range pages {
-		ts, tl := measure(page(small)), measure(page(large))
-		doubling, perProse := float64(tl)/float64(ts), float64(tl)/float64(prose)
-		t.Logf("%-24s %v, %v: %.2f times on doubling, %.2f times prose", name, ts, tl, doubling, perProse)
-		if doubling > 3.5 {
-			t.Errorf("%s: %v for %d bytes and %v for %d bytes (%.1f times)", name, ts, small, tl, large, doubling)
+		samples = append(samples, &sample{name: name, small: []byte(page(small)), large: []byte(page(large)), ts: math.MaxInt64, tl: math.MaxInt64})
+	}
+	prose := []byte(fill(strings.Repeat("See [a](x.md) and `code` in this line of text. ", 21) + "\n")(large))
+	tp := time.Duration(math.MaxInt64)
+	for range 3 {
+		tp = min(tp, once(prose))
+		for _, s := range samples {
+			s.ts = min(s.ts, once(s.small))
+			s.tl = min(s.tl, once(s.large))
+		}
+	}
+	for _, s := range samples {
+		growth, perProse := float64(s.tl)/float64(s.ts), float64(s.tl)/float64(tp)
+		t.Logf("%-24s %v, %v: %.2f times for 4 times the size, %.2f times prose", s.name, s.ts, s.tl, growth, perProse)
+		if growth > 10 {
+			t.Errorf("%s: %v for %d bytes and %v for %d bytes (%.1f times)", s.name, s.ts, small, s.tl, large, growth)
 		}
 		if perProse > 8 {
-			t.Errorf("%s: %v for %d bytes, %.1f times prose of the same size (%v)", name, tl, large, perProse, prose)
+			t.Errorf("%s: %v for %d bytes, %.1f times prose of the same size (%v)", s.name, s.tl, large, perProse, tp)
 		}
 	}
 }
