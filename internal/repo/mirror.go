@@ -137,18 +137,33 @@ func (r *Repo) create() error {
 
 func (r *Repo) trackingRef() string { return "refs/remotes/origin/" + r.Branch }
 
+// fetchAttempts is the number of times Fetch runs git fetch when the update
+// of the tracking ref loses a race with another fetch.
+const fetchAttempts = 10
+
 // Fetch updates the tracking ref of the branch with an explicit refspec.
 // A remote that does not have the branch yet (an empty repository) is not an error.
+// git fetch updates the ref only if it still holds the value read when the
+// fetch started, so a fetch that another process's fetch overtakes fails with
+// "cannot lock ref"; that fetch is run again. The lock of the mirror is not
+// used, so that a read does not wait for a write that is pushing.
 func (r *Repo) Fetch() error {
-	_, err := r.Git("fetch", "-q", "origin", "+refs/heads/"+r.Branch+":"+r.trackingRef())
-	if err != nil {
+	for attempt := 1; ; attempt++ {
+		_, err := r.Git("fetch", "-q", "origin", "+refs/heads/"+r.Branch+":"+r.trackingRef())
 		var ge *GitError
-		if errors.As(err, &ge) && strings.Contains(ge.Stderr, "couldn't find remote ref") {
+		switch {
+		case err == nil:
 			return nil
+		case !errors.As(err, &ge):
+			return err
+		case strings.Contains(ge.Stderr, "couldn't find remote ref"):
+			return nil
+		case strings.Contains(ge.Stderr, "cannot lock ref") && attempt < fetchAttempts:
+			continue
+		default:
+			return err
 		}
-		return err
 	}
-	return nil
 }
 
 // Snapshot fixes the commit that the reads of r use to the current commit of

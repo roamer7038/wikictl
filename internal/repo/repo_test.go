@@ -169,6 +169,60 @@ func TestOpenConcurrent(t *testing.T) {
 	}
 }
 
+// TestFetchConcurrent fetches the same mirror from several goroutines while
+// another clone keeps pushing, so that the fetches update the tracking ref
+// from different old values at the same time.
+func TestFetchConcurrent(t *testing.T) {
+	remote := newRemote(t, true)
+	mirror := openFetched(t, remote).Dir
+	work := filepath.Join(t.TempDir(), "w")
+	run(t, "", "git", "clone", "-q", remote, work)
+	done := make(chan struct{})
+	pushed := make(chan struct{})
+	go func() {
+		defer close(pushed)
+		for {
+			select {
+			case <-done:
+				return
+			default:
+			}
+			c := exec.Command("sh", "-c", "git -c user.name=t -c user.email=t@t commit -q --allow-empty -m c && git push -q origin HEAD:main")
+			c.Dir = work
+			if out, err := c.CombinedOutput(); err != nil {
+				t.Errorf("push: %v\n%s", err, out)
+				return
+			}
+		}
+	}()
+	const n, fetches = 8, 20
+	errs := make(chan error, n*fetches)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			r, err := Open(mirror, remote, "")
+			if err != nil {
+				errs <- err
+				return
+			}
+			for j := 0; j < fetches; j++ {
+				errs <- r.Fetch()
+			}
+		}()
+	}
+	wg.Wait()
+	close(done)
+	<-pushed
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestOpenLeftoverDir(t *testing.T) {
 	remote := newRemote(t, true)
 	empty := filepath.Join(t.TempDir(), "m")
