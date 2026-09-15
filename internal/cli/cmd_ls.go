@@ -182,7 +182,7 @@ func (a *app) cmdLs(c *command, args []string) error {
 			writeLs(w, rows, a.long)
 		}
 	})
-	return a.reportMissing(missing)
+	return a.reportMissing(missing, nil)
 }
 
 // lsDetails fills in the attributes of the items that the output needs and
@@ -346,13 +346,12 @@ func (a *app) cmdTree(c *command, args []string) error {
 	}
 	b.WriteString("\n")
 	a.emit(map[string]any{"items": items, "directories": dirs, "files": files}, func(w io.Writer) { io.WriteString(w, b.String()) })
-	for _, p := range bad {
-		fmt.Fprintf(a.stderr, "wikictl: %s: not a directory\n", escapeControl(p))
-	}
-	if len(bad) > 0 {
-		return exitStatus(ExitError)
-	}
-	return nil
+	return a.reportMissing(bad, func(p string) string {
+		if t.isFile(p) {
+			return "not a directory"
+		}
+		return noSuchFile
+	})
 }
 
 // count returns n followed by one or many.

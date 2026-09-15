@@ -171,7 +171,7 @@ func mirrorObject(t *testing.T, mirror, path string) string {
 // on stderr while grep may still exit with 0, cat-file --batch reports it as
 // "missing" like an absent page, and "rev-parse <commit>:<path>" exits with 1
 // like an absent path. Every command must exit with 5 instead of printing a
-// partial result, "page not found" or a conflict.
+// partial result, "no such file or directory" or a conflict.
 func TestUnreadableObject(t *testing.T) {
 	newPage := "---\nsummary: new\n---\n# New\n"
 	cases := []struct {

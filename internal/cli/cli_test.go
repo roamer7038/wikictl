@@ -145,7 +145,7 @@ func TestReadCommands(t *testing.T) {
 		t.Errorf("links -o of index.md: %q", out)
 	}
 	code, out, errs = runCLI(t, cfg, "", "cat", "global/none.md", "global/index.md", "global")
-	if code != 1 || out != "---\nsummary: entry point\n---\n# global\n" || errs != "wikictl: global/none.md: no such file\nwikictl: global: no such file\n" {
+	if code != 1 || out != "---\nsummary: entry point\n---\n# global\n" || errs != "wikictl: global/none.md: no such file or directory\nwikictl: global: is a directory\n" {
 		t.Errorf("cat with missing paths: code=%d out=%q errs=%q", code, out, errs)
 	}
 	if _, out, _ = runCLI(t, cfg, "", "ls"); out != "global/\nmachines/\nprojects/\n" {
@@ -191,7 +191,7 @@ func TestReadCommands(t *testing.T) {
 	if code, out, _ = runCLI(t, cfg, "", "context", "--json"); code != 0 {
 		t.Errorf("context: %s", out)
 	}
-	if code, _, errs = runCLI(t, cfg, "", "ls", "global/none", "global"); code != 1 || errs != "wikictl: global/none: no such file\n" {
+	if code, _, errs = runCLI(t, cfg, "", "ls", "global/none", "global"); code != 1 || errs != "wikictl: global/none: no such file or directory\n" {
 		t.Errorf("ls of a missing path: code=%d errs=%q", code, errs)
 	}
 	// Global flags may follow the command; "--" ends flag parsing.
@@ -540,8 +540,9 @@ func TestLintDirs(t *testing.T) {
 			t.Errorf("lint %v: code=%d out=%q", c.args, code, out)
 		}
 	}
-	if _, _, errs := runCLI(t, cfg, "", "lint", "global", "global/none"); errs != "wikictl: page not found: global/none\n" {
-		t.Errorf("lint of a missing path: errs=%q", errs)
+	if code, out, errs := runCLI(t, cfg, "", "lint", "global", "global/none"); code != ExitError ||
+		out != "global/sub/a.md:1: missing_summary: frontmatter is missing\n" || errs != "wikictl: global/none: no such file or directory\n" {
+		t.Errorf("lint of a missing path: code=%d out=%q errs=%q", code, out, errs)
 	}
 }
 
@@ -884,11 +885,50 @@ func TestTree(t *testing.T) {
 		t.Errorf("tree --json: code=%d %s", code, out)
 	}
 	if code, out, errs := runCLI(t, cfg, "", "tree", "global/index.md", "none"); code != 1 || out != "\n0 directories, 0 files\n" ||
-		errs != "wikictl: global/index.md: not a directory\nwikictl: none: not a directory\n" {
+		errs != "wikictl: global/index.md: not a directory\nwikictl: none: no such file or directory\n" {
 		t.Errorf("tree of paths that are not directories: code=%d out=%q errs=%q", code, out, errs)
 	}
 	if code, _, errs := runCLI(t, cfg, "", "tree", "-L", "0"); code != ExitUsage || !strings.Contains(errs, "must be at least 1") {
 		t.Errorf("tree -L 0: code=%d errs=%q", code, errs)
+	}
+}
+
+// TestMissingPaths checks that every command reports a path that does not
+// exist, or is of the wrong kind, with the same wording on standard error, and
+// prints its result JSON with --json.
+func TestMissingPaths(t *testing.T) {
+	cfg := setup(t)
+	for _, c := range []struct {
+		args []string
+		code int
+		errs string
+		json string
+	}{
+		{[]string{"cat", "none"}, ExitError, "none: no such file or directory", `{"items":[]}`},
+		{[]string{"cat", "global"}, ExitError, "global: is a directory", `{"items":[]}`},
+		{[]string{"stat", "none"}, ExitError, "none: no such file or directory", `{"items":[]}`},
+		{[]string{"stat", "global"}, ExitError, "global: is a directory", `{"items":[]}`},
+		{[]string{"links", "none"}, ExitError, "none: no such file or directory", `{"items":[]}`},
+		{[]string{"links", "global"}, ExitError, "global: is a directory", `{"items":[]}`},
+		{[]string{"ls", "none"}, ExitError, "none: no such file or directory", `{"items":[]}`},
+		{[]string{"find", "none"}, ExitError, "none: no such file or directory", `{"items":[]}`},
+		{[]string{"tree", "none"}, ExitError, "none: no such file or directory", `{"directories":0,"files":0,"items":[]}`},
+		{[]string{"tree", "global/index.md"}, ExitError, "global/index.md: not a directory", `{"directories":0,"files":0,"items":[]}`},
+		{[]string{"lint", "none"}, ExitError, "none: no such file or directory", `{"items":[]}`},
+		{[]string{"rm", "global/none.md"}, ExitError, "global/none.md: no such file or directory", `{"commit":"","paths":[]}`},
+		{[]string{"mv", "global/none.md", "global/new.md"}, ExitError, "global/none.md: no such file or directory", `{"commit":"","moved":[],"rewritten":0}`},
+		{[]string{"grep", "lease", "none"}, ExitUsage, "none: no such file or directory", `{"items":[]}`},
+	} {
+		for _, js := range []bool{false, true} {
+			args := c.args
+			if js {
+				args = append([]string{"--json"}, args...)
+			}
+			code, out, errs := runCLI(t, cfg, "", args...)
+			if code != c.code || errs != "wikictl: "+c.errs+"\n" || (js && out != c.json+"\n") {
+				t.Errorf("%v: code=%d out=%q errs=%q", args, code, out, errs)
+			}
+		}
 	}
 }
 

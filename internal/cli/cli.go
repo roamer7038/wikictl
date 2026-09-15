@@ -60,9 +60,10 @@ items[] {path, count}; with -q, nothing.`,
 		flags: grepFlags, check: (*app).checkGrep, run: (*app).cmdGrep},
 	{name: "cat", args: "<path>...", minArgs: 1, maxArgs: -1, paths: true,
 		summary: "Print files as stored",
-		detail: `Print each file as stored in the wiki, in the order given. A path that is not
-a file is reported on standard error, also with --json, the other files are
-still printed, and the command exits with code 1. The sha in the JSON output
+		detail: `Print each file as stored in the wiki, in the order given. A path that does
+not exist ("no such file or directory") or is a directory ("is a directory") is
+reported on standard error, also with --json, the other files are still
+printed, and the command exits with code 1. The sha in the JSON output
 is the one to pass to "put --base" when updating the page.
 
 Output: items[] {path, sha, content}.`,
@@ -72,7 +73,7 @@ Output: items[] {path, sha, content}.`,
 		detail: `Show, for each file, its blob sha, the time of the last commit that changed
 it, and the attributes read from the page: title (the first heading, else the
 file name), summary (or description), type, tags, status and aliases. A path
-that is not a file is reported as cat reports it. Control characters other
+that does not exist or is a directory is reported as cat reports it. Control characters other
 than tab are shown as \xNN in text output.
 
 Output: items[] {path, sha, updated, title, summary, type, tags, status, aliases}.`,
@@ -84,8 +85,10 @@ Direction "out" is a link in the page: a typed link from its Links section, or
 "mentions" for a link in its body to a page that the Links section does not
 link to. Direction "in" is a link to the page from another page: that page's
 typed link, or "mentions". With -o only the links in the page are listed,
-with -i only the links to it. Control characters other than tab in a target
-are shown as \xNN in text output.
+with -i only the links to it. A path that does not exist or is a directory is
+reported as cat reports it, also with --json, where items is empty, and the
+command exits with code 1. Control characters other than tab in a target are
+shown as \xNN in text output.
 
 Output: items[] {direction, type, target, note}.`,
 		flags: linksFlags, run: (*app).cmdLinks},
@@ -257,6 +260,9 @@ each deleted file.`,
 broken_link, page_too_large and the file name rules. Each path is a page or a
 directory; for a directory every page under it is checked. Without arguments
 every page of the wiki is checked. Exits with code 4 when violations are found.
+A path that does not exist ("no such file or directory") is reported on
+standard error, also with --json, the other paths are still checked, and the
+command exits with code 1.
 Each finding is printed as "<path>:<line>: <code>: <message>"; line 0 means the
 whole file.
 
@@ -312,9 +318,9 @@ Output: items[] {path, line, code, message}.`,
 		detail: `Show the files and directories under each directory as a tree, or under the
 root of the wiki without arguments, followed by the number of directories and
 files. Names starting with a dot and pages whose frontmatter has status:
-deprecated are hidden unless -a is given. A path that is not a directory is
-reported on standard error, also with --json, and the command exits with code
-1. Control characters other than tab are shown as \xNN in text output.
+deprecated are hidden unless -a is given. A path that does not exist ("no such
+file or directory") or is a file ("not a directory") is reported on standard
+error, also with --json, and the command exits with code 1. Control characters other than tab are shown as \xNN in text output.
 
 Output: {items[] {path, kind}, directories, files}; kind is "file" or "dir".`,
 		flags: treeFlags, run: (*app).cmdTree},
