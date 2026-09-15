@@ -84,10 +84,16 @@ func PathIssues(p string) []Issue {
 	}
 	for _, x := range strings.Split(strings.TrimSuffix(p, ".md"), "/") {
 		if !Recommended(x) {
-			return []Issue{{Path: p, Code: "name_style", Message: fmt.Sprintf("name %q: lowercase ASCII letters, digits and hyphens are recommended", x)}}
+			return []Issue{NameStyle(p, x)}
 		}
 	}
 	return nil
+}
+
+// NameStyle returns the name_style issue of p for its component name, which
+// is not Recommended.
+func NameStyle(p, name string) Issue {
+	return Issue{Path: p, Code: "name_style", Message: fmt.Sprintf("name %q: lowercase ASCII letters, digits and hyphens are recommended", name)}
 }
 
 // CaseCollisions reports, as case_collision issues, every path in paths

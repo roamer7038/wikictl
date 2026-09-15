@@ -17,7 +17,7 @@ import (
 // are. The content is returned unchanged when the alias is already present,
 // when there is no frontmatter, or when the frontmatter is not a mapping whose
 // aliases value is a sequence, null, or absent. Frontmatter over the limits
-// of ParseFrontmatter is also left unchanged. The result keeps the line ending
+// of parseFrontmatter is also left unchanged. The result keeps the line ending
 // and the BOM of content, as described for Relocate.
 func AddAlias(content []byte, alias string) []byte {
 	f, lf := splitFormat(content)
@@ -65,7 +65,7 @@ func (f lineFormat) apply(content []byte) []byte {
 
 // addAlias is AddAlias for content with LF line endings and no BOM.
 func addAlias(content []byte, alias string) []byte {
-	fm, rest, _, ok := SplitFrontmatter(content)
+	fm, rest, _, ok := splitFrontmatter(content)
 	if !ok || checkFrontmatter(fm) != nil {
 		return content
 	}
@@ -81,7 +81,7 @@ func addAlias(content []byte, alias string) []byte {
 	if len(fm) == 0 {
 		lines = nil
 	}
-	entry := yamlString(alias)
+	entry := yamlScalar(alias, "- ", "")
 	var key, value ast.Node
 	switch b := body.(type) {
 	case nil:
@@ -244,12 +244,6 @@ func insertLine(lines []string, at int, line string) []string {
 	return append(lines[:at], append([]string{line}, lines[at:]...)...)
 }
 
-// yamlString returns s as an item of a block sequence that decodes to the
-// string s: s itself when it already does, otherwise s in double quotes.
-func yamlString(s string) string {
-	return yamlScalar(s, "- ", "")
-}
-
 // yamlFlowString returns s as an item of a flow sequence that decodes to the
 // string s: s itself when it already does, otherwise s in double quotes. A
 // plain scalar in a flow collection must not contain flow indicators, so s is
@@ -261,6 +255,9 @@ func yamlFlowString(s string) string {
 	return yamlScalar(s, "[", "]")
 }
 
+// yamlScalar returns s as the item of a sequence written as prefix+s+suffix
+// that decodes to the string s: s itself when it already does, otherwise s in
+// double quotes.
 func yamlScalar(s, prefix, suffix string) string {
 	var v []any
 	if err := yaml.Unmarshal([]byte(prefix+s+suffix), &v); err == nil && len(v) == 1 && v[0] == s {
@@ -269,8 +266,8 @@ func yamlScalar(s, prefix, suffix string) string {
 	return strconv.Quote(s)
 }
 
-// RelDest returns the relative link destination from fromPage to toPath.
-func RelDest(fromPage, toPath string) string {
+// relDest returns the relative link destination from fromPage to toPath.
+func relDest(fromPage, toPath string) string {
 	from := strings.Split(path.Dir(fromPage), "/")
 	to := strings.Split(toPath, "/")
 	i := 0
@@ -281,7 +278,7 @@ func RelDest(fromPage, toPath string) string {
 }
 
 // Relocate rewrites the relative links of a page written at fromPage so that
-// they are correct when the page lives at toPage. When mapper maps a link
+// they are correct when the page lives at toPage. When mapping maps a link
 // target to a new path, the link points to that path instead. Only links whose
 // path no longer points to their target at toPage are changed, and only their
 // path is replaced: a leading "./", angle brackets, a query, a fragment and a
@@ -291,29 +288,22 @@ func RelDest(fromPage, toPath string) string {
 // The result keeps a leading BOM of content, and uses the line ending of the
 // first line of content (CRLF or LF) for every line, including the frontmatter
 // and its delimiter lines.
-func Relocate(content []byte, fromPage, toPage string, mapper func(target string) (string, bool)) ([]byte, int) {
+func Relocate(content []byte, fromPage, toPage string, mapping map[string]string) ([]byte, int) {
 	f, lf := splitFormat(content)
-	out, n := relocate(lf, fromPage, toPage, mapper)
-	return f.apply(out), n
-}
-
-// relocate is Relocate for content with LF line endings and no BOM.
-func relocate(content []byte, fromPage, toPage string, mapper func(target string) (string, bool)) ([]byte, int) {
-	return rewrite(content, fromPage, func(p, target string) (string, bool) {
-		if mapper != nil {
-			if nt, ok := mapper(target); ok {
-				target = nt
-			}
+	out, n := rewrite(lf, fromPage, func(p, target string) (string, bool) {
+		if nt, ok := mapping[target]; ok {
+			target = nt
 		}
 		if path.Join(path.Dir(toPage), p) == target {
 			return "", false
 		}
-		np := RelDest(toPage, target)
+		np := relDest(toPage, target)
 		if strings.HasPrefix(p, "./") && !strings.HasPrefix(np, "../") {
 			np = "./" + np
 		}
 		return np, true
 	})
+	return f.apply(out), n
 }
 
 // rewriteLinks applies fn to every page link of text outside code spans and
@@ -324,8 +314,8 @@ func rewriteLinks(text, pagePath string, fn func(p, target string) (string, bool
 	last := 0
 	for _, m := range findLinks(text) {
 		dest := text[m.destStart:m.destEnd]
-		target, isURL, err := ResolveDest(pagePath, dest)
-		if err != nil || isURL {
+		target, isURL, ok := resolveDest(pagePath, dest)
+		if !ok || isURL {
 			continue
 		}
 		p := destPath(dest)
@@ -349,8 +339,9 @@ func rewriteLinks(text, pagePath string, fn func(p, target string) (string, bool
 // receives the path of the destination as written and the resolved target, and
 // returns the new path; the rest of the destination is kept.
 func rewrite(content []byte, pagePath string, fn func(p, target string) (string, bool)) ([]byte, int) {
-	fm, rest, n, ok := SplitFrontmatter(content)
-	lines := ScanLines(rest, n+1)
+	fm, rest, n, ok := splitFrontmatter(content)
+	lines := scanLines(rest, n+1)
+	linksStart, _, _ := headings(lines)
 	changed := 0
 	var b bytes.Buffer
 	if ok {
@@ -359,7 +350,7 @@ func rewrite(content []byte, pagePath string, fn func(p, target string) (string,
 		b.WriteString("---\n")
 	}
 	last := 0
-	eachParagraph(lines, LinksStart(lines), func(from, to int, text string, _ []int) {
+	eachParagraph(lines, linksStart, func(from, to int, text string, _ []int) {
 		for _, l := range lines[last:from] {
 			b.WriteString(l.Text)
 			b.WriteByte('\n')
