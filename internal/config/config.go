@@ -14,6 +14,8 @@ import (
 	"strings"
 
 	"github.com/goccy/go-yaml"
+	"github.com/goccy/go-yaml/ast"
+	"github.com/goccy/go-yaml/parser"
 )
 
 // Config is the content of config.yaml with the selected profile applied.
@@ -99,15 +101,24 @@ func Load(explicit string, sel Selector) (*Config, error) {
 		return nil, fmt.Errorf("config file %s: %w", p, err)
 	}
 	c := &Config{Path: p}
-	var raw any
-	for _, v := range []any{c, &raw} {
-		if err := yaml.Unmarshal(b, v); err != nil {
-			return nil, fmt.Errorf("config file %s: %s", p, yaml.FormatError(err, false, false))
-		}
+	f, err := parser.ParseBytes(b, 0)
+	if err == nil {
+		err = yaml.Unmarshal(b, c)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("config file %s: %s", p, yaml.FormatError(err, false, false))
+	}
+	var body ast.Node
+	if len(f.Docs) > 0 {
+		body = f.Docs[0].Body
+	}
+	unknown, nonString := unknownKeys(body, reflect.TypeOf(*c), "")
+	if nonString != "" {
+		return nil, fmt.Errorf("config file %s: key %q is not a string", p, nonString)
 	}
 	// Unknown keys are ignored with a warning, so that a file written for
 	// another version of wikictl still works.
-	for _, k := range unknownKeys(raw, reflect.TypeOf(*c), "") {
+	for _, k := range unknown {
 		c.Warnings = append(c.Warnings, fmt.Sprintf("config file %s: unknown key %q is ignored", p, k))
 	}
 	if err := c.selectProfile(sel); err != nil {
@@ -132,40 +143,64 @@ func Load(explicit string, sel Selector) (*Config, error) {
 	return c, nil
 }
 
-// unknownKeys returns the keys of v, a decoded YAML value, that the yaml tags
-// of type t do not name, as sorted dotted paths below prefix.
-func unknownKeys(v any, t reflect.Type, prefix string) []string {
+// unknownKeys returns the keys of n, a YAML node, that the yaml tags of type t
+// do not name, as sorted dotted paths below prefix. It also returns the path
+// of a key that is not a string where t is a struct, or "" when there is none;
+// goccy/go-yaml leaves such a struct empty without an error.
+func unknownKeys(n ast.Node, t reflect.Type, prefix string) ([]string, string) {
 	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
-	m, ok := v.(map[string]any)
-	if !ok {
-		return nil
+	if a, ok := n.(*ast.AnchorNode); ok {
+		n = a.Value
 	}
-	var out []string
-	switch t.Kind() {
-	case reflect.Map:
-		for k, e := range m {
-			out = append(out, unknownKeys(e, t.Elem(), prefix+k+".")...)
-		}
-	case reflect.Struct:
-		fields := map[string]reflect.Type{}
+	m, ok := n.(ast.MapNode)
+	if !ok {
+		return nil, ""
+	}
+	fields := map[string]reflect.Type{}
+	if t.Kind() == reflect.Struct {
 		for i := range t.NumField() {
 			f := t.Field(i)
 			if name, _, _ := strings.Cut(f.Tag.Get("yaml"), ","); name != "" && name != "-" {
 				fields[name] = f.Type
 			}
 		}
-		for k, e := range m {
+	}
+	var out []string
+	for it := m.MapRange(); it.Next(); {
+		key := it.Key()
+		if key.IsMergeKey() {
+			continue
+		}
+		var v any
+		yaml.NodeToValue(key, &v)
+		k, isString := v.(string)
+		if !isString {
+			k = key.GetToken().Value
+		}
+		var sub []string
+		var nonString string
+		switch t.Kind() {
+		case reflect.Map:
+			sub, nonString = unknownKeys(it.Value(), t.Elem(), prefix+k+".")
+		case reflect.Struct:
+			if !isString {
+				return nil, prefix + k
+			}
 			if ft, ok := fields[k]; ok {
-				out = append(out, unknownKeys(e, ft, prefix+k+".")...)
+				sub, nonString = unknownKeys(it.Value(), ft, prefix+k+".")
 			} else {
-				out = append(out, prefix+k)
+				sub = []string{prefix + k}
 			}
 		}
+		if nonString != "" {
+			return nil, nonString
+		}
+		out = append(out, sub...)
 	}
 	sort.Strings(out)
-	return out
+	return out, ""
 }
 
 // isRelativeLocal reports whether repo is a relative local path: not

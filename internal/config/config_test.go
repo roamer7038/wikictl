@@ -130,6 +130,7 @@ func TestProfileErrors(t *testing.T) {
 		"repo: r\ndefault_profle: a\n":                            {"default_profle"},
 		"repo: r\nauthor: {nmae: n}\n":                            {"author.nmae"},
 		"repo: r\nmachine: m\nprojects: {a: b}\n":                 {"machine", "projects"},
+		"repo: r\n\"1\": a\n":                                     {"1"},
 	} {
 		os.WriteFile(p, []byte(yml), 0o600)
 		c, err := Load(p, Selector{})
@@ -150,6 +151,17 @@ func TestProfileErrors(t *testing.T) {
 	os.WriteFile(p, []byte("repo: r\nprofiles:\n  a: {match: {remotes: r}}\n"), 0o600)
 	if _, err := Load(p, Selector{}); err == nil {
 		t.Error("a profile value of the wrong type must error")
+	}
+	for yml, key := range map[string]string{
+		"repo: r\n1: a\n":                             "1",
+		"repo: r\ntrue: a\n":                          "true",
+		"repo: r\nprofiles:\n  w: {repo: r2, 1: a}\n": "profiles.w.1",
+	} {
+		os.WriteFile(p, []byte(yml), 0o600)
+		want := "config file " + p + ": key \"" + key + "\" is not a string"
+		if _, err := Load(p, Selector{Profile: "w"}); err == nil || err.Error() != want {
+			t.Errorf("a key that is not a string must error: %v, want %s", err, want)
+		}
 	}
 	// A misspelled key is reported with the error that it causes.
 	os.WriteFile(p, []byte("reop: r\n"), 0o600)
