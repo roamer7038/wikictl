@@ -229,7 +229,13 @@ func (a *app) checkMv(c *command, args []string) error {
 	case a.noTargetDir && len(args) > 2:
 		return &usageError{c, "-T takes one source"}
 	}
-	return nil
+	srcs, dst := args, a.targetDir
+	if dst == "" {
+		srcs, dst = args[:len(args)-1], args[len(args)-1]
+	}
+	var err error
+	a.cleaned, err = cleanPaths(append(slices.Clone(srcs), dst))
+	return err
 }
 
 func (a *app) cmdMv(c *command, args []string) error {
@@ -237,10 +243,7 @@ func (a *app) cmdMv(c *command, args []string) error {
 	if dst == "" {
 		srcs, dst = args[:len(args)-1], args[len(args)-1]
 	}
-	cleaned, err := cleanPaths(append(slices.Clone(srcs), dst))
-	if err != nil {
-		return err
-	}
+	cleaned := a.cleaned
 	entries, err := a.repo.Entries(nil)
 	if err != nil {
 		return &gitError{err}
