@@ -88,6 +88,30 @@ func TestRm(t *testing.T) {
 	}
 }
 
+// TestRmNamesBreakingRules checks that rm deletes files added by a clone
+// whose names break the file name rules, as mv moves them away.
+func TestRmNamesBreakingRules(t *testing.T) {
+	cfg := setup(t)
+	pushFiles(t, cfg, map[string]string{
+		"docs/sp ace.txt":          "x",
+		".github/workflows/ci.yml": "y",
+		".github/dependabot.yml":   "z",
+	})
+	code, out, errs := runCLI(t, cfg, "", "--json", "rm", "docs/sp ace.txt", ".github/workflows/ci.yml")
+	if code != ExitOK || errs != "" || !strings.Contains(out, `"paths":[".github/workflows/ci.yml","docs/sp ace.txt"]`) {
+		t.Errorf("rm: code=%d out=%q errs=%q", code, out, errs)
+	}
+	if code, out, errs := runCLI(t, cfg, "", "rm", "-r", ".github"); code != ExitOK || out != "" || errs != "" {
+		t.Errorf("rm -r .github: code=%d out=%q errs=%q", code, out, errs)
+	}
+	if code, _, _ := runCLI(t, cfg, "", "stat", "docs/sp ace.txt"); code != ExitError {
+		t.Error("docs/sp ace.txt was not deleted")
+	}
+	if code, _, _ := runCLI(t, cfg, "", "stat", ".github/dependabot.yml"); code != ExitError {
+		t.Error(".github was not deleted")
+	}
+}
+
 func TestMvArguments(t *testing.T) {
 	cfg := setup(t)
 	for p, c := range map[string]string{
@@ -411,6 +435,64 @@ func TestMoveQuotedName(t *testing.T) {
 	}
 	if ref := gitOut(t, "--git-dir", remote, "cat-file", "-p", "main:projects/app/ref.md"); !strings.Contains(ref, "[q](../../global/qt.md) [b](../../global/bs.md)") {
 		t.Errorf("referring page: %q", ref)
+	}
+}
+
+// TestMvDotDirMarkdown checks that mv moves a .md file below a directory
+// starting with a dot, which is not a page, as it moves any other file: its
+// content is kept, and links to it from pages are rewritten.
+func TestMvDotDirMarkdown(t *testing.T) {
+	cfg := setup(t)
+	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
+	tmpl := "# PR\n[x](../projects/app/x.md)\n"
+	ref := "---\nsummary: r\n---\n# r\n[t](../.github/PULL_REQUEST_TEMPLATE.md)\n"
+	pushFiles(t, cfg, map[string]string{
+		".github/PULL_REQUEST_TEMPLATE.md": tmpl,
+		".github/ISSUE_TEMPLATE/bug.md":    "# bug\n",
+		".github/workflows/test.yml":       "on: push\n",
+		"global/ref.md":                    ref,
+	})
+	code, out, errs := runCLI(t, cfg, "", "mv", "--json", ".github/PULL_REQUEST_TEMPLATE.md", "global/pr.md")
+	if code != 0 || errs != "" {
+		t.Fatalf("mv of a .md below a dot directory: code=%d out=%q errs=%q", code, out, errs)
+	}
+	var res struct {
+		Moved     []movedFile `json:"moved"`
+		Rewritten int         `json:"rewritten"`
+		Commit    string      `json:"commit"`
+	}
+	mustUnmarshal(t, out, &res)
+	if len(res.Moved) != 1 || res.Moved[0] != (movedFile{".github/PULL_REQUEST_TEMPLATE.md", "global/pr.md"}) || res.Rewritten != 1 || len(res.Commit) != 40 {
+		t.Errorf("mv output: %q", out)
+	}
+	files := strings.Split(gitOut(t, "--git-dir", remote, "ls-tree", "-r", "-z", "--name-only", "main"), "\x00")
+	if slices.Contains(files, ".github/PULL_REQUEST_TEMPLATE.md") || !slices.Contains(files, "global/pr.md") {
+		t.Errorf("files after mv: %q", files)
+	}
+	if got := gitOut(t, "--git-dir", remote, "cat-file", "-p", "main:global/pr.md"); got != strings.TrimSuffix(tmpl, "\n") {
+		t.Errorf("moved file: %q", got)
+	}
+	if got := gitOut(t, "--git-dir", remote, "cat-file", "-p", "main:global/ref.md"); got != "---\nsummary: r\n---\n# r\n[t](pr.md)" {
+		t.Errorf("page linking to the moved file: %q", got)
+	}
+
+	// A directory starting with a dot moves with every file below it.
+	if code, _, errs := runCLI(t, cfg, "", "mv", ".github", "global/github"); code != 0 || errs != "" {
+		t.Fatalf("mv of a dot directory: code=%d errs=%q", code, errs)
+	}
+	files = strings.Split(gitOut(t, "--git-dir", remote, "ls-tree", "-r", "-z", "--name-only", "main"), "\x00")
+	for _, f := range []string{"global/github/ISSUE_TEMPLATE/bug.md", "global/github/workflows/test.yml"} {
+		if !slices.Contains(files, f) {
+			t.Errorf("%s does not exist after mv: %q", f, files)
+		}
+	}
+	if slices.ContainsFunc(files, func(f string) bool { return strings.HasPrefix(f, ".github/") }) {
+		t.Errorf("files left below .github: %q", files)
+	}
+
+	// A destination starting with a dot is still rejected.
+	if code, _, errs := runCLI(t, cfg, "", "mv", "global/pr.md", ".github/pr.md"); code != ExitInvalid || !strings.Contains(errs, "bad_path") {
+		t.Errorf("mv to a dot directory: code=%d errs=%q", code, errs)
 	}
 }
 

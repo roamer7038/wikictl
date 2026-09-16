@@ -181,11 +181,16 @@ func (a *app) cmdRm(c *command, args []string) error {
 		a.emit(map[string]any{"paths": []string{}, "commit": ""}, nil)
 		return nil
 	}
+	// The file name rules are not applied, as to the sources of mv, so that a
+	// file already in the wiki can be deleted whatever its name. The arguments
+	// were cleaned, which rejects control characters and paths outside the
+	// wiki.
 	for _, p := range args {
-		for _, x := range strings.Split(p, "/") {
-			if err := page.CheckName(x); err != nil {
-				return &invalidError{"bad_path: " + err.Error()}
-			}
+		switch p {
+		case "":
+			return &invalidError{"bad_path: empty name"}
+		case ".":
+			return &invalidError{"bad_path: the root of the wiki cannot be deleted"}
 		}
 	}
 	entries, err := a.repo.Entries(args)
@@ -500,10 +505,11 @@ func (a *app) badPath(p string, err error) error {
 }
 
 // moveChanges builds the changes that move the files of mapping (old path ->
-// new path), each keeping its mode from modes: pages through wiki.Relocate
-// over entries, the files of the whole tree, with the old name added to
-// aliases when it changes, and other files unchanged. It also returns the
-// number of other pages whose links were rewritten.
+// new path), each keeping its mode from modes. Pages (repo.IsPagePath) move
+// through wiki.Relocate over entries, the files of the whole tree, with the
+// old name added to aliases when it changes; other files move unchanged. Links
+// in pages to any moved .md file are rewritten. It also returns the number of
+// other pages whose links were rewritten.
 func (a *app) moveChanges(entries []repo.Entry, mapping, modes map[string]string) ([]repo.Change, int, error) {
 	sources := slices.Collect(maps.Keys(mapping))
 	objs, err := a.repo.Stat(sources)
@@ -515,15 +521,17 @@ func (a *app) moveChanges(entries []repo.Entry, mapping, modes map[string]string
 	}
 	pages, others := map[string]string{}, []string{}
 	for f, np := range mapping {
-		if strings.HasSuffix(f, ".md") {
+		if repo.IsPagePath(f) {
 			pages[f] = np
 		} else {
 			others = append(others, f)
 		}
 	}
+	// wiki.Relocate is given the whole mapping, so that links to a moved .md
+	// file that is not a page are rewritten too; it moves only the pages.
 	var changes []repo.Change
-	if len(pages) > 0 {
-		if changes, err = wiki.Relocate(a.repo, entries, pages); err != nil {
+	if slices.ContainsFunc(sources, func(f string) bool { return strings.HasSuffix(f, ".md") }) {
+		if changes, err = wiki.Relocate(a.repo, entries, mapping); err != nil {
 			return nil, 0, &gitError{err}
 		}
 	}

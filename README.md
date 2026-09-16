@@ -66,7 +66,9 @@ Binaries for Linux and macOS (x86_64 and arm64) are on the [releases page](https
 
 ## Wiki layout
 
-Each top-level directory is a scope that answers "where is this knowledge valid?". Place a page in the narrowest scope that fits:
+wikictl gives no meaning to directory names: a page can be placed in any directory, and commands whose paths are optional (`grep`, `ls`, `find`, `lint`, `tree`) read the whole wiki when the paths are omitted. wikictl does not choose directories from the current directory.
+
+For a new wiki, one layout is to make each top-level directory a scope that answers "where is this knowledge valid?" and to place a page in the narrowest scope that fits:
 
 | Directory | Valid for |
 |---|---|
@@ -75,9 +77,7 @@ Each top-level directory is a scope that answers "where is this knowledge valid?
 | `projects/<name>/` | one project |
 | `machines/<name>/` | one execution environment |
 
-Commands whose paths are optional (`grep`, `ls`, `find`, `lint`, `tree`) read the whole wiki when the paths are omitted; wikictl does not choose directories from the current directory.
-
-`personal/` holds facts that an agent looks up when they become relevant; rules for every conversation belong in the agent's standing instructions, such as `CLAUDE.md`. In a wiki shared by several people, everyone reads the same `personal/`, so do not use it there.
+In this layout, `personal/` holds facts that an agent looks up when they become relevant; rules for every conversation belong in the agent's standing instructions, such as `CLAUDE.md`. In a wiki shared by several people, everyone reads the same `personal/`, so do not use it there.
 
 A page is a Markdown file inside a directory. Its frontmatter should have a one-line `summary`, and relations to other pages go in a `## Links` section at the end:
 

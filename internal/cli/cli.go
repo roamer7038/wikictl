@@ -209,27 +209,29 @@ Output: {path, sha, commit}, printed only when the file is committed.`,
 is not a directory of the wiki, rename the source to the destination; otherwise
 move every source into the destination directory, keeping its name. -T renames
 even when the destination is a directory, and -t moves every argument into the
-directory given. Files that are not pages move with their directory, every
-moved file keeps its mode, and a source that is or contains a submodule is
-reported and not moved. A destination that exists is never replaced: it is
-reported on standard error as "not replacing". A source that does not exist, a
-destination below a file or ending with "/" that is not a directory
-("not a directory"), and a directory moved into itself are reported too; the
-other sources are still moved, and the command exits with code 1. A file at the
-root of the wiki, the root itself, or a destination that breaks the file name
-rules (see "help lint") or that git refuses to store (see "help put") is
-rejected with exit code 4, and nothing is moved. A file added under a
+directory given. Files that are not pages, including a .md file with a path
+component starting with a dot, move with their directory and keep their
+content, every moved file keeps its mode, and a source that is or contains a
+submodule is reported and not moved. A destination that exists is never
+replaced: it is reported on standard error as "not replacing". A source that
+does not exist, a destination below a file or ending with "/" that is not a
+directory ("not a directory"), and a directory moved into itself are reported
+too; the other sources are still moved, and the command exits with code 1. A
+file at the root of the wiki, the root itself, or a destination that breaks the
+file name rules (see "help lint") or that git refuses to store (see "help put")
+is rejected with exit code 4, and nothing is moved. A file added under a
 directory after mv read it is not moved.
 
-Links to a moved page from other pages, and relative links inside a moved page
-whose destination changes with the move, are rewritten in the same commit.
-Other links, links to files that are not pages, and links inside code spans
-and code fences are left as written. Only the path of a rewritten link
-changes; a leading "./", angle brackets, a query, a fragment and a title are
-kept. When the name of a page changes, the old name (without .md) is added to
-aliases if the frontmatter is empty or a block-style mapping and aliases is
-absent, a sequence (block or flow style), or null; otherwise no alias is added
-and no warning is printed.
+Links in other pages to a moved .md file, whether a page or not, and relative
+links inside a moved page whose destination changes with the move, are
+rewritten in the same commit. Other links, links to files not ending in .md,
+links inside files that are not pages, and links inside code spans and code
+fences are left as written. Only the path of a rewritten link changes; a
+leading "./", angle brackets, a query, a fragment and a title are kept. When
+the name of a page changes, the old name (without .md) is added to aliases if
+the frontmatter is empty or a block-style mapping and aliases is absent, a
+sequence (block or flow style), or null; otherwise no alias is added and no
+warning is printed.
 
 Only links of the form [text](path) are rewritten. A bare path in a Links line,
 such as "- see_also: other.md" or "- other.md", is left unchanged and becomes
@@ -251,8 +253,10 @@ commit. A path that is a directory without -r, or that does not exist, is
 reported on standard error, the other paths are still deleted, and the command
 exits with code 1; with -f a path that does not exist is ignored, and -f
 without any path deletes nothing and exits with code 0. A file at the root of
-the wiki, or a path that breaks the file name rules (see "help lint"), is
-rejected with exit code 4 and nothing is deleted. A file added under a
+the wiki, the root itself, or an empty path without -f is rejected with exit
+code 4 and nothing is deleted. The file name rules (see "help lint") are not
+applied, so a file whose name breaks them can be deleted, except a name holding
+a control character, which is rejected as every path is. A file added under a
 directory after rm read it is not deleted. Pages that link to a deleted page
 are left unchanged; lint reports them as broken_link. If a file
 changed since rm read it, the command exits with code 3 and deletes nothing
@@ -289,9 +293,10 @@ treat such a page as having no frontmatter.
 File name rules: a page is <dir>/<name>.md, never at the wiki root. A file or
 directory name must not be empty, start with a dot or <, or contain
 whitespace, control characters or any of the characters " \ # ? : ( ) ` + "`" + `
-(bad_path; put, edit, mv and rm reject such paths). A name over 255 bytes is
-bad_path too, since a clone cannot check it out; put, edit and the destination
-of mv reject one, while rm and moving such a file away still work. Lowercase
+(bad_path). A name over 255 bytes is bad_path too, since a clone cannot check
+it out. put, edit and the destination of mv reject a path that breaks these
+rules, while rm and moving such a file away still work, except for a name
+holding a control character, which every command rejects. Lowercase
 ASCII letters, digits and hyphens are recommended; other names are reported as
 name_style.
 Names in one directory that differ only by case collide on case-insensitive

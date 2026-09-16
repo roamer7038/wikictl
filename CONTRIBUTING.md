@@ -1,89 +1,88 @@
-# 開発の進め方
+# Contributing
 
-wikictl のブランチ、プルリクエスト、リリースの運用ルールです。ビルドとテストの方法は README の「開発」節を参照してください。
+[日本語版](CONTRIBUTING.ja.md)
 
-## 全体の流れ
+These are the rules for branches, pull requests and releases of wikictl. For building and testing, see the Development section of the README.
+
+## Overview
 
 ```
-（Issue） ──> ブランチ（main から） ──> PR（base: main） ──> squash マージ ──> タグでリリース
+(Issue) ──> branch (from main) ──> PR (base: main) ──> squash merge ──> release by tag
 ```
 
-- main は常にリリースできる状態に保ちます。
-- 長期間のブランチや統合用のブランチ（`release/*` など）は作りません。
+- main is always kept releasable.
+- Do not create long-lived or integration branches (such as `release/*`).
 
-## Issue
+## Issues
 
-- 議論や判断が要る変更（不具合の報告、機能の追加、挙動の変更）は Issue から始めます。不具合は再現手順を、提案は目的を書きます。
-- 誤字の修正、CI の調整、依存の更新のような小さな変更は、Issue を作らずに PR を出してかまいません。
+- Changes that need discussion or a decision (bug reports, new features, changes in behavior) start from an issue. For a bug, write the steps to reproduce it; for a proposal, write its purpose.
+- Small changes such as typo fixes, CI adjustments and dependency updates may be sent as a PR without an issue.
 
-## ブランチ
+## Branches
 
-- 名前は `<type>/<短い名前>` にします。対応する Issue があれば `<type>/<Issue 番号>-<短い名前>` にします（例: `fix/24-push-retry`）。`<type>` はコミットメッセージの type と同じです。
-- main から作り、1 つの PR ごとに 1 つのブランチを使います。
-- Dependabot が作るブランチはこの命名に従いません。
+- Name a branch `<type>/<short-name>`. If there is a matching issue, use `<type>/<issue-number>-<short-name>` (example: `fix/24-push-retry`). `<type>` is the same as the type of the commit message.
+- Create the branch from main, and use one branch per PR.
+- Branches created by Dependabot do not follow this naming.
 
-## プルリクエスト
+## Pull requests
 
-- base は常に main です。
-- 1 つの PR には 1 つの目的だけを入れます。対応する Issue があれば、本文に `Closes #<Issue 番号>`（一部だけを扱う場合は `Refs #<Issue 番号>`）を書きます。
-- 本文に「互換性への影響」節を設けます。
-  - 互換性への影響とは、既存の正しい使い方の結果（コマンドの出力、JSON のキー、終了コード、設定の意味、既定の挙動）が変わることです。影響がある場合は、何がどう変わるか、既存の利用者が何をすればよいかを書きます（例: `--json` の出力のキー名を変える）。
-  - これまでエラーになっていた入力や設定が期待どおり動くようになるだけの修正は、互換性への影響に含めません。この場合は「なし」と書き、その理由を 1 文添えます（例: 相対パスで書いた設定の `repo` で失敗していた `put` が動くようになる）。結果が何も変わらない場合も「なし」と書きます。
-- 挙動を変える PR には、ヘルプ文（`wikictl help` と `wikictl help <command>`）の更新を含めます。コマンドのフラグ、境界条件、出力の形式などの詳細は、ヘルプ文だけに書きます。
-- README（英語版と日本語版）は、README に書く内容（導入、wiki の構成、コマンドの一覧、設定、終了コード、ミラーの置き場所、開発）が変わる場合だけ更新し、2 つの版の内容をそろえます。
-- main と衝突したら、main をブランチに merge して解消します。squash でマージするのでブランチの履歴は main に残らず、rebase と違って force push も要りません。
+- The base is always main.
+- A PR has a single purpose. If there is a matching issue, write `Closes #<issue-number>` in the description (`Refs #<issue-number>` if the PR covers only part of it).
+- The description has a "Compatibility impact" section (either this heading or its Japanese equivalent, 互換性への影響, is fine).
+  - A compatibility impact is a change in the result of existing correct usage: command output, JSON keys, exit codes, the meaning of a setting, or default behavior. If there is one, write what changes and how, and what existing users need to do (example: renaming a key in the `--json` output).
+  - A fix that only makes input or settings that used to fail work as expected is not a compatibility impact. In that case, write "None" with a one-sentence reason (example: `put` now works where it failed with a `repo` setting written as a relative path). Also write "None" when no result changes.
+- A PR that changes behavior includes updates to the help text (`wikictl help` and `wikictl help <command>`). Details such as command flags, edge cases and output formats are written only in the help text.
+- Update the README (English and Japanese) only when what it covers changes (introduction, wiki layout, command list, configuration, exit codes, mirror location, development), and keep the two versions in agreement.
+- When changing this document, keep its English and Japanese versions in agreement as well.
+- If the branch conflicts with main, merge main into the branch to resolve it. Because PRs are squash merged, the branch history does not remain in main, and unlike a rebase no force push is needed.
 
-## コミットメッセージと PR タイトル
+## Commit messages and PR titles
 
-PR は squash でマージするので、PR のタイトルがそのまま main のコミットメッセージになり、リリースノートにも使われます。
+PRs are squash merged, so the PR title becomes the commit message on main and is also used in the release notes.
 
-- [Conventional Commits](https://www.conventionalcommits.org/ja/v1.0.0/) の形式にし、説明は日本語で書きます（例: `fix: push の ref ロック失敗を再試行する`）。
-- type は `feat`、`fix`、`docs`、`refactor`、`test`、`ci`、`chore` のいずれかです。
-- 互換性への影響は、タイトルではなく PR 本文の「互換性への影響」節で示します。
+- Use the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) format, with the description in English or Japanese (example: `fix: retry when locking the ref fails on push`).
+- The type is one of `feat`, `fix`, `docs`, `refactor`, `test`, `ci` or `chore`.
+- Show a compatibility impact in the "Compatibility impact" section of the PR description, not in the title.
 
-## AI ツールの利用
+## Use of AI tools
 
-AI ツール（コーディングエージェントなど）で作成した場合も、コミットメッセージ、PR の本文とコメント、Issue に、ツールの署名や生成元の情報を載せません。
+Even when the work is produced with AI tools (such as coding agents), do not put the tool's signature or information about how it was generated in commit messages, PR descriptions and comments, or issues.
 
-- 例: `Co-Authored-By:` 行、「Generated with ...」のような文、セッションやログの URL
+- Examples: `Co-Authored-By:` lines, text such as "Generated with ...", URLs of sessions or logs
 
-## レビューとマージ
+## Review and merge
 
-- main へのマージはメンテナが行います。AI ツールは PR の作成、レビュー、修正までを行い、PR の承認やマージはしません。
-- main はルールセットで保護されており、次を満たさないとマージできません。
-  - PR を経由すること
-  - CI の必須チェック `test`（`.github/workflows/test.yml`）が成功していること
-  - レビューのスレッドがすべて解決していること
-  - マージ方法が squash であること（main の履歴は直線に保たれます）
-- ルールセットは、マージ前にブランチが main の最新を含むことを求めません。そのため、並行する PR を続けてマージすると、それぞれの CI が成功していても main でテストが失敗することがあります。同じファイルやテストの期待値に触れる PR が他にマージされた後は、main を取り込んで CI を通してからマージします。マージ後は main の CI を確認します。
-- マージ後、ブランチは自動で削除されます。
+- Merges into main are done by a maintainer. AI tools go as far as creating, reviewing and revising PRs; they do not approve or merge them.
+- main is protected by a ruleset, and changes cannot be merged into it unless:
+  - the change goes through a PR
+  - the required CI check `test` (`.github/workflows/test.yml`) has passed
+  - all review threads are resolved
+  - the merge method is squash (the history of main stays linear)
+- The ruleset does not require a branch to contain the latest main before merging. So when parallel PRs are merged one after another, tests can fail on main even though each PR's CI passed. After another PR touching the same files or test expectations has been merged, merge main into the branch and get CI to pass before merging. After merging, check the CI on main.
+- Branches are deleted automatically after merging.
 
-## バージョン
+## Versions
 
-[Semantic Versioning](https://semver.org/lang/ja/) に従います。0.x の間は次のように上げます。
+wikictl follows [Semantic Versioning](https://semver.org/). While on 0.x, versions are raised as follows.
 
-| リリースに含まれる PR | 上げる番号 |
+| PRs in the release | Version to bump |
 |---|---|
-| 互換性への影響がある PR か、機能追加（`feat`）を含む | minor（0.2.0 → 0.3.0） |
-| それ以外だけ | patch（0.2.0 → 0.2.1） |
+| Includes a PR with a compatibility impact, or a new feature (`feat`) | minor (0.2.0 → 0.3.0) |
+| Only other PRs | patch (0.2.0 → 0.2.1) |
 
-互換性への影響の範囲は「プルリクエスト」節の定義に従います。これまでエラーになっていた入力や設定が動くようになるだけの修正は、patch に含めます。
+The scope of a compatibility impact follows the definition in the Pull requests section. A fix that only makes input or settings that used to fail work is released as a patch.
 
-## リリース
+## Releases
 
-1. main の最新コミットで CI が成功していることを確認します。
-2. そのコミットに annotated tag を付けて push します。
+1. Confirm that CI has passed on the latest commit of main.
+2. Put an annotated tag on that commit and push it.
 
    ```sh
    git tag -a v0.3.0 -m "wikictl v0.3.0"
    git push origin v0.3.0
    ```
 
-3. タグの push で GitHub Actions の release ワークフローが動き、GoReleaser がバイナリと `checksums.txt` を GitHub Release に公開します。
-4. リリースノートに、各 PR の「互換性への影響」をまとめた節と移行方法を追記します。
+3. Pushing the tag runs the release workflow in GitHub Actions, and GoReleaser publishes the binaries and `checksums.txt` to a GitHub Release.
+4. Add to the release notes a section that collects the "Compatibility impact" of each PR, together with migration steps.
 
-`v` で始まるタグはルールセットで保護されており、削除や付け替えはできません。誤ったリリースは新しいバージョンで修正します。
-
-## セキュリティ
-
-未公開の脆弱性は、公開 Issue ではなく、GitHub の [Private vulnerability reporting](https://github.com/roamer7038/wikictl/security/advisories/new) で報告してください。修正したら、「バージョン」節に従って速やかにリリースします。
+Tags starting with `v` are protected by a ruleset and cannot be deleted or moved. A faulty release is fixed by releasing a new version.
