@@ -43,8 +43,8 @@ const outputHelp = `Output:
   configuration warning, such as in the output of git, starts a line indented
   by two spaces; JSON output and the content of files printed by cat or on a
   conflict are not changed. A backslash is not escaped, so a name holding the
-  four characters \x01 cannot be told from the byte 0x01; --json has the
-  stored value.
+  four characters \x01 cannot be told from the byte 0x01; --json keeps the
+  control characters as stored, although invalid UTF-8 becomes U+FFFD there.
 `
 
 const writesHelp = `Writes:

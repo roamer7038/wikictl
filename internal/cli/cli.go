@@ -58,8 +58,11 @@ or with 0 when -q selected anything.
 
 The paths printed by -l and -L are one per line: pass them to another command
 with "| tr '\n' '\0' | xargs -0 -r wikictl ls -lt", which keeps names holding
-quotation marks or spaces intact and runs nothing when nothing matched; a name
-holding a newline cannot be passed this way.
+quotation marks or spaces intact and runs nothing when nothing matched. A name
+holding a newline cannot be passed this way, and neither can one holding a
+control character, which text output escapes as \xNN; --json prints the exact
+names, but wikictl rejects a path holding a control character as bad_path with
+exit code 4.
 
 Output: items[] {path, line, text}; with -l or -L, items[] {path}; with -c,
 items[] {path, count}; with -q, nothing.`,
