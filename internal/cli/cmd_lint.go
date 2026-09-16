@@ -53,7 +53,10 @@ func (a *app) cmdLint(c *command, args []string) error {
 		return &gitError{err}
 	}
 	// An argument that is a file but not a page is reported, not checked: the
-	// rules lint applies are the rules of a page.
+	// rules lint applies are the rules of a page. isPage asks only what the
+	// name claims to be, so that a .md file the scan of the tree leaves out,
+	// such as one at the wiki root, is still checked and reported as bad_path;
+	// repo.IsPagePath above selects the pages to check when no path is given.
 	missing := slices.DeleteFunc(slices.Clone(files), func(p string) bool { return read.Exists(p) && isPage(p) })
 	paths = slices.DeleteFunc(paths, func(p string) bool { return slices.Contains(missing, p) })
 	checked := map[string]bool{}

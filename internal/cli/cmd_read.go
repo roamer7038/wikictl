@@ -84,9 +84,11 @@ type statItem struct {
 }
 
 // cmdStat shows the blob sha, the time of the last change and the attributes
-// of each file. Paths that are not files are reported as cat reports them.
-// Every file has a sha, which put --base needs, but only a page has
-// attributes: they stay empty for a file that is not one.
+// of each file. Paths that are not files are reported as cat reports them. A
+// file that is not a page is still shown, since the sha and the update time
+// are not an interpretation of a page; only the attributes are, and they stay
+// empty for such a file. links and lint, whose whole output is that
+// interpretation, refuse it instead.
 func (a *app) cmdStat(c *command, args []string) error {
 	pages, err := wiki.ReadPages(a.repo, notEmpty(args))
 	if err != nil {

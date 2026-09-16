@@ -515,6 +515,14 @@ func TestEmptyPathArgument(t *testing.T) {
 			t.Errorf("%v: code=%d errs=%q", args, code, errs)
 		}
 	}
+	// rm -f ignores the paths that do not exist, and an empty path is one.
+	if code, out, errs := runCLI(t, cfg, "", "rm", "-f", ""); code != ExitOK || out != "" || errs != "" {
+		t.Errorf("rm -f with an empty path: code=%d out=%q errs=%q", code, out, errs)
+	}
+	if code, out, errs := runCLI(t, cfg, "", "--json", "rm", "-f", "", "global/none.md"); code != ExitOK ||
+		out != `{"commit":"","paths":[]}`+"\n" || errs != "" {
+		t.Errorf("rm -f --json with an empty path: code=%d out=%q errs=%q", code, out, errs)
+	}
 }
 
 // TestUnicodeCollisionLint checks that lint reports two pages whose names
@@ -549,9 +557,34 @@ func TestUnicodeCollisionLint(t *testing.T) {
 	if code != ExitInvalid || !found {
 		t.Errorf("lint of the NFC page: code=%d out=%q errs=%q", code, out, errs)
 	}
-	// Both pages are reported when the whole wiki is checked.
+	// A pair that differs by case and normalisation at once collides as well,
+	// and no case_collision covers it: "Ö" as "O" with a combining diaeresis
+	// (NFD) and "ö" as one rune (NFC).
+	bothNFD, bothNFC := "global/Österreich.md", "global/österreich.md"
+	for _, p := range []string{bothNFD, bothNFC} {
+		if code, _, errs := runCLI(t, cfg, "---\nsummary: s\n---\n# s\n", "put", p); code != ExitOK {
+			t.Fatalf("put %q: code=%d errs=%q", p, code, errs)
+		}
+	}
+	li.Items = nil
+	code, out, errs = runCLI(t, cfg, "", "--json", "lint", bothNFD)
+	mustUnmarshal(t, out, &li)
+	found = false
+	for _, it := range li.Items {
+		if it.Code == "case_collision" {
+			t.Errorf("a pair differing by case and normalisation is not a case collision: %+v", it)
+		}
+		if it.Code == "unicode_collision" && it.Path == bothNFD && strings.Contains(it.Message, bothNFC) &&
+			strings.Contains(it.Message, "normalisation and case") {
+			found = true
+		}
+	}
+	if code != ExitInvalid || !found {
+		t.Errorf("lint of the NFD page: code=%d out=%q errs=%q", code, out, errs)
+	}
+	// Every page of both pairs is reported when the whole wiki is checked.
 	code, out, _ = runCLI(t, cfg, "", "lint")
-	if code != ExitInvalid || strings.Count(out, "unicode_collision") != 2 {
+	if code != ExitInvalid || strings.Count(out, "unicode_collision") != 4 || strings.Contains(out, "case_collision") {
 		t.Errorf("lint: code=%d out=%q", code, out)
 	}
 }

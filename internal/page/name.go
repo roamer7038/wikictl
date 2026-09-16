@@ -126,22 +126,33 @@ func NameStyle(p, name string) Issue {
 // that shares a directory with a file or directory whose name differs only
 // by case. Such names collide on case-insensitive file systems.
 func CaseCollisions(paths []string) []Issue {
-	return collisions(paths, strings.ToLower, "case_collision", "differs only by case from")
+	return collisions(paths, strings.ToLower, nil, "case_collision", "differs only by case from")
 }
 
 // UnicodeCollisions reports, as unicode_collision issues, every path in paths
 // that shares a directory with a file or directory whose name differs only by
 // Unicode normalisation, such as a name written in NFC and one written in
-// NFD. Such names are the same name on a file system that normalises them, as
-// macOS does, so a clone there keeps only one of them.
+// NFD, or by normalisation and case at once. Such names are the same name on
+// a file system that normalises them, as macOS does, so a clone there keeps
+// only one of them. A pair that differs by case alone is left to
+// CaseCollisions, whose message says what to change; lowercasing does not
+// make these names equal, so no case_collision covers them.
 func UnicodeCollisions(paths []string) []Issue {
-	return collisions(paths, norm.NFC.String, "unicode_collision", "differs only by Unicode normalisation from")
+	folded := func(s string) string { return strings.ToLower(norm.NFC.String(s)) }
+	out := collisions(paths, norm.NFC.String, nil, "unicode_collision", "differs only by Unicode normalisation from")
+	out = append(out, collisions(paths, folded, func(q, o string) bool {
+		return strings.ToLower(q) != strings.ToLower(o) && norm.NFC.String(q) != norm.NFC.String(o)
+	}, "unicode_collision", "differs only by Unicode normalisation and case from")...)
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	return out
 }
 
 // collisions reports, with code and phrase, every path in paths that shares a
 // directory with a file or directory whose name has the same key but is
 // written differently. Each path is reported for its first colliding prefix.
-func collisions(paths []string, key func(string) string, code, phrase string) []Issue {
+// When keep is set, only the other spellings it accepts are collisions, so
+// that a code covers the pairs another code does not.
+func collisions(paths []string, key func(string) string, keep func(q, o string) bool, code, phrase string) []Issue {
 	spellings := map[string]map[string]bool{} // key of a prefix -> prefixes as written
 	for _, p := range paths {
 		for _, q := range prefixes(p) {
@@ -161,9 +172,12 @@ func collisions(paths []string, key func(string) string, code, phrase string) []
 			}
 			var names []string
 			for o := range others {
-				if o != q {
+				if o != q && (keep == nil || keep(q, o)) {
 					names = append(names, fmt.Sprintf("%q", o))
 				}
+			}
+			if len(names) == 0 {
+				continue
 			}
 			sort.Strings(names)
 			out = append(out, Issue{Path: p, Code: code, Message: fmt.Sprintf("%q %s %s", q, phrase, strings.Join(names, ", "))})

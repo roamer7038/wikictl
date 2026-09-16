@@ -294,8 +294,9 @@ name_style.
 Names in one directory that differ only by case collide on case-insensitive
 file systems and are reported as case_collision, against the whole wiki. Names
 that differ only by Unicode normalisation, such as one written in NFC and one
-in NFD, are one name on a file system that normalises them, as macOS does, and
-are reported as unicode_collision, also against the whole wiki.
+in NFD, or by normalisation and case at once, are one name on a file system
+that normalises them, as macOS does, and are reported as unicode_collision,
+also against the whole wiki.
 
 A Links line is "- <type>: <target> | <note>", or "- <target>" for an untyped
 see_also relation (an untyped URL must be "<scheme>://..."); the bullet may

@@ -167,6 +167,11 @@ func (a *app) checkRm(c *command, args []string) error {
 // cmdRm deletes files, and with -r directories, in one commit. As rm does, a
 // path that cannot be deleted is reported and the others are still deleted.
 func (a *app) cmdRm(c *command, args []string) error {
+	// An empty path names no file, and -f ignores the paths that do not
+	// exist, so it ignores an empty one too. Without -f it stays a bad path.
+	if a.force {
+		args = notEmpty(args)
+	}
 	// Only "rm -f" reaches this without a path; it deletes nothing.
 	if len(args) == 0 {
 		a.emit(map[string]any{"paths": []string{}, "commit": ""}, nil)

@@ -110,11 +110,36 @@ func TestUnicodeCollisions(t *testing.T) {
 	if got := UnicodeCollisions([]string{"ä/a.md", "ä/b.md"}); len(got) != 2 {
 		t.Errorf("directory: %+v", got)
 	}
-	// Names that are equal, or differ by more than normalisation, do not.
-	for _, paths := range [][]string{{nfc, "global/b.md"}, {"global/a.md", "global/A.md"}} {
-		if got := UnicodeCollisions(paths); len(got) != 0 {
-			t.Errorf("%v: %+v", paths, got)
+	// A pair that differs by case alone is a case_collision and nothing else.
+	caseOnly := []string{"global/a.md", "global/A.md"}
+	if got := UnicodeCollisions(caseOnly); len(got) != 0 {
+		t.Errorf("case only: %+v", got)
+	}
+	if got := CaseCollisions(caseOnly); len(got) != 2 {
+		t.Errorf("case only: %+v", got)
+	}
+	// A pair that differs by case and normalisation at once collides on a file
+	// system that normalises names, and no case_collision covers it: "Ö" as
+	// "O" with a combining diaeresis (NFD) and "ö" as one rune (NFC).
+	both := []string{"global/Ö.md", "global/ö.md"}
+	got = UnicodeCollisions(both)
+	if len(got) != 2 {
+		t.Fatalf("case and normalisation: %+v", got)
+	}
+	for _, is := range got {
+		if is.Code != "unicode_collision" || !strings.Contains(is.Message, "Unicode normalisation and case") {
+			t.Errorf("case and normalisation: %+v", is)
 		}
+	}
+	if !strings.Contains(got[0].Message, both[1]) || !strings.Contains(got[1].Message, both[0]) {
+		t.Errorf("case and normalisation: %+v", got)
+	}
+	if got := CaseCollisions(both); len(got) != 0 {
+		t.Errorf("case and normalisation is not a case collision: %+v", got)
+	}
+	// Names that do not collide are not reported.
+	if got := UnicodeCollisions([]string{nfc, "global/b.md"}); len(got) != 0 {
+		t.Errorf("no collision: %+v", got)
 	}
 }
 
