@@ -139,12 +139,25 @@ func CaseCollisions(paths []string) []Issue {
 // make these names equal, so no case_collision covers them.
 func UnicodeCollisions(paths []string) []Issue {
 	folded := func(s string) string { return strings.ToLower(norm.NFC.String(s)) }
+	// The pairs the other two checks report are left to them: those that share
+	// the key of CaseCollisions (case alone) and those that share their NFC
+	// form (normalisation alone).
+	notCase, notNorm := differsUnder(strings.ToLower), differsUnder(norm.NFC.String)
 	out := collisions(paths, norm.NFC.String, nil, "unicode_collision", "differs only by Unicode normalisation from")
-	out = append(out, collisions(paths, folded, func(q, o string) bool {
-		return strings.ToLower(q) != strings.ToLower(o) && norm.NFC.String(q) != norm.NFC.String(o)
-	}, "unicode_collision", "differs only by Unicode normalisation and case from")...)
+	out = append(out, collisions(paths, folded, func(q, o string) bool { return notCase(q, o) && notNorm(q, o) },
+		"unicode_collision", "differs only by Unicode normalisation and case from")...)
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Path < out[j].Path })
 	return out
+}
+
+// differsUnder returns a keep predicate for collisions that accepts the pairs
+// a check keyed by key does not already report. The key itself is used, so
+// that the two checks agree exactly. strings.EqualFold, which staticcheck
+// suggests in place of comparing two strings.ToLower calls, is not the same
+// test: it folds "İ" (U+0130) apart from "i", although the two differ only by
+// case, and CaseCollisions reports that pair already.
+func differsUnder(key func(string) string) func(q, o string) bool {
+	return func(q, o string) bool { return key(q) != key(o) }
 }
 
 // collisions reports, with code and phrase, every path in paths that shares a

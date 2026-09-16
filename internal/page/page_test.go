@@ -137,6 +137,16 @@ func TestUnicodeCollisions(t *testing.T) {
 	if got := CaseCollisions(both); len(got) != 0 {
 		t.Errorf("case and normalisation is not a case collision: %+v", got)
 	}
+	// "İ" (U+0130) lowercases to "i" but does not fold to it. The pair differs
+	// only by case, so case_collision reports it and unicode_collision stays
+	// quiet, although the two names are not equal under strings.EqualFold.
+	dotted := []string{"global/İ.md", "global/i.md"}
+	if got := UnicodeCollisions(dotted); len(got) != 0 {
+		t.Errorf("dotted capital I: %+v", got)
+	}
+	if got := CaseCollisions(dotted); len(got) != 2 {
+		t.Errorf("dotted capital I: %+v", got)
+	}
 	// Names that do not collide are not reported.
 	if got := UnicodeCollisions([]string{nfc, "global/b.md"}); len(got) != 0 {
 		t.Errorf("no collision: %+v", got)
