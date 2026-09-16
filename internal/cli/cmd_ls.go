@@ -17,9 +17,10 @@ import (
 
 // fileTree is the files of the wiki arranged by directory.
 type fileTree struct {
-	files    []string                   // every file
+	files    []string                   // every file, submodules left out
 	children map[string]map[string]bool // directory ("." for the root) -> entry name -> whether the entry is a directory
 	hidden   map[string]bool            // pages with status: deprecated
+	subs     map[string]bool            // submodules
 }
 
 // join returns the path of the entry name in dir.
@@ -30,15 +31,23 @@ func join(dir, name string) string {
 	return dir + "/" + name
 }
 
-// readTree lists every file of the wiki and, with hide, finds the pages with
-// status: deprecated, which ls and tree hide.
+// readTree lists every entry of the wiki, keeping the submodules apart from
+// the files, and, with hide, finds the pages with status: deprecated, which ls
+// and tree hide. A submodule stays in children so that the directories above
+// it exist, and entries leaves it out of every listing.
 func (a *app) readTree(hide bool) (*fileTree, error) {
-	files, err := a.repo.Files(nil)
+	ents, err := a.repo.Entries(nil)
 	if err != nil {
 		return nil, &gitError{err}
 	}
-	t := &fileTree{files: files, children: map[string]map[string]bool{".": {}}, hidden: map[string]bool{}}
-	for _, f := range files {
+	t := &fileTree{children: map[string]map[string]bool{".": {}}, hidden: map[string]bool{}, subs: map[string]bool{}}
+	for _, e := range ents {
+		f := e.Path
+		if e.Type == "commit" {
+			t.subs[f] = true
+		} else {
+			t.files = append(t.files, f)
+		}
 		dir := "."
 		parts := strings.Split(f, "/")
 		for i, name := range parts {
@@ -59,19 +68,31 @@ func (a *app) readTree(hide bool) (*fileTree, error) {
 
 func (t *fileTree) isDir(p string) bool { return t.children[p] != nil }
 
-// isFile reports whether p is a file in the wiki.
+// isFile reports whether p is a file in the wiki. A submodule is not one: no
+// command reads it as a file.
 func (t *fileTree) isFile(p string) bool {
 	isDir, ok := t.children[path.Dir(p)][path.Base(p)]
-	return ok && !isDir
+	return ok && !isDir && !t.subs[p]
 }
 
-// entries returns the paths of the entries of dir sorted by name. Unless all
-// is set, names starting with a dot and hidden pages are left out.
+// pathMessage returns the message for reportMissing of a path that the tree
+// lists neither as a file nor as a directory: "is a submodule" for a
+// submodule, else noSuchFile.
+func (t *fileTree) pathMessage(p string) string {
+	if t.subs[p] {
+		return isSubmodule
+	}
+	return noSuchFile
+}
+
+// entries returns the paths of the entries of dir sorted by name, submodules
+// left out. Unless all is set, names starting with a dot and hidden pages are
+// left out too.
 func (t *fileTree) entries(dir string, all bool) []string {
 	var out []string
 	for name := range t.children[dir] {
 		p := join(dir, name)
-		if all || (!strings.HasPrefix(name, ".") && !t.hidden[p]) {
+		if !t.subs[p] && (all || (!strings.HasPrefix(name, ".") && !t.hidden[p])) {
 			out = append(out, p)
 		}
 	}
@@ -183,7 +204,7 @@ func (a *app) cmdLs(c *command, args []string) error {
 			writeLs(w, rows, a.long)
 		}
 	})
-	return a.reportMissing(missing, nil)
+	return a.reportMissing(missing, t.pathMessage)
 }
 
 // lsDetails fills in the attributes of the items that the output needs and
@@ -349,7 +370,7 @@ func (a *app) cmdTree(c *command, args []string) error {
 		if t.isFile(p) {
 			return "not a directory"
 		}
-		return noSuchFile
+		return t.pathMessage(p)
 	})
 }
 

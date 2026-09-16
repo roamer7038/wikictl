@@ -54,7 +54,8 @@ the code of -L also tells whether a line was selected, not whether a path was
 printed, so -L can print paths and exit with code 1. A pattern that does not
 compile is a usage error. A path that does not exist is reported on standard
 error, the other paths are still searched, and the command exits with code 2,
-or with 0 when -q selected anything.
+or with 0 when -q selected anything. A submodule is not such a path: it holds
+no line, so searching one selects nothing and exits with code 1.
 
 The paths printed by -l and -L are one per line: pass them to another command
 with "| tr '\n' '\0' | xargs -0 -r wikictl ls -lt", which keeps names holding
@@ -70,10 +71,11 @@ items[] {path, count}; with -q, nothing.`,
 	{name: "cat", args: "<path>...", minArgs: 1, maxArgs: -1, paths: true,
 		summary: "Print files as stored",
 		detail: `Print each file as stored in the wiki, in the order given. A path that does
-not exist ("no such file or directory") or is a directory ("is a directory") is
-reported on standard error, also with --json, the other files are still
-printed, and the command exits with code 1. The sha in the JSON output
-is the one to pass to "put --base" when updating the page.
+not exist ("no such file or directory"), is a directory ("is a directory") or
+is a submodule ("is a submodule") is reported on standard error, also with
+--json, the other files are still printed, and the command exits with code 1.
+The sha in the JSON output is the one to pass to "put --base" when updating
+the page.
 
 Output: items[] {path, sha, content}.`,
 		run: (*app).cmdCat},
@@ -82,7 +84,8 @@ Output: items[] {path, sha, content}.`,
 		detail: `Show, for each file, its blob sha, the time of the last commit that changed
 it, and the attributes read from the page: title (the first heading, else the
 file name), summary (or description), type, tags, status and aliases. A path
-that does not exist or is a directory is reported as cat reports it.
+that does not exist, is a directory or is a submodule is reported as cat
+reports it.
 
 Output: items[] {path, sha, updated, title, summary, type, tags, status,
 aliases}.`,
@@ -94,9 +97,9 @@ Direction "out" is a link in the page: a typed link from its Links section, or
 "mentions" for a link in its body to a page that the Links section does not
 link to. Direction "in" is a link to the page from another page: that page's
 typed link, or "mentions". With -o only the links in the page are listed,
-with -i only the links to it. A path that does not exist or is a directory is
-reported as cat reports it, also with --json, where items is empty, and the
-command exits with code 1.
+with -i only the links to it. A path that does not exist, is a directory or is
+a submodule is reported as cat reports it, also with --json, where items is
+empty, and the command exits with code 1.
 
 Output: items[] {direction, type, target, note}.`,
 		flags: linksFlags, run: (*app).cmdLinks},
@@ -107,12 +110,14 @@ itself for a path that is a file; without arguments, the root of the wiki.
 Names of directories end with "/". With more than one argument or with -R,
 the entries of each directory follow a line "<dir>:". Names starting with a
 dot and pages whose frontmatter has status: deprecated are hidden unless -a is
-given. With -l, a line shows the type from the frontmatter, the time of the
-last commit that changed the entry (for a directory, any file under it), the
-name, and the summary, or the title when the page has no summary; "-" marks an
-empty type or time. A path that does not exist is reported on standard error,
-also with --json, the others are still listed, and the command exits with code
-1.
+given; submodules are never listed, and naming one reports "is a submodule".
+With -l, a line shows the type from the frontmatter, the time of the last
+commit that changed the entry (for a directory, any file under it), the name,
+and the summary, or the title when the page has no summary; "-" marks an empty
+type or time, and a directory that holds only submodules has no time. A path
+that does not exist ("no such file or directory") or is a submodule ("is a
+submodule") is reported on standard error, also with --json, the others are
+still listed, and the command exits with code 1.
 
 Output: items[] {path, kind, type, summary, title, updated}; kind is "file"
 or "dir".`,
@@ -122,8 +127,9 @@ or "dir".`,
 		detail: `Print the path of each file and directory under each path, or under the root
 of the wiki without paths, that matches the expression, one per line, starting
 with the path itself, as "find" does. Pages with status: deprecated and names
-starting with a dot are included. The expression is a list of primaries that
-must all be true; "!" negates the primary that follows it.
+starting with a dot are included; submodules are not listed, and naming one
+reports "is a submodule". The expression is a list of primaries that must all
+be true; "!" negates the primary that follows it.
 
   -name PATTERN    the last element of the path matches the shell pattern
   -path PATTERN    the path as printed, without a leading "./", matches the
@@ -142,9 +148,13 @@ In a pattern, a class name such as [:alpha:] covers ASCII characters only.
                    such as 1.50 for 1.5; a directory, a mapping and a page over
                    1 MiB never match
 
+A path with no time of its own, such as a directory that holds only
+submodules, matches neither -mtime nor -newer.
+
 Only -h and the arguments starting with "--", such as --json, are flags. A
-path that does not exist is reported on standard error, the other paths are
-still searched, and the command exits with code 1.
+path that does not exist ("no such file or directory") or is a submodule ("is
+a submodule") is reported on standard error, the other paths are still
+searched, and the command exits with code 1.
 
 Output: items[] {path, kind}; kind is "file" or "dir".`,
 		check: (*app).checkFind, run: (*app).cmdFind},
@@ -247,11 +257,12 @@ each deleted file.`,
 		summary: "Report pages that violate the wiki format",
 		detail: `Check pages for missing_summary, frontmatter_invalid, links_syntax,
 broken_link, page_too_large and the file name rules. Each path is a page or a
-directory; for a directory every page under it is checked. Without arguments
-every page of the wiki is checked. Exits with code 4 when violations are found.
-A path that does not exist ("no such file or directory") is reported on
-standard error, also with --json, the other paths are still checked, and the
-command exits with code 1, even when violations are found.
+directory; for a directory every page under it is checked, submodules left
+out. Without arguments every page of the wiki is checked. Exits with code 4
+when violations are found. A path that does not exist ("no such file or
+directory") or is a submodule ("is a submodule") is reported on standard
+error, also with --json, the other paths are still checked, and the command
+exits with code 1, even when violations are found.
 
 Each finding is printed as "<path>:<line>: <code>: <message>"; line 0 means
 the whole file.
@@ -307,9 +318,11 @@ root of the wiki without arguments, followed by the number of directories and
 files. As in tree, a directory shown at the top counts as a directory only
 when something under it is listed, although items never lists it. Names
 starting with a dot and pages whose frontmatter has status: deprecated are
-hidden unless -a is given. A path that does not exist ("no such file or
-directory") or is a file ("not a directory") is reported on standard error,
-also with --json, and the command exits with code 1.
+hidden unless -a is given; submodules are never listed, so they count as
+neither, and naming one reports "is a submodule". A path that does not exist
+("no such file or directory"), is a file ("not a directory") or is a submodule
+("is a submodule") is reported on standard error, also with --json, and the
+command exits with code 1.
 
 Output: {items[] {path, kind}, directories, files}; kind is "file" or "dir".`,
 		flags: treeFlags, run: (*app).cmdTree},

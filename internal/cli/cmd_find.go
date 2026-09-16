@@ -280,7 +280,7 @@ func (a *app) cmdFind(c *command, args []string) error {
 	exists := func(p string) bool { return t.isDir(p) || t.isFile(p) }
 	for _, ref := range q.newer {
 		if !exists(ref) {
-			return a.reportMissing([]string{ref}, nil)
+			return a.reportMissing([]string{ref}, t.pathMessage)
 		}
 	}
 	paths := q.paths
@@ -342,5 +342,5 @@ func (a *app) cmdFind(c *command, args []string) error {
 			fmt.Fprintln(w, escapeControl(it.Path))
 		}
 	})
-	return a.reportMissing(missing, nil)
+	return a.reportMissing(missing, t.pathMessage)
 }
