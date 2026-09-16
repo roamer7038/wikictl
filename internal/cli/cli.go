@@ -169,16 +169,17 @@ pass --base with the blob sha from stat; without it, or if the file changed in
 the meantime, the command exits with code 3 and prints the current content and
 sha (see "wikictl help"). A path that breaks the file name rules (see "help
 lint"), or that git refuses to store, such as one with a component git~1,
-which names .git on NTFS, is rejected as bad_path with exit code 4 and nothing
-is committed. A path ending in .md is a page: a page whose frontmatter is
-invalid or that is over the size limits is rejected with exit code 4, and a
-missing summary, Links lines that do not parse, links to files missing from
-the wiki and names outside the recommended form only produce warnings on
-standard error; "description" in the frontmatter is read as a synonym of
-"summary", and "summary" wins when it is not blank. When the content equals
-the current file, no commit is created and commit is the current commit. A
-path that is a directory, a symbolic link or a submodule, or that is below a
-file, is rejected with exit code 1; a file replaced keeps its mode.
+which names .git on NTFS, is rejected with exit code 4 and a message starting
+with "bad_path:", and nothing is committed. A path ending in .md is a page: a
+page whose frontmatter is invalid or that is over the size limits is rejected
+with exit code 4, and a missing summary, Links lines that do not parse, links
+to files missing from the wiki and names outside the recommended form only
+produce warnings on standard error; "description" in the frontmatter is read
+as a synonym of "summary", and "summary" wins when it is not blank. When the
+content equals the current file, no commit is created and commit is the
+current commit. A path that is a directory, a symbolic link or a submodule,
+or that is below a file, is rejected with exit code 1; a file replaced keeps
+its mode.
 
 Output: {path, sha, commit}; with -v, text output is
 "<path><TAB><sha><TAB><commit>".`,

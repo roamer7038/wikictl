@@ -397,14 +397,6 @@ func checkIndex(git func([]byte, ...string) (string, error), changes []Change, s
 	if err != nil {
 		return err
 	}
-	index := map[string]string{}
-	for rec := range strings.SplitSeq(out, "\x00") {
-		// <mode> SP <sha> SP <stage> TAB <path>
-		meta, p, ok := strings.Cut(rec, "\t")
-		if f := strings.Fields(meta); ok && len(f) == 3 {
-			index[p] = f[1]
-		}
-	}
 	// The last change to a path decides what the index holds.
 	want := map[string]string{}
 	for _, c := range changes {
@@ -412,6 +404,19 @@ func checkIndex(git func([]byte, ...string) (string, error), changes []Change, s
 		if !c.Delete {
 			want[c.Path] = shas[c.Path]
 		}
+	}
+	// Only the changed paths are kept, so that a large index costs no more
+	// than reading it.
+	index := make(map[string]string, len(want))
+	for rec := range strings.SplitSeq(out, "\x00") {
+		// <mode> SP <sha> SP <stage> TAB <path>
+		meta, p, ok := strings.Cut(rec, "\t")
+		if _, w := want[p]; !ok || !w {
+			continue
+		}
+		_, rest, _ := strings.Cut(meta, " ")
+		sha, _, _ := strings.Cut(rest, " ")
+		index[p] = sha
 	}
 	for _, c := range changes {
 		if index[c.Path] != want[c.Path] {
