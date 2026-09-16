@@ -88,6 +88,30 @@ func TestRm(t *testing.T) {
 	}
 }
 
+// TestRmNamesBreakingRules checks that rm deletes files added by a clone
+// whose names break the file name rules, as mv moves them away.
+func TestRmNamesBreakingRules(t *testing.T) {
+	cfg := setup(t)
+	pushFiles(t, cfg, map[string]string{
+		"docs/sp ace.txt":          "x",
+		".github/workflows/ci.yml": "y",
+		".github/dependabot.yml":   "z",
+	})
+	code, out, errs := runCLI(t, cfg, "", "--json", "rm", "docs/sp ace.txt", ".github/workflows/ci.yml")
+	if code != ExitOK || errs != "" || !strings.Contains(out, `"paths":[".github/workflows/ci.yml","docs/sp ace.txt"]`) {
+		t.Errorf("rm: code=%d out=%q errs=%q", code, out, errs)
+	}
+	if code, out, errs := runCLI(t, cfg, "", "rm", "-r", ".github"); code != ExitOK || out != "" || errs != "" {
+		t.Errorf("rm -r .github: code=%d out=%q errs=%q", code, out, errs)
+	}
+	if code, _, _ := runCLI(t, cfg, "", "stat", "docs/sp ace.txt"); code != ExitError {
+		t.Error("docs/sp ace.txt was not deleted")
+	}
+	if code, _, _ := runCLI(t, cfg, "", "stat", ".github/dependabot.yml"); code != ExitError {
+		t.Error(".github was not deleted")
+	}
+}
+
 func TestMvArguments(t *testing.T) {
 	cfg := setup(t)
 	for p, c := range map[string]string{
