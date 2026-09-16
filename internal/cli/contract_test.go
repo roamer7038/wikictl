@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"slices"
 	"testing"
 )
@@ -75,6 +76,24 @@ func TestJSONContract(t *testing.T) {
 			t.Errorf("%s: keys %q, want %q", c.name, keys, c.keys)
 		}
 	}
+
+	// A write that loses the push race on every attempt needs a remote that
+	// keeps moving, so it is checked outside the table, with a git wrapper
+	// that only this subtest has on PATH.
+	t.Run("put/moved", func(t *testing.T) {
+		moveRemoteOnPush(t, filepath.Join(filepath.Dir(cfg), "remote.git"), false)
+		code, out, _ := runCLI(t, cfg, newPage, "--json", "put", "global/moved.md")
+		if code != ExitConflict {
+			t.Fatalf("exit code %d, want %d\n%s", code, ExitConflict, out)
+		}
+		keys, err := jsonKeys(out)
+		if err != nil {
+			t.Fatalf("stdout is not JSON: %v\n%s", err, out)
+		}
+		if want := []string{"detail", "error", "message", "reason"}; !slices.Equal(keys, want) {
+			t.Errorf("keys %q, want %q", keys, want)
+		}
+	})
 }
 
 // opaqueKeys are objects whose keys are data rather than part of the output
