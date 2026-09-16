@@ -306,11 +306,8 @@ func (a *app) cmdTree(c *command, args []string) error {
 			continue
 		}
 		fmt.Fprintln(&b, escapeControl(root))
-		// tree counts the directory it starts from; items lists only what is
-		// under it.
-		dirs++
-		var walk func(dir, prefix string, depth int)
-		walk = func(dir, prefix string, depth int) {
+		var walk func(dir, prefix string, depth int) bool
+		walk = func(dir, prefix string, depth int) bool {
 			var es []string
 			for _, p := range t.entries(dir, a.all) {
 				if !a.dirsOnly || t.isDir(p) {
@@ -334,8 +331,13 @@ func (a *app) cmdTree(c *command, args []string) error {
 					walk(p, prefix+indent, depth+1)
 				}
 			}
+			return len(es) > 0
 		}
-		walk(root, "", 1)
+		// tree counts the directory it starts from only when it listed
+		// something under it; items lists only what is under it.
+		if walk(root, "", 1) {
+			dirs++
+		}
 	}
 	fmt.Fprintf(&b, "\n%s", count(dirs, "directory", "directories"))
 	if !a.dirsOnly {

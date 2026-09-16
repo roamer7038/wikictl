@@ -869,6 +869,33 @@ func TestTree(t *testing.T) {
 	}
 }
 
+// TestTreeEmptyListing checks that, as tree does, a directory given as an
+// argument counts only when something under it is listed: with -d when it has
+// no subdirectory, and without -a when every entry under it is hidden.
+func TestTreeEmptyListing(t *testing.T) {
+	cfg := setup(t)
+	for args, want := range map[string]string{
+		"-d global":   "global\n\n0 directories\n",
+		"machines/h1": "machines/h1\n\n0 directories, 0 files\n",
+	} {
+		if code, out, errs := runCLI(t, cfg, "", append([]string{"tree"}, strings.Fields(args)...)...); code != 0 || out != want {
+			t.Errorf("tree %s: code=%d errs=%q\n%s", args, code, errs, out)
+		}
+		a := append([]string{"tree", "--json"}, strings.Fields(args)...)
+		if code, out, errs := runCLI(t, cfg, "", a...); code != 0 || out != `{"directories":0,"files":0,"items":[]}`+"\n" {
+			t.Errorf("tree --json %s: code=%d out=%q errs=%q", args, code, out, errs)
+		}
+	}
+	// The root of an empty wiki lists nothing either.
+	empty := setupEmpty(t)
+	if code, out, errs := runCLI(t, empty, "", "tree"); code != 0 || out != ".\n\n0 directories, 0 files\n" {
+		t.Errorf("tree of an empty wiki: code=%d out=%q errs=%q", code, out, errs)
+	}
+	if code, out, errs := runCLI(t, empty, "", "tree", "--json"); code != 0 || out != `{"directories":0,"files":0,"items":[]}`+"\n" {
+		t.Errorf("tree --json of an empty wiki: code=%d out=%q errs=%q", code, out, errs)
+	}
+}
+
 // TestMissingPaths checks that every command reports a path that does not
 // exist, or is of the wrong kind, with the same wording on standard error, and
 // prints its result JSON with --json.
@@ -1480,6 +1507,30 @@ func TestGrepQuietAndErrors(t *testing.T) {
 		code, out, errs := runCLI(t, cfg, "", c.args...)
 		if code != c.code || out != "" || !strings.Contains(errs, c.errs) {
 			t.Errorf("%v: code=%d out=%q errs=%q", c.args, code, out, errs)
+		}
+	}
+}
+
+// TestGrepGitCalls checks that -L, whose output does not say whether a line
+// was selected, runs a second search for the exit code only when its output is
+// printed: with -q one search answers both.
+func TestGrepGitCalls(t *testing.T) {
+	cfg := setup(t)
+	for _, c := range []struct {
+		args []string
+		want int
+	}{
+		{[]string{"grep", "-L", "lease", "global"}, 2},
+		{[]string{"grep", "-q", "-L", "lease", "global"}, 1},
+		{[]string{"grep", "-l", "lease", "global"}, 1},
+		{[]string{"grep", "lease", "global"}, 1},
+	} {
+		trace := filepath.Join(t.TempDir(), "trace")
+		t.Setenv("GIT_TRACE", trace)
+		runCLI(t, cfg, "", c.args...)
+		b, _ := os.ReadFile(trace)
+		if n := strings.Count(string(b), "built-in: git grep "); n != c.want {
+			t.Errorf("%v: git grep ran %d times, want %d", c.args, n, c.want)
 		}
 	}
 }

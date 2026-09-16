@@ -294,12 +294,12 @@ Output: items[] {path, line, code, message}.`,
 		summary: "Show directories as a tree",
 		detail: `Show the files and directories under each directory as a tree, or under the
 root of the wiki without arguments, followed by the number of directories and
-files. As in tree, each directory shown at the top counts as a directory,
-although items lists only the entries under it. Names starting with a dot and
-pages whose frontmatter has status: deprecated are hidden unless -a is given.
-A path that does not exist ("no such file or directory") or is a file ("not a
-directory") is reported on standard error, also with --json, and the command
-exits with code 1.
+files. As in tree, a directory shown at the top counts as a directory only
+when something under it is listed, although items never lists it. Names
+starting with a dot and pages whose frontmatter has status: deprecated are
+hidden unless -a is given. A path that does not exist ("no such file or
+directory") or is a file ("not a directory") is reported on standard error,
+also with --json, and the command exits with code 1.
 
 Output: {items[] {path, kind}, directories, files}; kind is "file" or "dir".`,
 		flags: treeFlags, run: (*app).cmdTree},

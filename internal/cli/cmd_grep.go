@@ -109,6 +109,10 @@ func (a *app) cmdGrep(c *command, args []string) error {
 	switch {
 	case a.filesWith:
 		flags = append(flags, "-l")
+	case a.filesWithout && a.quiet:
+		// -q prints nothing, so one search for the files with a matching line
+		// answers the exit code by itself.
+		flags = append(flags, "-l")
 	case a.filesWithout:
 		matchFlags = append(slices.Clone(flags), "-l")
 		flags = append(flags, "-L")
@@ -166,8 +170,8 @@ func (a *app) cmdGrep(c *command, args []string) error {
 	for _, p := range missing {
 		fmt.Fprintf(a.stderr, "wikictl: %s: no such file or directory\n", escapeControl(p))
 	}
-	// Apart from -L, every form prints one record per selected file.
-	if !a.filesWithout {
+	// Every search but the -L one records the files with a selected line.
+	if matchFlags == nil {
 		selected = len(items) > 0
 	}
 	switch {
