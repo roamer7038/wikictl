@@ -175,9 +175,10 @@ committed when the content is unchanged, which includes a new file left empty.
 When the result cannot be committed, because the file changed in the meantime
 (exit code 3; see "wikictl help"), the content breaks the rules that put
 applies (exit code 4), or
-the editor fails (exit code 1), the edited content is kept in a temporary file
-whose path is printed on standard error. Standard input must be a terminal;
-otherwise the command exits with code 2.
+the editor fails, or the editor leaves something that is not the regular file
+wikictl created, such as a symbolic link (exit code 1), the edited content is
+kept in a temporary file whose path is printed on standard error. Standard
+input must be a terminal; otherwise the command exits with code 2.
 
 Output: {path, sha, commit}, printed only when the file is committed.`,
 		flags: editFlags, check: (*app).checkEdit, run: (*app).cmdEdit},

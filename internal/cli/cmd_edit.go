@@ -34,6 +34,49 @@ func (a *app) checkEdit(c *command, args []string) error {
 	return nil
 }
 
+// readEdited reads the file the editor was given without following a symbolic
+// link, so that an editor which replaces it with a link does not make wikictl
+// read and commit the content of the link's target. An editor that writes a new
+// file and renames it into place, as vim does with backupcopy=no, is left
+// working: the file read is required to be a regular file, not the one created.
+func readEdited(name string) ([]byte, error) {
+	if fi, err := os.Lstat(name); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("%s: the editor replaced the file with a symbolic link", name)
+	}
+	f, err := os.OpenFile(name, os.O_RDONLY|openNoFollow, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !fi.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s: the editor replaced the file with %s", name, fileKind(fi.Mode()))
+	}
+	return io.ReadAll(f)
+}
+
+// fileKind names the kind of a file that is not a regular file.
+func fileKind(m os.FileMode) string {
+	switch {
+	case m.IsDir():
+		return "a directory"
+	case m&os.ModeSymlink != 0:
+		return "a symbolic link"
+	case m&os.ModeNamedPipe != 0:
+		return "a named pipe"
+	case m&os.ModeSocket != 0:
+		return "a socket"
+	case m&os.ModeCharDevice != 0:
+		return "a character device"
+	case m&os.ModeDevice != 0:
+		return "a block device"
+	}
+	return "another kind of file"
+}
+
 // cmdEdit opens the file in an editor and commits the result as put does,
 // with the sha read before editing as the base. When the result cannot be
 // committed, the edited file is kept and its path printed.
@@ -104,7 +147,7 @@ func (a *app) cmdEdit(c *command, args []string) error {
 	if err != nil {
 		return keep(fmt.Errorf("editor %s: %w", editor, err))
 	}
-	edited, err := os.ReadFile(tmp.Name())
+	edited, err := readEdited(tmp.Name())
 	if err != nil {
 		return keep(err)
 	}
