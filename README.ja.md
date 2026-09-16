@@ -189,7 +189,7 @@ wikictl は、wiki リポジトリごとの bare ミラーを `$XDG_CACHE_HOME/w
     gofmt -l .
     go build -o wikictl ./cmd/wikictl
 
-GitHub Actions は、プルリクエストでこれらを含む検査を実行します（`.github/workflows/` を参照）。ブランチ、プルリクエスト、リリースの運用ルールは [CONTRIBUTING.md](CONTRIBUTING.md) を参照してください。
+GitHub Actions は、プルリクエストでこれらを含む検査を実行します（`.github/workflows/` を参照）。ブランチ、プルリクエスト、リリースの運用ルールは [CONTRIBUTING.ja.md](CONTRIBUTING.ja.md) を参照してください。
 
 ## ライセンス
 
