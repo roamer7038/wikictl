@@ -99,10 +99,14 @@ func Deprecated(s Store) (map[string]bool, error) {
 
 // Clean turns a path given on the command line into a path relative to the
 // wiki root. A leading "/" or "./" and a trailing "/" make no difference, and
-// the root itself is ".". Wildcards are not interpreted.
+// the root itself is ".". Wildcards are not interpreted. An empty path is
+// kept as it is: it names no file, and path.Clean would turn it into the root.
 func Clean(p string) (string, error) {
 	if strings.ContainsFunc(p, unicode.IsControl) {
 		return "", fmt.Errorf("path contains a control character: %q", p)
+	}
+	if p == "" {
+		return "", nil
 	}
 	c := path.Clean(strings.TrimLeft(p, "/"))
 	if c == ".." || strings.HasPrefix(c, "../") {

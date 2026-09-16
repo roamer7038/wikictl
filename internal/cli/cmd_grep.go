@@ -168,7 +168,7 @@ func (a *app) cmdGrep(c *command, args []string) error {
 		a.emit(map[string]any{"items": items}, func(w io.Writer) { io.WriteString(w, text.String()) })
 	}
 	for _, p := range missing {
-		fmt.Fprintf(a.stderr, "wikictl: %s: no such file or directory\n", escapeControl(p))
+		fmt.Fprintf(a.stderr, "wikictl: %s: no such file or directory\n", displayPath(p))
 	}
 	// Every search but the -L one records the files with a selected line.
 	if matchFlags == nil {
@@ -203,24 +203,25 @@ func (a *app) grepRecords(c *command, flags, patterns, search []string) ([][]str
 }
 
 // absent returns the paths that are neither a file nor a directory in the
-// wiki. The root "." always exists.
+// wiki, in the order given. The root "." always exists, and an empty path
+// never does.
 func (a *app) absent(paths []string) ([]string, error) {
-	var check []string
-	for _, p := range paths {
-		if p != "." {
-			check = append(check, p)
+	check := notEmpty(slices.DeleteFunc(slices.Clone(paths), func(p string) bool { return p == "." }))
+	gone := map[string]bool{}
+	if len(check) > 0 {
+		files, err := a.repo.Files(check)
+		if err != nil {
+			return nil, &gitError{err}
+		}
+		for _, p := range check {
+			if !slices.ContainsFunc(files, func(f string) bool { return f == p || strings.HasPrefix(f, p+"/") }) {
+				gone[p] = true
+			}
 		}
 	}
-	if len(check) == 0 {
-		return nil, nil
-	}
-	files, err := a.repo.Files(check)
-	if err != nil {
-		return nil, &gitError{err}
-	}
 	var out []string
-	for _, p := range check {
-		if !slices.ContainsFunc(files, func(f string) bool { return f == p || strings.HasPrefix(f, p+"/") }) {
+	for _, p := range paths {
+		if p == "" || gone[p] {
 			out = append(out, p)
 		}
 	}

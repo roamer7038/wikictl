@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 var reRecommended = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
@@ -124,10 +126,50 @@ func NameStyle(p, name string) Issue {
 // that shares a directory with a file or directory whose name differs only
 // by case. Such names collide on case-insensitive file systems.
 func CaseCollisions(paths []string) []Issue {
-	spellings := map[string]map[string]bool{} // lowercased prefix -> prefixes as written
+	return collisions(paths, strings.ToLower, nil, "case_collision", "differs only by case from")
+}
+
+// UnicodeCollisions reports, as unicode_collision issues, every path in paths
+// that shares a directory with a file or directory whose name differs only by
+// Unicode normalisation, such as a name written in NFC and one written in
+// NFD, or by normalisation and case at once. Such names are the same name on
+// a file system that normalises them, as macOS does, so a clone there keeps
+// only one of them. A pair that differs by case alone is left to
+// CaseCollisions, whose message says what to change; lowercasing does not
+// make these names equal, so no case_collision covers them.
+func UnicodeCollisions(paths []string) []Issue {
+	folded := func(s string) string { return strings.ToLower(norm.NFC.String(s)) }
+	// The pairs the other two checks report are left to them: those that share
+	// the key of CaseCollisions (case alone) and those that share their NFC
+	// form (normalisation alone).
+	notCase, notNorm := differsUnder(strings.ToLower), differsUnder(norm.NFC.String)
+	out := collisions(paths, norm.NFC.String, nil, "unicode_collision", "differs only by Unicode normalisation from")
+	out = append(out, collisions(paths, folded, func(q, o string) bool { return notCase(q, o) && notNorm(q, o) },
+		"unicode_collision", "differs only by Unicode normalisation and case from")...)
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	return out
+}
+
+// differsUnder returns a keep predicate for collisions that accepts the pairs
+// a check keyed by key does not already report. The key itself is used, so
+// that the two checks agree exactly. strings.EqualFold, which staticcheck
+// suggests in place of comparing two strings.ToLower calls, is not the same
+// test: it folds "İ" (U+0130) apart from "i", although the two differ only by
+// case, and CaseCollisions reports that pair already.
+func differsUnder(key func(string) string) func(q, o string) bool {
+	return func(q, o string) bool { return key(q) != key(o) }
+}
+
+// collisions reports, with code and phrase, every path in paths that shares a
+// directory with a file or directory whose name has the same key but is
+// written differently. Each path is reported for its first colliding prefix.
+// When keep is set, only the other spellings it accepts are collisions, so
+// that a code covers the pairs another code does not.
+func collisions(paths []string, key func(string) string, keep func(q, o string) bool, code, phrase string) []Issue {
+	spellings := map[string]map[string]bool{} // key of a prefix -> prefixes as written
 	for _, p := range paths {
 		for _, q := range prefixes(p) {
-			k := strings.ToLower(q)
+			k := key(q)
 			if spellings[k] == nil {
 				spellings[k] = map[string]bool{}
 			}
@@ -137,18 +179,21 @@ func CaseCollisions(paths []string) []Issue {
 	var out []Issue
 	for _, p := range paths {
 		for _, q := range prefixes(p) {
-			others := spellings[strings.ToLower(q)]
+			others := spellings[key(q)]
 			if len(others) < 2 {
 				continue
 			}
 			var names []string
 			for o := range others {
-				if o != q {
+				if o != q && (keep == nil || keep(q, o)) {
 					names = append(names, fmt.Sprintf("%q", o))
 				}
 			}
+			if len(names) == 0 {
+				continue
+			}
 			sort.Strings(names)
-			out = append(out, Issue{Path: p, Code: "case_collision", Message: fmt.Sprintf("%q differs only by case from %s", q, strings.Join(names, ", "))})
+			out = append(out, Issue{Path: p, Code: code, Message: fmt.Sprintf("%q %s %s", q, phrase, strings.Join(names, ", "))})
 			break
 		}
 	}

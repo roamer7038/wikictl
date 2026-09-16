@@ -22,6 +22,19 @@ var isTerminal = func(r io.Reader) bool {
 	return ok && term.IsTerminal(int(f.Fd()))
 }
 
+// exitOnSignal ends wikictl after a signal received while the editor runs.
+// Tests replace it.
+var exitOnSignal = func(s os.Signal) { os.Exit(signalExitCode(s)) }
+
+// signalExitCode returns the code wikictl ends with after the signal s: the
+// one a shell reports for a process killed by it.
+func signalExitCode(s os.Signal) int {
+	if sig, ok := s.(syscall.Signal); ok {
+		return 128 + int(sig)
+	}
+	return ExitError
+}
+
 func editFlags(a *app, fs *pflag.FlagSet) {
 	msgFlag(a, fs)
 	fs.BoolVarP(&a.verbose, "verbose", "v", false, "print the path, blob sha and commit")
@@ -139,10 +152,29 @@ func (a *app) cmdEdit(c *command, args []string) error {
 	}
 	run.Stdin, run.Stdout, run.Stderr = a.stdin, a.stdout, a.stderr
 	// As git does, interrupts are left to the editor while it runs: wikictl
-	// receives and drops them, and the editor still gets them.
+	// receives and drops them, and the editor still gets them. SIGTERM and
+	// SIGHUP are not for the editor: they end wikictl, which first prints
+	// where the edited file is, as the failures below print it.
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGQUIT)
+	term := make(chan os.Signal, 1)
+	signal.Notify(term, syscall.SIGTERM, syscall.SIGHUP)
+	done, stopped := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(stopped)
+		select {
+		case s := <-term:
+			keep(nil)
+			exitOnSignal(s)
+		case <-done:
+		}
+	}()
 	err = run.Run()
+	// The editor has ended: the goroutine is waited for, so that it cannot
+	// write after this point. When it received a signal it does not return.
+	close(done)
+	<-stopped
+	signal.Stop(term)
 	signal.Stop(sig)
 	if err != nil {
 		return keep(fmt.Errorf("editor %s: %w", editor, err))

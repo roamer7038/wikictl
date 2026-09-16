@@ -82,10 +82,11 @@ Output: items[] {path, sha, content}.`,
 		run: (*app).cmdCat},
 	{name: "stat", args: "<path>...", minArgs: 1, maxArgs: -1, paths: true,
 		summary: "Show the sha, last update and attributes of files",
-		detail: `Show, for each file, its blob sha, the time of the last commit that changed
-it, and the attributes read from the page: title (the first heading, else the
-file name), summary (or description), type, tags, status and aliases. A path
-that does not exist, is a directory or is a submodule is reported as cat
+		detail: `Show, for each page, its blob sha, the time of the last commit that changed
+it, and the attributes read from it: title (the first heading, else the file
+name), summary (or description), type, tags, status and aliases. Only a path
+ending in .md is a page. A path that does not exist, is a directory, is a
+submodule or is a file that is not a page ("is not a page") is reported as cat
 reports it.
 
 Output: items[] {path, sha, updated, title, summary, type, tags, status,
@@ -98,9 +99,9 @@ Direction "out" is a link in the page: a typed link from its Links section, or
 "mentions" for a link in its body to a page that the Links section does not
 link to. Direction "in" is a link to the page from another page: that page's
 typed link, or "mentions". With -o only the links in the page are listed,
-with -i only the links to it. A path that does not exist, is a directory or is
-a submodule is reported as cat reports it, also with --json, where items is
-empty, and the command exits with code 1.
+with -i only the links to it. A path that does not exist, is a directory, is a
+submodule or is not a page ("is not a page") is reported as cat reports it,
+also with --json, where items is empty, and the command exits with code 1.
 
 Output: items[] {direction, type, target, note}.`,
 		flags: linksFlags, run: (*app).cmdLinks},
@@ -115,10 +116,11 @@ given; submodules are never listed, and naming one reports "is a submodule".
 With -l, a line shows the type from the frontmatter, the time of the last
 commit that changed the entry (for a directory, any file under it), the name,
 and the summary, or the title when the page has no summary; "-" marks an empty
-type or time, and a directory that holds only submodules has no time. A path
-that does not exist ("no such file or directory") or is a submodule ("is a
-submodule") is reported on standard error, also with --json, the others are
-still listed, and the command exits with code 1.
+type or time, a file that is not a page has no type, title or summary, and a
+directory that holds only submodules has no time. A path that does not exist
+("no such file or directory") or is a submodule ("is a submodule") is reported
+on standard error, also with --json, the others are still listed, and the
+command exits with code 1.
 
 Output: items[] {path, kind, type, summary, title, updated}; kind is "file"
 or "dir".`,
@@ -192,8 +194,10 @@ When the result cannot be committed, because the file changed in the meantime
 applies (exit code 4), or the editor fails, or the editor leaves something
 that is not the regular file wikictl created, such as a symbolic link (exit
 code 1), the edited content is kept in a temporary file whose path is printed
-on standard error. Standard input must be a terminal; otherwise the command
-exits with code 2.
+on standard error; SIGTERM and SIGHUP while the editor runs print it too and
+end wikictl with 128 plus the number of the signal, while an interrupt is left
+to the editor. Standard input must be a terminal; otherwise the command exits
+with code 2.
 
 Output: {path, sha, commit}, printed only when the file is committed.`,
 		flags: editFlags, check: (*app).checkEdit, run: (*app).cmdEdit},
@@ -259,12 +263,13 @@ each deleted file.`,
 		summary: "Report pages that violate the wiki format",
 		detail: `Check pages for missing_summary, frontmatter_invalid, links_syntax,
 broken_link, page_too_large and the file name rules. Each path is a page or a
-directory; for a directory every page under it is checked, submodules left
-out. Without arguments every page of the wiki is checked. Exits with code 4
-when violations are found. A path that does not exist ("no such file or
-directory") or is a submodule ("is a submodule") is reported on standard
-error, also with --json, the other paths are still checked, and the command
-exits with code 1, even when violations are found.
+directory; for a directory every page under it is checked, submodules and the
+files that are not pages left out. Without arguments every page of the wiki is
+checked. Exits with code 4 when violations are found. A path that does not
+exist ("no such file or directory"), is a submodule ("is a submodule") or is a
+file that is not a page ("is not a page") is reported on standard error, also
+with --json, the other paths are still checked, and the command exits with
+code 1, even when violations are found.
 
 Each finding is printed as "<path>:<line>: <code>: <message>"; line 0 means
 the whole file.
@@ -287,7 +292,11 @@ of mv reject one, while rm and moving such a file away still work. Lowercase
 ASCII letters, digits and hyphens are recommended; other names are reported as
 name_style.
 Names in one directory that differ only by case collide on case-insensitive
-file systems and are reported as case_collision, against the whole wiki.
+file systems and are reported as case_collision, against the whole wiki. Names
+that differ only by Unicode normalisation, such as one written in NFC and one
+in NFD, or by normalisation and case at once, are one name on a file system
+that normalises them, as macOS does, and are reported as unicode_collision,
+also against the whole wiki.
 
 A Links line is "- <type>: <target> | <note>", or "- <target>" for an untyped
 see_also relation (an untyped URL must be "<scheme>://..."); the bullet may
@@ -568,7 +577,15 @@ func (a *app) setup() error {
 	}
 	a.cfg = cfg
 	if err := a.openRepo(); err != nil {
-		return &gitError{err}
+		// Preparing the mirror can fail without git failing, such as when the
+		// cache directory cannot be created. Such a failure comes from the
+		// environment, where running the command again would not help, so it
+		// is a configuration error rather than a git failure.
+		var ge *repo.GitError
+		if errors.As(err, &ge) {
+			return &gitError{err}
+		}
+		return &usageError{msg: err.Error()}
 	}
 	return nil
 }

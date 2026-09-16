@@ -148,9 +148,10 @@ func TestClean(t *testing.T) {
 		"global//a.md":  "global/a.md",
 		"a/../b":        "b",
 		"global/*.md":   "global/*.md",
-		"":              ".",
-		"/":             ".",
-		"./":            ".",
+		// An empty path is no path: it is kept, not made into the root.
+		"":   "",
+		"/":  ".",
+		"./": ".",
 	} {
 		if got, err := Clean(in); err != nil || got != want {
 			t.Errorf("Clean(%q) = %q, %v; want %q", in, got, err, want)
