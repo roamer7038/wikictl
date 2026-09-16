@@ -299,7 +299,7 @@ func TestSubmoduleReads(t *testing.T) {
 	cfg := setup(t)
 	remote, work := filepath.Join(filepath.Dir(cfg), "remote.git"), cloneRemote(t, cfg)
 	sub := "160000," + gitOut(t, "--git-dir", remote, "rev-parse", "main")
-	for _, p := range []string{"projects/subm", "global/mod.md", "mods/lib/sub"} {
+	for _, p := range []string{"projects/subm", "global/mod.md", "mods/lib/sub", "topsub"} {
 		mustRun(t, work, "git", "update-index", "--add", "--cacheinfo", sub+","+p)
 	}
 	commitAndPush(t, work)
@@ -341,21 +341,38 @@ func TestSubmoduleReads(t *testing.T) {
 		{[]string{"ls", "projects"}, "app/\n"},
 		{[]string{"ls", "global"}, "index.md\npush.md\n"},
 		{[]string{"ls", "mods/lib"}, ""},
+		{[]string{"ls"}, "global/\nmachines/\nmods/\nprojects/\n"},
 		{[]string{"tree", "projects"}, "projects\n└── app\n    └── x.md\n\n2 directories, 1 file\n"},
 		{[]string{"tree", "mods"}, "mods\n└── lib\n\n2 directories, 0 files\n"},
+		{[]string{"tree", "mods/lib"}, "mods/lib\n\n0 directories, 0 files\n"},
+		{[]string{"tree", "-d"}, ".\n├── global\n├── machines\n│   └── h1\n├── mods\n│   └── lib\n└── projects\n    └── app\n\n8 directories\n"},
 		{[]string{"find", "projects"}, "projects\nprojects/app\nprojects/app/x.md\n"},
 		{[]string{"find", "-name", "subm"}, ""},
 		{[]string{"find", "mods"}, "mods\nmods/lib\n"},
+		{[]string{"find", "-maxdepth", "1"}, ".\nglobal\nmachines\nmods\nprojects\n"},
+		{[]string{"find", "-type", "f"}, "global/index.md\nglobal/push.md\nmachines/h1/y.md\nprojects/app/x.md\n"},
 		{[]string{"lint"}, ""},
+		// A directory that holds only submodules has no time of its own, so
+		// no time condition matches it and ls -l shows "-".
+		{[]string{"find", "mods", "-mtime", "-100"}, ""},
+		{[]string{"find", "mods", "-mtime", "+100"}, ""},
+		{[]string{"find", "mods", "-newer", "global/push.md"}, ""},
+		{[]string{"ls", "-l", "mods"}, "-  -  lib/\n"},
 	} {
 		if code, out, errs := runCLI(t, cfg, "", c.args...); code != ExitOK || out != c.out {
 			t.Errorf("%v: code=%d out=%q, want %q, errs=%q", c.args, code, out, c.out, errs)
 		}
 	}
 	for _, args := range [][]string{{"ls", "-R", "--json"}, {"find", "--json"}, {"tree", "-a", "--json"}} {
-		if code, out, errs := runCLI(t, cfg, "", args...); code != ExitOK || strings.Contains(out, "subm") || strings.Contains(out, "mod.md") {
+		if code, out, errs := runCLI(t, cfg, "", args...); code != ExitOK ||
+			strings.Contains(out, "subm") || strings.Contains(out, "mod.md") || strings.Contains(out, "topsub") {
 			t.Errorf("%v: code=%d out=%q errs=%q", args, code, out, errs)
 		}
+	}
+	// The other files of an argument list are still printed.
+	if code, out, errs := runCLI(t, cfg, "", "cat", "global/index.md", "projects/subm"); code != ExitError ||
+		out != "---\nsummary: entry point\n---\n# global\n" || errs != "wikictl: projects/subm: is a submodule\n" {
+		t.Errorf("cat of a page and a submodule: code=%d out=%q errs=%q", code, out, errs)
 	}
 	// A directory of submodules is a directory, not a file, for cat.
 	if code, _, errs := runCLI(t, cfg, "", "cat", "mods/lib"); code != ExitError || errs != "wikictl: mods/lib: is a directory\n" {
@@ -368,6 +385,37 @@ func TestSubmoduleReads(t *testing.T) {
 	if code, out, _ := runCLI(t, cfg, "", "grep", "-l", "lease"); code != ExitOK ||
 		out != "global/push.md\nmachines/h1/y.md\nprojects/app/x.md\n" {
 		t.Errorf("grep -l: code=%d out=%q", code, out)
+	}
+	// The write side is unchanged: rm refuses a submodule at the wiki root as
+	// it refuses any entry there, and deletes one below it without -r. This
+	// runs last, as it changes the tree.
+	if code, _, errs := runCLI(t, cfg, "", "rm", "topsub"); code != ExitInvalid ||
+		errs != "wikictl: bad_path: topsub: a file at the wiki root cannot be deleted\n" {
+		t.Errorf("rm topsub: code=%d errs=%q", code, errs)
+	}
+	if code, _, errs := runCLI(t, cfg, "", "rm", "projects/subm"); code != ExitOK {
+		t.Errorf("rm projects/subm: code=%d errs=%q", code, errs)
+	}
+	if out := gitOut(t, "--git-dir", remote, "ls-tree", "main", "--", "projects/subm", "topsub"); out == "" ||
+		strings.Contains(out, "projects/subm") {
+		t.Errorf("tree after rm: %q", out)
+	}
+}
+
+// TestSubmoduleCaseCollision checks that lint still reports a page whose name
+// differs only by case from a submodule, and gives the submodule itself no
+// line, since it checks no submodule.
+func TestSubmoduleCaseCollision(t *testing.T) {
+	cfg := setup(t)
+	remote, work := filepath.Join(filepath.Dir(cfg), "remote.git"), cloneRemote(t, cfg)
+	sub := "160000," + gitOut(t, "--git-dir", remote, "rev-parse", "main")
+	mustRun(t, work, "git", "update-index", "--add", "--cacheinfo", sub+",global/Push.md")
+	commitAndPush(t, work)
+	want := "global/push.md:0: case_collision: \"global/push.md\" differs only by case from \"global/Push.md\"\n"
+	for _, args := range [][]string{{"lint"}, {"lint", "global"}, {"lint", "global/push.md"}} {
+		if code, out, errs := runCLI(t, cfg, "", args...); code != ExitInvalid || out != want {
+			t.Errorf("%v: code=%d out=%q, want %q, errs=%q", args, code, out, want, errs)
+		}
 	}
 }
 

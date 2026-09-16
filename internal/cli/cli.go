@@ -54,7 +54,8 @@ the code of -L also tells whether a line was selected, not whether a path was
 printed, so -L can print paths and exit with code 1. A pattern that does not
 compile is a usage error. A path that does not exist is reported on standard
 error, the other paths are still searched, and the command exits with code 2,
-or with 0 when -q selected anything.
+or with 0 when -q selected anything. A submodule is not such a path: it holds
+no line, so searching one selects nothing and exits with code 1.
 
 Output: items[] {path, line, text}; with -l or -L, items[] {path}; with -c,
 items[] {path, count}; with -q, nothing.`,
@@ -100,11 +101,13 @@ itself for a path that is a file; without arguments, the root of the wiki.
 Names of directories end with "/". With more than one argument or with -R,
 the entries of each directory follow a line "<dir>:". Names starting with a
 dot and pages whose frontmatter has status: deprecated are hidden unless -a is
-given; submodules are never listed. With -l, a line shows the type from the
-frontmatter, the time of the last commit that changed the entry (for a
-directory, any file under it), the name, and the summary, or the title when
-the page has no summary; "-" marks an empty type or time. A path that does not
-exist ("no such file or directory") or is a submodule ("is a submodule") is
+given; submodules are never listed, and naming one reports "is a submodule".
+With -l, a line shows the type from the frontmatter, the time of the last
+commit that changed the entry (for a directory, any file under it), the name,
+and the summary, or the title when the page has no summary; "-" marks an empty
+type or time, and a directory that holds only submodules has no time. A path
+that does not exist ("no such file or directory") or is a submodule ("is a
+submodule") is
 reported on standard error, also with --json, the others are still listed, and
 the command exits with code 1.
 
@@ -116,9 +119,9 @@ or "dir".`,
 		detail: `Print the path of each file and directory under each path, or under the root
 of the wiki without paths, that matches the expression, one per line, starting
 with the path itself, as "find" does. Pages with status: deprecated and names
-starting with a dot are included; submodules are not listed. The expression is
-a list of primaries that must all be true; "!" negates the primary that
-follows it.
+starting with a dot are included; submodules are not listed, and naming one
+reports "is a submodule". The expression is a list of primaries that must all
+be true; "!" negates the primary that follows it.
 
   -name PATTERN    the last element of the path matches the shell pattern
   -path PATTERN    the path as printed, without a leading "./", matches the
@@ -136,6 +139,9 @@ In a pattern, a class name such as [:alpha:] covers ASCII characters only.
                    element VALUE; a number matches any number of equal value,
                    such as 1.50 for 1.5; a directory, a mapping and a page over
                    1 MiB never match
+
+A path with no time of its own, such as a directory that holds only
+submodules, matches neither -mtime nor -newer.
 
 Only -h and the arguments starting with "--", such as --json, are flags. A
 path that does not exist ("no such file or directory") or is a submodule ("is
@@ -305,7 +311,8 @@ files. As in tree, a directory shown at the top counts as a directory only
 when something under it is listed, although items never lists it. Names
 starting with a dot and pages whose frontmatter has status: deprecated are
 hidden unless -a is given; submodules are never listed, so they count as
-neither. A path that does not exist ("no such file or directory"), is a file
+neither, and naming one reports "is a submodule". A path that does not exist
+("no such file or directory"), is a file
 ("not a directory") or is a submodule ("is a submodule") is reported on
 standard error, also with --json, and the command exits with code 1.
 
