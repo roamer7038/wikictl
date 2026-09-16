@@ -306,6 +306,9 @@ func (a *app) cmdTree(c *command, args []string) error {
 			continue
 		}
 		fmt.Fprintln(&b, escapeControl(root))
+		// tree counts the directory it starts from; items lists only what is
+		// under it.
+		dirs++
 		var walk func(dir, prefix string, depth int)
 		walk = func(dir, prefix string, depth int) {
 			var es []string

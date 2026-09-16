@@ -72,6 +72,17 @@ func TestRm(t *testing.T) {
 	if code, out, _ := runCLI(t, cfg, "", "rm", "--json", "-f", "none/x.md"); code != 0 || out != `{"commit":"","paths":[]}`+"\n" {
 		t.Errorf("rm -f of a missing path: code=%d out=%q", code, out)
 	}
+	// As GNU rm does, -f without any path deletes nothing and succeeds, while
+	// without -f a path is required.
+	if code, out, errs := runCLI(t, cfg, "", "rm", "-f"); code != 0 || out != "" || errs != "" {
+		t.Errorf("rm -f without paths: code=%d out=%q errs=%q", code, out, errs)
+	}
+	if code, out, _ := runCLI(t, cfg, "", "rm", "--json", "-f"); code != 0 || out != `{"commit":"","paths":[]}`+"\n" {
+		t.Errorf("rm -f without paths: code=%d out=%q", code, out)
+	}
+	if code, _, errs := runCLI(t, cfg, "", "rm"); code != ExitUsage || !strings.Contains(errs, "missing argument") {
+		t.Errorf("rm without paths: code=%d errs=%q", code, errs)
+	}
 	if code, _, errs := runCLI(t, cfg, "", "rm", "machines"); code != ExitError || !strings.Contains(errs, "machines: is a directory") {
 		t.Errorf("rm of a directory: code=%d errs=%q", code, errs)
 	}
