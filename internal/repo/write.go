@@ -41,11 +41,13 @@ type Conflict struct {
 func (c *Conflict) Error() string { return fmt.Sprintf("conflict(%s): %s", c.Reason, c.Path) }
 
 // Moved is a commit that every attempt failed to push because another push
-// moved the remote branch first. Nothing was written, so the caller can run
-// the same command again.
+// moved the remote branch first: the lease of the last attempt was stale.
+// Nothing was written, so the caller can run the same command again. A push
+// rejected for any other reason is not a Moved, since running it again would
+// not help.
 type Moved struct {
 	Attempts int   // attempts made before giving up
-	Err      error // rejection of the last attempt
+	Err      error // rejection of the last attempt, as git reported it
 }
 
 func (e *Moved) Error() string {
@@ -76,6 +78,7 @@ func (r *Repo) Commit(changes []Change, msg string, au Author) (*Result, error) 
 	defer unlock()
 	const attempts = 3
 	var last error
+	var lastRetry retryReason
 	var wait time.Duration
 	for attempt := 0; attempt < attempts; attempt++ {
 		if attempt > 0 {
@@ -117,13 +120,20 @@ func (r *Repo) Commit(changes []Change, msg string, au Author) (*Result, error) 
 		if err == nil {
 			return res, nil
 		}
-		last = err
-		if !retry {
+		last, lastRetry = err, retry
+		if retry == noRetry {
 			return nil, err
 		}
 		wait = time.Since(start)
 	}
-	return nil, &Moved{Attempts: attempts, Err: last}
+	// Only a stale lease is certainly another push winning the race. A ref
+	// that could not be locked, or a branch that moved while the push was
+	// rejected, can also be a permission, lock file or hook failure that
+	// running the command again would not fix, so it stays a git failure.
+	if lastRetry == retryStale {
+		return nil, &Moved{Attempts: attempts, Err: last}
+	}
+	return nil, last
 }
 
 // PathError is a change that would replace a directory with a file, or write
@@ -240,15 +250,25 @@ func (r *Repo) conflict(path, reason, sha string) error {
 	return cf
 }
 
+// retryReason says whether a failed attempt is worth retrying, and why.
+type retryReason int
+
+const (
+	noRetry     retryReason = iota // the error is final
+	retryStale                     // the lease was stale: another push moved the branch
+	retryLocked                    // the ref could not be locked, or the branch moved meanwhile
+)
+
 // buildAndPush creates the commit with plumbing commands in a temporary index
-// and pushes it. retry is true when the push was rejected because another push
-// moved or locked the remote branch. Commit has checked the paths in entries.
-func (r *Repo) buildAndPush(head string, changes []Change, msg string, au Author) (res *Result, retry bool, err error) {
+// and pushes it. retry says whether the push was rejected because another push
+// moved or locked the remote branch, and which of the two. Commit has checked
+// the paths in entries.
+func (r *Repo) buildAndPush(head string, changes []Change, msg string, au Author) (res *Result, retry retryReason, err error) {
 	// The index lives in a new directory inside the mirror, where no other
 	// user or process can create or replace it.
 	idxDir, err := os.MkdirTemp(r.Dir, "wikictl-index-*")
 	if err != nil {
-		return nil, false, err
+		return nil, noRetry, err
 	}
 	defer os.RemoveAll(idxDir)
 	env := []string{"GIT_INDEX_FILE=" + filepath.Join(idxDir, "index"),
@@ -257,7 +277,7 @@ func (r *Repo) buildAndPush(head string, changes []Change, msg string, au Author
 	git := func(stdin []byte, args ...string) (string, error) { return r.runGit(false, env, stdin, args...) }
 
 	if _, err := git(nil, "read-tree", cmp.Or(head, "--empty")); err != nil {
-		return nil, false, err
+		return nil, noRetry, err
 	}
 	// The contents are written to files so that one hash-object stores them
 	// all; --no-filters stores them as given, whatever the attributes say.
@@ -268,7 +288,7 @@ func (r *Repo) buildAndPush(head string, changes []Change, msg string, au Author
 		}
 		f := filepath.Join(idxDir, strconv.Itoa(i))
 		if err := os.WriteFile(f, c.Content, 0o600); err != nil {
-			return nil, false, err
+			return nil, noRetry, err
 		}
 		files = append(files, f)
 	}
@@ -276,10 +296,10 @@ func (r *Repo) buildAndPush(head string, changes []Change, msg string, au Author
 	if len(files) > 0 {
 		out, err := git([]byte(strings.Join(files, "\n")+"\n"), "hash-object", "-w", "--no-filters", "--stdin-paths")
 		if err != nil {
-			return nil, false, err
+			return nil, noRetry, err
 		}
 		if blobs = strings.Fields(out); len(blobs) != len(files) {
-			return nil, false, fmt.Errorf("hash-object printed %d object names for %d files", len(blobs), len(files))
+			return nil, noRetry, fmt.Errorf("hash-object printed %d object names for %d files", len(blobs), len(files))
 		}
 	}
 	shas := map[string]string{}
@@ -294,21 +314,21 @@ func (r *Repo) buildAndPush(head string, changes []Change, msg string, au Author
 		fmt.Fprintf(&info, "%s %s\t%s\x00", c.Mode, shas[c.Path], c.Path)
 	}
 	if _, err := git(info.Bytes(), "update-index", "-z", "--index-info"); err != nil {
-		return nil, false, err
+		return nil, noRetry, err
 	}
 	out, err := git(nil, "write-tree")
 	if err != nil {
-		return nil, false, err
+		return nil, noRetry, err
 	}
 	tree := strings.TrimSpace(out)
 	// A change set that leaves the tree as it is creates no commit.
 	if head != "" {
 		cur, err := git(nil, "rev-parse", head+"^{tree}")
 		if err != nil {
-			return nil, false, err
+			return nil, noRetry, err
 		}
 		if strings.TrimSpace(cur) == tree {
-			return &Result{Commit: head, SHAs: shas}, false, nil
+			return &Result{Commit: head, SHAs: shas}, noRetry, nil
 		}
 	}
 	// --no-gpg-sign: a commit.gpgsign setting would otherwise start a signing
@@ -319,7 +339,7 @@ func (r *Repo) buildAndPush(head string, changes []Change, msg string, au Author
 	}
 	out, err = git(nil, args...)
 	if err != nil {
-		return nil, false, err
+		return nil, noRetry, err
 	}
 	commit := strings.TrimSpace(out)
 	pout, perr := r.Git("push", "--porcelain", "origin", commit+":refs/heads/"+r.Branch,
@@ -327,13 +347,16 @@ func (r *Repo) buildAndPush(head string, changes []Change, msg string, au Author
 	switch pushStatus(pout) {
 	case pushOK:
 		if err := r.updateTrackingRef(head, commit); err != nil {
-			return nil, false, fmt.Errorf("pushed %s, but updating %s failed: %w", commit, r.trackingRef(), err)
+			return nil, noRetry, fmt.Errorf("pushed %s, but updating %s failed: %w", commit, r.trackingRef(), err)
 		}
-		return &Result{Commit: commit, SHAs: shas}, false, nil
+		return &Result{Commit: commit, SHAs: shas}, noRetry, nil
 	case pushStale:
-		return nil, true, fmt.Errorf("push rejected: the remote branch moved")
+		return nil, retryStale, fmt.Errorf("push rejected: %s", redactText(strings.TrimSpace(pout)))
 	default:
-		retry := r.remoteMoved(head, pout, perr)
+		retry := noRetry
+		if r.remoteMoved(head, pout, perr) {
+			retry = retryLocked
+		}
 		if perr != nil {
 			return nil, retry, perr
 		}

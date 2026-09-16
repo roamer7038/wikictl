@@ -720,22 +720,26 @@ func TestMvRewriteScope(t *testing.T) {
 	}
 }
 
-// moveRemoteBeforePush puts a git wrapper first on PATH that adds a commit to
-// the main branch of remote before every push and then pushes as usual, so
-// that the lease of the push is stale on every attempt.
-func moveRemoteBeforePush(t *testing.T, remote string) {
+// moveRemoteOnPush puts a git wrapper first on PATH that adds a commit to the
+// main branch of remote around every push: before it, so that the lease of the
+// push is stale, or after it, so that the branch has moved by the time the
+// rejection of the push is classified.
+func moveRemoteOnPush(t *testing.T, remote string, after bool) {
 	t.Helper()
 	counter := shQuote(filepath.Join(t.TempDir(), "count"))
 	wrapGit(t, func(real string) string {
 		g := real + " --git-dir=" + shQuote(remote)
-		return "*' push --porcelain '*)\n" +
-			"  n=$(cat " + counter + " 2>/dev/null || echo 0)\n" +
+		// The message differs every time, so that each commit is a new object.
+		move := "  n=$(cat " + counter + " 2>/dev/null || echo 0)\n" +
 			"  echo $((n + 1)) > " + counter + "\n" +
-			// The message differs every time, so that each commit is a new object.
 			"  t=$(" + g + " rev-parse main^{tree}) || exit 1\n" +
 			"  c=$(" + g + " -c user.name=o -c user.email=o@o commit-tree $t -p main -m \"other $n\") || exit 1\n" +
-			"  " + g + " update-ref refs/heads/main $c || exit 1\n" +
-			"  ;;\n"
+			"  " + g + " update-ref refs/heads/main $c || exit 1\n"
+		if after {
+			return "*' push --porcelain '*)\n" +
+				"  " + real + " \"$@\"\n  s=$?\n" + move + "  exit $s\n  ;;\n"
+		}
+		return "*' push --porcelain '*)\n" + move + "  ;;\n"
 	})
 }
 
@@ -746,20 +750,72 @@ func moveRemoteBeforePush(t *testing.T, remote string) {
 func TestPutRemoteKeepsMoving(t *testing.T) {
 	cfg := setup(t)
 	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
-	moveRemoteBeforePush(t, remote)
+	moveRemoteOnPush(t, remote, false)
 	code, out, errs := runCLI(t, cfg, "---\nsummary: new\n---\n# New\n", "--json", "put", "global/new.md")
 	if code != ExitConflict {
 		t.Fatalf("exit code %d, want %d\nstdout: %s\nstderr: %s", code, ExitConflict, out, errs)
 	}
-	var cf struct{ Error, Reason, Message string }
+	var cf struct{ Error, Reason, Message, Detail string }
 	mustUnmarshal(t, out, &cf)
 	keys, _ := jsonKeys(out)
 	if cf.Error != "conflict" || cf.Reason != "moved" || !strings.Contains(cf.Message, "run put again") ||
-		!slices.Equal(keys, []string{"error", "message", "reason"}) {
+		!strings.Contains(cf.Detail, "stale info") ||
+		!slices.Equal(keys, []string{"detail", "error", "message", "reason"}) {
 		t.Errorf("stdout: %s", out)
 	}
 	if files := gitOut(t, "--git-dir", remote, "ls-tree", "-r", "--name-only", "main"); strings.Contains(files, "global/new.md") {
 		t.Errorf("the page was written:\n%s", files)
+	}
+}
+
+// TestPushFailureStaysGitFailure checks that a push failure that running the
+// command again would not fix keeps the git failure code and the message of
+// git, even when the retries are exhausted and the branch looks as if another
+// push had moved it.
+func TestPushFailureStaysGitFailure(t *testing.T) {
+	cases := []struct {
+		name    string
+		prepare func(t *testing.T, remote string)
+		want    string // part of the message
+	}{
+		{"unwritable refs", func(t *testing.T, remote string) {
+			if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+				t.Skip("needs a directory the user cannot write")
+			}
+			dir := filepath.Join(remote, "refs", "heads")
+			if err := os.Chmod(dir, 0o555); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { os.Chmod(dir, 0o755) })
+		}, "cannot lock ref"},
+		{"stale ref lock", func(t *testing.T, remote string) {
+			if err := os.WriteFile(filepath.Join(remote, "refs", "heads", "main.lock"), nil, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}, "cannot lock ref"},
+		{"rejecting hook while the branch moves", func(t *testing.T, remote string) {
+			hook := filepath.Join(remote, "hooks", "pre-receive")
+			if err := os.WriteFile(hook, []byte("#!/bin/sh\necho denied >&2\nexit 1\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			moveRemoteOnPush(t, remote, true)
+		}, "remote: denied"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			cfg := setup(t)
+			remote := filepath.Join(filepath.Dir(cfg), "remote.git")
+			c.prepare(t, remote)
+			code, out, errs := runCLI(t, cfg, "---\nsummary: new\n---\n# New\n", "--json", "put", "global/new.md")
+			if code != ExitGit {
+				t.Fatalf("exit code %d, want %d\nstdout: %s\nstderr: %s", code, ExitGit, out, errs)
+			}
+			var e errorOut
+			mustUnmarshal(t, out, &e)
+			if e.Error != "git" || !strings.Contains(e.Message, c.want) {
+				t.Errorf("stdout: %s", out)
+			}
+		})
 	}
 }
 

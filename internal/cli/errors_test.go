@@ -49,9 +49,10 @@ func TestReport(t *testing.T) {
 			`{"error":"git","message":"wrap: x"}` + "\n"},
 		{"conflict", &conflictError{cf, "mv"}, ExitConflict, "# a\n", "wikictl: conflict (changed): global/a.md sha=abc\n",
 			`{"error":"conflict","reason":"changed","path":"global/a.md","sha":"abc","content":"# a\n","message":"the file changed since it was read; re-read the wiki and run mv again"}` + "\n"},
-		{"moved", &movedError{&repo.Moved{Attempts: 3}, "put"}, ExitConflict, "",
-			"wikictl: conflict (moved): the remote branch moved while the change was being pushed; nothing was written, run put again\n",
-			`{"error":"conflict","reason":"moved","message":"the remote branch moved while the change was being pushed; nothing was written, run put again"}` + "\n"},
+		{"moved", &movedError{&repo.Moved{Attempts: 3, Err: errors.New("push rejected: To /r.git\n!\tabc:refs/heads/main\t[rejected] (stale info)")}, "put"}, ExitConflict, "",
+			"wikictl: conflict (moved): the remote branch moved while the change was being pushed; nothing was written, run put again\n" +
+				"  push rejected: To /r.git\n  !\tabc:refs/heads/main\t[rejected] (stale info)\n",
+			`{"error":"conflict","reason":"moved","message":"the remote branch moved while the change was being pushed; nothing was written, run put again","detail":"push rejected: To /r.git\n!\tabc:refs/heads/main\t[rejected] (stale info)"}` + "\n"},
 		{"control characters", errors.New("bad_path: d/c\u009b31mX.md: \x1b[2K\r"), ExitError, "", `wikictl: bad_path: d/c\x9b31mX.md: \x1b[2K\x0d` + "\n",
 			`{"error":"error","message":"bad_path: d/c` + "\u009b" + `31mX.md: \u001b[2K\r"}` + "\n"},
 		{"multi-line git", &gitError{&repo.GitError{Args: []string{"push", "origin"}, Stderr: "remote: \x1b[31mdenied\r\nhint: fetch first\nhint: then push\n", Err: errors.New("exit status 1")}}, ExitGit, "",

@@ -88,11 +88,13 @@ type conflictOut struct {
 }
 
 // movedOut is the conflict of a push that lost every race. It has no path,
-// sha or content: no file was read, checked or written.
+// sha or content: no file was read, checked or written. detail is what git
+// reported, so that the cause stays visible.
 type movedOut struct {
 	Error   string `json:"error"`
 	Reason  string `json:"reason"`
 	Message string `json:"message"`
+	Detail  string `json:"detail"`
 }
 
 // exitCode returns the exit code and the "error" field of err. An error of no
@@ -136,11 +138,14 @@ func (a *app) report(err error) int {
 	switch {
 	case code == ExitOK || kind == "":
 	case errors.As(err, &me):
-		msg := movedMessage(me.cmd)
+		msg, detail := movedMessage(me.cmd), movedDetail(me.mv)
 		if a.json {
-			a.emit(movedOut{kind, "moved", msg}, nil)
+			a.emit(movedOut{kind, "moved", msg, detail}, nil)
 		} else {
 			fmt.Fprintf(a.stderr, "wikictl: conflict (moved): %s\n", msg)
+			if detail != "" {
+				fmt.Fprintln(a.stderr, "  "+escapeMessage(detail))
+			}
 		}
 	case errors.As(err, &ce):
 		cf := ce.cf
@@ -160,6 +165,15 @@ func (a *app) report(err error) int {
 		}
 	}
 	return code
+}
+
+// movedDetail returns what git reported for the rejection that ended the
+// retries.
+func movedDetail(mv *repo.Moved) string {
+	if mv.Err == nil {
+		return ""
+	}
+	return mv.Err.Error()
 }
 
 // movedMessage returns the "message" of a push that lost every race.
