@@ -45,7 +45,7 @@ type catItem struct {
 // path that is not a file is reported on standard error, the other files are
 // still printed, and the command exits with 1.
 func (a *app) cmdCat(c *command, args []string) error {
-	contents, shas, err := a.repo.CatSHA(args)
+	contents, shas, err := a.repo.CatSHA(notEmpty(args))
 	if err != nil {
 		return &gitError{err}
 	}
@@ -85,8 +85,10 @@ type statItem struct {
 
 // cmdStat shows the blob sha, the time of the last change and the attributes
 // of each file. Paths that are not files are reported as cat reports them.
+// Every file has a sha, which put --base needs, but only a page has
+// attributes: they stay empty for a file that is not one.
 func (a *app) cmdStat(c *command, args []string) error {
-	pages, err := wiki.ReadPages(a.repo, args)
+	pages, err := wiki.ReadPages(a.repo, notEmpty(args))
 	if err != nil {
 		return &gitError{err}
 	}
@@ -108,11 +110,15 @@ func (a *app) cmdStat(c *command, args []string) error {
 	}
 	items := []statItem{}
 	for _, p := range found {
-		pg := pages.Parse(p)
-		typ, _ := pg.Frontmatter["type"].(string)
-		status, _ := pg.Frontmatter["status"].(string)
-		items = append(items, statItem{Path: p, SHA: pages.Objects[p].SHA, Updated: fmtTime(updated[p]), Title: pg.Title, Summary: pg.Summary,
-			Type: typ, Tags: stringList(pg.Frontmatter["tags"]), Status: status, Aliases: stringList(pg.Frontmatter["aliases"])})
+		it := statItem{Path: p, SHA: pages.Objects[p].SHA, Updated: fmtTime(updated[p]), Tags: []string{}, Aliases: []string{}}
+		if isPage(p) {
+			pg := pages.Parse(p)
+			it.Title, it.Summary = pg.Title, pg.Summary
+			it.Type, _ = pg.Frontmatter["type"].(string)
+			it.Status, _ = pg.Frontmatter["status"].(string)
+			it.Tags, it.Aliases = stringList(pg.Frontmatter["tags"]), stringList(pg.Frontmatter["aliases"])
+		}
+		items = append(items, it)
 	}
 	a.emit(map[string]any{"items": items}, func(w io.Writer) {
 		for i, it := range items {
@@ -144,13 +150,35 @@ func stringList(v any) []string {
 	return out
 }
 
-// noSuchFile is the message for a path that does not exist, and isSubmodule
-// the one for a submodule, which the read commands do not read; put and edit
-// refuse to write over one with the same message.
+// noSuchFile is the message for a path that does not exist, isSubmodule the
+// one for a submodule, which the read commands do not read; put and edit
+// refuse to write over one with the same message. notAPage is the one for a
+// file that the commands reading the attributes of a page cannot read.
 const (
 	noSuchFile  = "no such file or directory"
 	isSubmodule = "is a submodule"
+	notAPage    = "is not a page"
 )
+
+// isPage reports whether p names a page, the only kind of file whose content
+// is interpreted: a path ending in .md, as put reads it.
+func isPage(p string) bool { return strings.HasSuffix(p, ".md") }
+
+// notEmpty returns the paths that are not empty. An empty path names no file
+// and git rejects it as a pathspec, so it never reaches git; the commands
+// report it as noSuchFile.
+func notEmpty(paths []string) []string {
+	return slices.DeleteFunc(slices.Clone(paths), func(p string) bool { return p == "" })
+}
+
+// displayPath returns p as a message names it. An empty path is shown as two
+// quotation marks, since the message would otherwise start with its colon.
+func displayPath(p string) string {
+	if p == "" {
+		return "''"
+	}
+	return escapeControl(p)
+}
 
 // missing returns the paths for which found is false, after checking with
 // git that each of them is absent rather than unreadable.
@@ -161,7 +189,7 @@ func (a *app) missing(paths []string, found func(string) bool) ([]string, error)
 			out = append(out, p)
 		}
 	}
-	if err := a.repo.CheckMissing(out); err != nil {
+	if err := a.repo.CheckMissing(notEmpty(out)); err != nil {
 		return nil, &gitError{err}
 	}
 	return out, nil
@@ -171,10 +199,22 @@ func (a *app) missing(paths []string, found func(string) bool) ([]string, error)
 // files where a file is required: "is a directory" for a directory, "is a
 // submodule" for a submodule, else noSuchFile.
 func (a *app) fileMessage(paths []string) (func(string) string, error) {
+	return a.entryMessage(paths, false)
+}
+
+// pageMessage is fileMessage for the commands that read the attributes of a
+// page: a file that is not a page is reported as notAPage.
+func (a *app) pageMessage(paths []string) (func(string) string, error) {
+	return a.entryMessage(paths, true)
+}
+
+// entryMessage returns the message for reportMissing of paths that cannot be
+// read where, with page, a page is required and otherwise any file is.
+func (a *app) entryMessage(paths []string, page bool) (func(string) string, error) {
 	var ents []repo.Entry
-	if len(paths) > 0 {
+	if ps := notEmpty(paths); len(ps) > 0 {
 		var err error
-		if ents, err = a.repo.Entries(paths); err != nil {
+		if ents, err = a.repo.Entries(ps); err != nil {
 			return nil, &gitError{err}
 		}
 	}
@@ -184,6 +224,8 @@ func (a *app) fileMessage(paths []string) (func(string) string, error) {
 			return "is a directory"
 		case slices.ContainsFunc(ents, func(e repo.Entry) bool { return e.Path == p && e.Type == "commit" }):
 			return isSubmodule
+		case page && slices.ContainsFunc(ents, func(e repo.Entry) bool { return e.Path == p }):
+			return notAPage
 		}
 		return noSuchFile
 	}, nil
@@ -198,7 +240,7 @@ func (a *app) reportMissing(paths []string, msg func(string) string) error {
 		if msg != nil {
 			m = msg(p)
 		}
-		fmt.Fprintf(a.stderr, "wikictl: %s: %s\n", escapeControl(p), m)
+		fmt.Fprintf(a.stderr, "wikictl: %s: %s\n", displayPath(p), m)
 	}
 	if len(paths) > 0 {
 		return exitStatus(ExitError)
@@ -223,12 +265,12 @@ func linksFlags(a *app, fs *pflag.FlagSet) {
 // not listed again.
 func (a *app) cmdLinks(c *command, args []string) error {
 	p := args[0]
-	pages, err := wiki.ReadPages(a.repo, args)
+	pages, err := wiki.ReadPages(a.repo, notEmpty(args))
 	if err != nil {
 		return &gitError{err}
 	}
-	if !pages.Exists(p) {
-		msg, err := a.fileMessage(args)
+	if !pages.Exists(p) || !isPage(p) {
+		msg, err := a.pageMessage(args)
 		if err != nil {
 			return err
 		}

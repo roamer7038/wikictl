@@ -103,7 +103,8 @@ func TestEveryCommandHasHelp(t *testing.T) {
 	}
 	// Every issue code that lint reports is described in its help.
 	_, out, _ := runNoConfig(t, "help", "lint")
-	for _, code := range []string{"missing_summary", "frontmatter_invalid", "links_syntax", "bad_path", "name_style", "case_collision", "page_too_large", "broken_link"} {
+	for _, code := range []string{"missing_summary", "frontmatter_invalid", "links_syntax", "bad_path", "name_style", "case_collision",
+		"unicode_collision", "page_too_large", "broken_link"} {
 		if !strings.Contains(out, code) {
 			t.Errorf("help lint must describe %s", code)
 		}

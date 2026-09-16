@@ -209,11 +209,12 @@ func (a *app) cmdLs(c *command, args []string) error {
 
 // lsDetails fills in the attributes of the items that the output needs and
 // sorts by time for -t. roots are the arguments, under which every item is.
+// Only pages are read: a file that is not one has no type, title or summary.
 func (a *app) lsDetails(t *fileTree, roots []string, sections []lsSection) error {
 	var paths []string
 	for _, s := range sections {
 		for _, it := range s.items {
-			if it.Kind == "file" {
+			if it.Kind == "file" && isPage(it.Path) {
 				paths = append(paths, it.Path)
 			}
 		}
@@ -225,7 +226,7 @@ func (a *app) lsDetails(t *fileTree, roots []string, sections []lsSection) error
 		}
 		for _, s := range sections {
 			for i, it := range s.items {
-				if it.Kind == "file" {
+				if it.Kind == "file" && isPage(it.Path) {
 					pg := pages.Parse(it.Path)
 					s.items[i].Type, _ = pg.Frontmatter["type"].(string)
 					s.items[i].Summary, s.items[i].Title = pg.Summary, pg.Title

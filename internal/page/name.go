@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 var reRecommended = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
@@ -100,10 +102,26 @@ func NameStyle(p, name string) Issue {
 // that shares a directory with a file or directory whose name differs only
 // by case. Such names collide on case-insensitive file systems.
 func CaseCollisions(paths []string) []Issue {
-	spellings := map[string]map[string]bool{} // lowercased prefix -> prefixes as written
+	return collisions(paths, strings.ToLower, "case_collision", "differs only by case from")
+}
+
+// UnicodeCollisions reports, as unicode_collision issues, every path in paths
+// that shares a directory with a file or directory whose name differs only by
+// Unicode normalisation, such as a name written in NFC and one written in
+// NFD. Such names are the same name on a file system that normalises them, as
+// macOS does, so a clone there keeps only one of them.
+func UnicodeCollisions(paths []string) []Issue {
+	return collisions(paths, norm.NFC.String, "unicode_collision", "differs only by Unicode normalisation from")
+}
+
+// collisions reports, with code and phrase, every path in paths that shares a
+// directory with a file or directory whose name has the same key but is
+// written differently. Each path is reported for its first colliding prefix.
+func collisions(paths []string, key func(string) string, code, phrase string) []Issue {
+	spellings := map[string]map[string]bool{} // key of a prefix -> prefixes as written
 	for _, p := range paths {
 		for _, q := range prefixes(p) {
-			k := strings.ToLower(q)
+			k := key(q)
 			if spellings[k] == nil {
 				spellings[k] = map[string]bool{}
 			}
@@ -113,7 +131,7 @@ func CaseCollisions(paths []string) []Issue {
 	var out []Issue
 	for _, p := range paths {
 		for _, q := range prefixes(p) {
-			others := spellings[strings.ToLower(q)]
+			others := spellings[key(q)]
 			if len(others) < 2 {
 				continue
 			}
@@ -124,7 +142,7 @@ func CaseCollisions(paths []string) []Issue {
 				}
 			}
 			sort.Strings(names)
-			out = append(out, Issue{Path: p, Code: "case_collision", Message: fmt.Sprintf("%q differs only by case from %s", q, strings.Join(names, ", "))})
+			out = append(out, Issue{Path: p, Code: code, Message: fmt.Sprintf("%q %s %s", q, phrase, strings.Join(names, ", "))})
 			break
 		}
 	}

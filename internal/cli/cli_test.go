@@ -419,6 +419,165 @@ func TestSubmoduleCaseCollision(t *testing.T) {
 	}
 }
 
+// TestNonPageFiles checks that the commands reading the attributes of a page
+// report a file that is not a page as "is not a page" with code 1, in text and
+// with --json, that cat, ls and stat still read it without inventing a title
+// or a summary for it, and that listing or linting a directory is unchanged.
+func TestNonPageFiles(t *testing.T) {
+	cfg := setup(t)
+	if code, _, errs := runCLI(t, cfg, "data\n", "put", "global/data.txt"); code != ExitOK {
+		t.Fatalf("put: code=%d errs=%q", code, errs)
+	}
+	want := "wikictl: global/data.txt: is not a page\n"
+	for _, args := range [][]string{{"links", "global/data.txt"}, {"lint", "global/data.txt"}} {
+		if code, _, errs := runCLI(t, cfg, "", args...); code != ExitError || errs != want {
+			t.Errorf("%v: code=%d errs=%q, want %q", args, code, errs, want)
+		}
+		js := append([]string{"--json"}, args...)
+		if code, out, errs := runCLI(t, cfg, "", js...); code != ExitError || out != `{"items":[]}`+"\n" || errs != want {
+			t.Errorf("%v: code=%d out=%q errs=%q", js, code, out, errs)
+		}
+	}
+	// cat prints the file as stored, and stat keeps the sha that put --base
+	// needs, with none of the attributes of a page.
+	if code, out, errs := runCLI(t, cfg, "", "cat", "global/data.txt"); code != ExitOK || out != "data\n" {
+		t.Errorf("cat: code=%d out=%q errs=%q", code, out, errs)
+	}
+	var st struct{ Items []statItem }
+	code, out, errs := runCLI(t, cfg, "", "--json", "stat", "global/data.txt")
+	mustUnmarshal(t, out, &st)
+	if code != ExitOK || len(st.Items) != 1 || len(st.Items[0].SHA) != 40 ||
+		st.Items[0].Title != "" || st.Items[0].Summary != "" || st.Items[0].Type != "" {
+		t.Errorf("stat: code=%d out=%q errs=%q", code, out, errs)
+	}
+	// ls lists the file with no attributes, so its -l line has only three
+	// columns, and lint of the directory does not check it.
+	var ls struct{ Items []lsItem }
+	_, out, _ = runCLI(t, cfg, "", "--json", "ls", "global")
+	mustUnmarshal(t, out, &ls)
+	if !slices.ContainsFunc(ls.Items, func(it lsItem) bool {
+		return it.Path == "global/data.txt" && it.Title == "" && it.Summary == "" && it.Type == ""
+	}) {
+		t.Errorf("ls --json: %s", out)
+	}
+	_, out, _ = runCLI(t, cfg, "", "ls", "-l", "global")
+	found := false
+	for _, l := range strings.Split(out, "\n") {
+		if f := strings.Fields(l); len(f) == 3 && f[2] == "data.txt" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("ls -l must show no title for a file that is not a page: %q", out)
+	}
+	if code, out, errs := runCLI(t, cfg, "", "lint", "global"); code != ExitOK || out != "" {
+		t.Errorf("lint of the directory: code=%d out=%q errs=%q", code, out, errs)
+	}
+}
+
+// TestEmptyPathArgument checks that an empty path is a path that does not
+// exist: the commands that read report it and exit with 1, grep with 2 as GNU
+// grep does, and the commands that write reject it as bad_path.
+func TestEmptyPathArgument(t *testing.T) {
+	cfg := setup(t)
+	want := "wikictl: '': no such file or directory\n"
+	for _, c := range []struct {
+		args []string
+		code int
+		json string
+	}{
+		{[]string{"cat", ""}, ExitError, `{"items":[]}`},
+		{[]string{"stat", ""}, ExitError, `{"items":[]}`},
+		{[]string{"links", ""}, ExitError, `{"items":[]}`},
+		{[]string{"lint", ""}, ExitError, `{"items":[]}`},
+		{[]string{"ls", ""}, ExitError, `{"items":[]}`},
+		{[]string{"find", ""}, ExitError, `{"items":[]}`},
+		{[]string{"tree", ""}, ExitError, `{"directories":0,"files":0,"items":[]}`},
+		{[]string{"grep", "lease", ""}, ExitUsage, `{"items":[]}`},
+	} {
+		if code, _, errs := runCLI(t, cfg, "", c.args...); code != c.code || errs != want {
+			t.Errorf("%v: code=%d errs=%q, want %q", c.args, code, errs, want)
+		}
+		js := append([]string{"--json"}, c.args...)
+		if code, out, errs := runCLI(t, cfg, "", js...); code != c.code || out != c.json+"\n" || errs != want {
+			t.Errorf("%v: code=%d out=%q errs=%q", js, code, out, errs)
+		}
+	}
+	// An empty argument of -newer is reported before anything is printed, as a
+	// missing one is.
+	for _, args := range [][]string{{"find", "-newer", ""}, {"--json", "find", "-newer", ""}} {
+		if code, out, errs := runCLI(t, cfg, "", args...); code != ExitError || out != "" || errs != want {
+			t.Errorf("%v: code=%d out=%q errs=%q", args, code, out, errs)
+		}
+	}
+	for _, args := range [][]string{{"put", ""}, {"rm", ""}, {"mv", "", "global/x.md"}, {"mv", "global/push.md", ""}} {
+		if code, _, errs := runCLI(t, cfg, "x", args...); code != ExitInvalid || !strings.Contains(errs, "bad_path") {
+			t.Errorf("%v: code=%d errs=%q", args, code, errs)
+		}
+	}
+}
+
+// TestUnicodeCollisionLint checks that lint reports two pages whose names
+// differ only by Unicode normalisation, which are one name on macOS, and that
+// writing them is not refused.
+func TestUnicodeCollisionLint(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.Skip("the file system normalises the names of the clone")
+	}
+	cfg := setup(t)
+	// "ä" as one rune (NFC) and as "a" with a combining diaeresis (NFD).
+	nfc, nfd := "global/äpfel.md", "global/äpfel.md"
+	for _, p := range []string{nfc, nfd} {
+		if code, _, errs := runCLI(t, cfg, "---\nsummary: s\n---\n# s\n", "put", p); code != ExitOK {
+			t.Fatalf("put %q: code=%d errs=%q", p, code, errs)
+		}
+	}
+	var li struct {
+		Items []struct{ Path, Code, Message string }
+	}
+	code, out, errs := runCLI(t, cfg, "", "--json", "lint", nfc)
+	mustUnmarshal(t, out, &li)
+	found := false
+	for _, it := range li.Items {
+		if it.Code == "case_collision" {
+			t.Errorf("a normalisation collision is not a case collision: %+v", it)
+		}
+		if it.Code == "unicode_collision" && it.Path == nfc && strings.Contains(it.Message, nfd) {
+			found = true
+		}
+	}
+	if code != ExitInvalid || !found {
+		t.Errorf("lint of the NFC page: code=%d out=%q errs=%q", code, out, errs)
+	}
+	// Both pages are reported when the whole wiki is checked.
+	code, out, _ = runCLI(t, cfg, "", "lint")
+	if code != ExitInvalid || strings.Count(out, "unicode_collision") != 2 {
+		t.Errorf("lint: code=%d out=%q", code, out)
+	}
+}
+
+// TestMirrorPreparationFailure checks that a failure to prepare the mirror
+// that is not a git failure, such as a cache directory that cannot be
+// created, is a configuration error (code 2) and not a git failure (code 5):
+// it comes from the environment, so running the command again would not help.
+func TestMirrorPreparationFailure(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs a directory the user cannot write to")
+	}
+	cfg := setup(t)
+	ro := filepath.Join(t.TempDir(), "ro")
+	if err := os.Mkdir(ro, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(ro, "cache"))
+	code, out, errs := runCLI(t, cfg, "", "--json", "ls")
+	var e errorOut
+	mustUnmarshal(t, out, &e)
+	if code != ExitUsage || e.Error != "usage" || !strings.Contains(e.Message, "permission denied") {
+		t.Errorf("code=%d out=%q errs=%q", code, out, errs)
+	}
+}
+
 func TestPutRm(t *testing.T) {
 	cfg := setup(t)
 	code, out, _ := runCLI(t, cfg, "---\nsummary: new page\n---\n# n\n", "put", "--json", "global/new.md")

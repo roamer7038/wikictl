@@ -48,11 +48,13 @@ func (a *app) cmdLint(c *command, args []string) error {
 		slices.Sort(paths)
 		paths = slices.Compact(paths)
 	}
-	read, err := wiki.ReadPages(a.repo, paths)
+	read, err := wiki.ReadPages(a.repo, notEmpty(paths))
 	if err != nil {
 		return &gitError{err}
 	}
-	missing := slices.DeleteFunc(slices.Clone(files), read.Exists)
+	// An argument that is a file but not a page is reported, not checked: the
+	// rules lint applies are the rules of a page.
+	missing := slices.DeleteFunc(slices.Clone(files), func(p string) bool { return read.Exists(p) && isPage(p) })
 	paths = slices.DeleteFunc(paths, func(p string) bool { return slices.Contains(missing, p) })
 	checked := map[string]bool{}
 	for _, p := range paths {
@@ -63,7 +65,7 @@ func (a *app) cmdLint(c *command, args []string) error {
 	// may lie outside the checked directories. Only the checked paths are
 	// reported, so a submodule contributes its name but gets no line of its
 	// own; the message of the page it collides with names it.
-	for _, is := range page.CaseCollisions(names) {
+	for _, is := range slices.Concat(page.CaseCollisions(names), page.UnicodeCollisions(names)) {
 		if checked[is.Path] {
 			items = append(items, is)
 		}
@@ -91,7 +93,7 @@ func (a *app) cmdLint(c *command, args []string) error {
 		}
 	})
 	if len(missing) > 0 {
-		msg, err := a.fileMessage(missing)
+		msg, err := a.pageMessage(missing)
 		if err != nil {
 			return err
 		}

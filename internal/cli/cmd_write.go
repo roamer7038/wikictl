@@ -256,8 +256,15 @@ func (a *app) checkMv(c *command, args []string) error {
 		srcs, dst = args[:len(args)-1], args[len(args)-1]
 	}
 	var err error
-	a.cleaned, err = cleanPaths(append(slices.Clone(srcs), dst))
-	return err
+	if a.cleaned, err = cleanPaths(append(slices.Clone(srcs), dst)); err != nil {
+		return err
+	}
+	// An empty argument names no file; mv rejects it as rm rejects an empty
+	// name, instead of taking it for a source that does not exist.
+	if slices.Contains(a.cleaned, "") {
+		return &invalidError{"bad_path: empty name"}
+	}
+	return nil
 }
 
 // cmdMv moves files and directories as mv does and rewrites the links to the

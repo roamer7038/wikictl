@@ -70,6 +70,39 @@ func TestCaseCollisions(t *testing.T) {
 	}
 }
 
+// TestUnicodeCollisions checks the names that differ only by normalisation:
+// "ä" as one rune (NFC) and as "a" with a combining diaeresis (NFD).
+func TestUnicodeCollisions(t *testing.T) {
+	nfc, nfd := "global/ä.md", "global/ä.md"
+	got := UnicodeCollisions([]string{nfc, nfd, "global/b.md"})
+	if len(got) != 2 {
+		t.Fatalf("got %+v", got)
+	}
+	for _, is := range got {
+		if is.Code != "unicode_collision" || !strings.Contains(is.Message, "differs only by Unicode normalisation") {
+			t.Errorf("%+v", is)
+		}
+	}
+	// Both names are reported, each message naming the other spelling.
+	msgs := map[string]string{}
+	for _, is := range got {
+		msgs[is.Path] = is.Message
+	}
+	if !strings.Contains(msgs[nfc], nfd) || !strings.Contains(msgs[nfd], nfc) {
+		t.Errorf("%+v", got)
+	}
+	// A directory name collides as a file name does.
+	if got := UnicodeCollisions([]string{"ä/a.md", "ä/b.md"}); len(got) != 2 {
+		t.Errorf("directory: %+v", got)
+	}
+	// Names that are equal, or differ by more than normalisation, do not.
+	for _, paths := range [][]string{{nfc, "global/b.md"}, {"global/a.md", "global/A.md"}} {
+		if got := UnicodeCollisions(paths); len(got) != 0 {
+			t.Errorf("%v: %+v", paths, got)
+		}
+	}
+}
+
 func TestParse(t *testing.T) {
 	src := "---\nsummary: the answer\ntype: policy\n---\n# The question\n\nbody [a](a.md)\n\n## Links\n- part_of: [p](../../global/p.md)\n"
 	p := Parse("projects/x/q.md", []byte(src))
