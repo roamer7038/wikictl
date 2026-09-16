@@ -49,10 +49,12 @@ this help. With -e, which may be given more than once, every argument is a
 path. Binary files are skipped, and pages with status: deprecated are searched
 too. With -i, the case of letters other than ASCII is ignored only together
 with -F. -E and -F, and -L and --all-match, cannot be combined. The command
-exits with code 0 when anything is selected and 1 when nothing is; a pattern
-that does not compile is a usage error. A path that does not exist is reported
-on standard error, the other paths are still searched, and the command exits
-with code 2, or with 0 when -q selected anything.
+exits with code 0 when a line is selected and 1 when none is; as in GNU grep
+the code of -L also tells whether a line was selected, not whether a path was
+printed, so -L can print paths and exit with code 1. A pattern that does not
+compile is a usage error. A path that does not exist is reported on standard
+error, the other paths are still searched, and the command exits with code 2,
+or with 0 when -q selected anything.
 
 Output: items[] {path, line, text}; with -l or -L, items[] {path}; with -c,
 items[] {path, count}; with -q, nothing.`,
@@ -213,14 +215,15 @@ rewritten counts the other pages whose links were rewritten, and commit is
 empty when nothing was moved. With -v, text output is
 "<from><TAB><to><TAB><commit>" for each moved file.`,
 		flags: mvFlags, check: (*app).checkMv, run: (*app).cmdMv},
-	{name: "rm", args: "<path>...", minArgs: 1, maxArgs: -1, paths: true,
+	{name: "rm", args: "<path>...", maxArgs: -1, paths: true,
 		summary: "Delete files or directories",
 		detail: `Delete files, and with -r directories with every file under them, in one
 commit. A path that is a directory without -r, or that does not exist, is
 reported on standard error, the other paths are still deleted, and the command
-exits with code 1; with -f a path that does not exist is ignored. A file at the
-root of the wiki, or a path that breaks the file name rules (see "help lint"),
-is rejected with exit code 4 and nothing is deleted. A file added under a
+exits with code 1; with -f a path that does not exist is ignored, and -f
+without any path deletes nothing and exits with code 0. A file at the root of
+the wiki, or a path that breaks the file name rules (see "help lint"), is
+rejected with exit code 4 and nothing is deleted. A file added under a
 directory after rm read it is not deleted. Pages that link to a deleted page
 are left unchanged; lint reports them as broken_link. If a file
 changed since rm read it, the command exits with code 3 and deletes nothing
@@ -229,7 +232,7 @@ changed since rm read it, the command exits with code 3 and deletes nothing
 Output: {paths, commit}; paths lists the deleted files, and commit is empty
 when nothing was deleted. With -v, text output is "<path><TAB><commit>" for
 each deleted file.`,
-		flags: rmFlags, run: (*app).cmdRm},
+		flags: rmFlags, check: (*app).checkRm, run: (*app).cmdRm},
 	{name: "lint", args: "[<path>...]", maxArgs: -1, paths: true,
 		summary: "Report pages that violate the wiki format",
 		detail: `Check pages for missing_summary, frontmatter_invalid, links_syntax,
@@ -291,10 +294,12 @@ Output: items[] {path, line, code, message}.`,
 		summary: "Show directories as a tree",
 		detail: `Show the files and directories under each directory as a tree, or under the
 root of the wiki without arguments, followed by the number of directories and
-files. Names starting with a dot and pages whose frontmatter has status:
-deprecated are hidden unless -a is given. A path that does not exist ("no such
-file or directory") or is a file ("not a directory") is reported on standard
-error, also with --json, and the command exits with code 1.
+files. As in tree, a directory shown at the top counts as a directory only
+when something under it is listed, although items never lists it. Names
+starting with a dot and pages whose frontmatter has status: deprecated are
+hidden unless -a is given. A path that does not exist ("no such file or
+directory") or is a file ("not a directory") is reported on standard error,
+also with --json, and the command exits with code 1.
 
 Output: {items[] {path, kind}, directories, files}; kind is "file" or "dir".`,
 		flags: treeFlags, run: (*app).cmdTree},

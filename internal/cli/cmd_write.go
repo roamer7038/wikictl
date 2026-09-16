@@ -141,9 +141,23 @@ func (a *app) warn(is page.Issue) {
 	fmt.Fprintf(a.stderr, "wikictl: warning: %s:%d: %s: %s\n", escapeControl(is.Path), is.Line, is.Code, escapeControl(is.Message))
 }
 
+// checkRm requires a path unless -f is given, which lets rm be run with paths
+// that a caller built and that may be empty.
+func (a *app) checkRm(c *command, args []string) error {
+	if len(args) == 0 && !a.force {
+		return &usageError{c, "missing argument"}
+	}
+	return nil
+}
+
 // cmdRm deletes files, and with -r directories, in one commit. As rm does, a
 // path that cannot be deleted is reported and the others are still deleted.
 func (a *app) cmdRm(c *command, args []string) error {
+	// Only "rm -f" reaches this without a path; it deletes nothing.
+	if len(args) == 0 {
+		a.emit(map[string]any{"paths": []string{}, "commit": ""}, nil)
+		return nil
+	}
 	for _, p := range args {
 		for _, x := range strings.Split(p, "/") {
 			if err := page.CheckName(x); err != nil {

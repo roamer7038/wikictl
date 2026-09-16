@@ -842,10 +842,12 @@ func TestTree(t *testing.T) {
 		t.Fatalf("put: code=%d %s", code, errs)
 	}
 	for args, want := range map[string]string{
-		"":               ".\n├── global\n│   ├── index.md\n│   └── push.md\n├── machines\n│   └── h1\n└── projects\n    └── app\n        ├── sub\n        │   └── z.md\n        └── x.md\n\n6 directories, 4 files\n",
-		"-d -L 2":        ".\n├── global\n├── machines\n│   └── h1\n└── projects\n    └── app\n\n5 directories\n",
-		"-a machines":    "machines\n└── h1\n    └── y.md\n\n1 directory, 1 file\n",
-		"/projects/app/": "projects/app\n├── sub\n│   └── z.md\n└── x.md\n\n1 directory, 2 files\n",
+		// As tree does, the directories shown at the top are counted too.
+		"":                ".\n├── global\n│   ├── index.md\n│   └── push.md\n├── machines\n│   └── h1\n└── projects\n    └── app\n        ├── sub\n        │   └── z.md\n        └── x.md\n\n7 directories, 4 files\n",
+		"-d -L 2":         ".\n├── global\n├── machines\n│   └── h1\n└── projects\n    └── app\n\n6 directories\n",
+		"-a machines":     "machines\n└── h1\n    └── y.md\n\n2 directories, 1 file\n",
+		"/projects/app/":  "projects/app\n├── sub\n│   └── z.md\n└── x.md\n\n2 directories, 2 files\n",
+		"global projects": "global\n├── index.md\n└── push.md\nprojects\n└── app\n    ├── sub\n    │   └── z.md\n    └── x.md\n\n4 directories, 4 files\n",
 	} {
 		if code, out, errs := runCLI(t, cfg, "", append([]string{"tree"}, strings.Fields(args)...)...); code != 0 || out != want {
 			t.Errorf("tree %s: code=%d errs=%q\n%s", args, code, errs, out)
@@ -857,12 +859,40 @@ func TestTree(t *testing.T) {
 	}
 	code, out, _ := runCLI(t, cfg, "", "tree", "--json", "projects")
 	mustUnmarshal(t, out, &res)
-	if code != 0 || res.Directories != 2 || res.Files != 2 || len(res.Items) != 4 || res.Items[0].Path != "projects/app" || res.Items[0].Kind != "dir" {
+	// directories counts projects itself, which items does not list.
+	if code != 0 || res.Directories != 3 || res.Files != 2 || len(res.Items) != 4 || res.Items[0].Path != "projects/app" || res.Items[0].Kind != "dir" {
 		t.Errorf("tree --json: code=%d %s", code, out)
 	}
 	if code, out, errs := runCLI(t, cfg, "", "tree", "global/index.md", "none"); code != 1 || out != "\n0 directories, 0 files\n" ||
 		errs != "wikictl: global/index.md: not a directory\nwikictl: none: no such file or directory\n" {
 		t.Errorf("tree of paths that are not directories: code=%d out=%q errs=%q", code, out, errs)
+	}
+}
+
+// TestTreeEmptyListing checks that, as tree does, a directory given as an
+// argument counts only when something under it is listed: with -d when it has
+// no subdirectory, and without -a when every entry under it is hidden.
+func TestTreeEmptyListing(t *testing.T) {
+	cfg := setup(t)
+	for args, want := range map[string]string{
+		"-d global":   "global\n\n0 directories\n",
+		"machines/h1": "machines/h1\n\n0 directories, 0 files\n",
+	} {
+		if code, out, errs := runCLI(t, cfg, "", append([]string{"tree"}, strings.Fields(args)...)...); code != 0 || out != want {
+			t.Errorf("tree %s: code=%d errs=%q\n%s", args, code, errs, out)
+		}
+		a := append([]string{"tree", "--json"}, strings.Fields(args)...)
+		if code, out, errs := runCLI(t, cfg, "", a...); code != 0 || out != `{"directories":0,"files":0,"items":[]}`+"\n" {
+			t.Errorf("tree --json %s: code=%d out=%q errs=%q", args, code, out, errs)
+		}
+	}
+	// The root of an empty wiki lists nothing either.
+	empty := setupEmpty(t)
+	if code, out, errs := runCLI(t, empty, "", "tree"); code != 0 || out != ".\n\n0 directories, 0 files\n" {
+		t.Errorf("tree of an empty wiki: code=%d out=%q errs=%q", code, out, errs)
+	}
+	if code, out, errs := runCLI(t, empty, "", "tree", "--json"); code != 0 || out != `{"directories":0,"files":0,"items":[]}`+"\n" {
+		t.Errorf("tree --json of an empty wiki: code=%d out=%q errs=%q", code, out, errs)
 	}
 }
 
@@ -1469,7 +1499,6 @@ func TestGrepQuietAndErrors(t *testing.T) {
 		errs string
 	}{
 		{[]string{"grep", "-q", "--json", "lease"}, ExitOK, ""},
-		{[]string{"grep", "-q", "-L", "zzz", "global"}, ExitOK, ""},
 		{[]string{"grep", "-q", "lease", "none", "global"}, ExitOK, "none: no such file or directory"},
 		{[]string{"grep", "-E", "-F", "x"}, ExitUsage, "-E and -F cannot be combined"},
 		{[]string{"grep", "-L", "--all-match", "-e", "a", "-e", "b"}, ExitUsage, "-L and --all-match cannot be combined"},
@@ -1477,6 +1506,57 @@ func TestGrepQuietAndErrors(t *testing.T) {
 	} {
 		code, out, errs := runCLI(t, cfg, "", c.args...)
 		if code != c.code || out != "" || !strings.Contains(errs, c.errs) {
+			t.Errorf("%v: code=%d out=%q errs=%q", c.args, code, out, errs)
+		}
+	}
+}
+
+// TestGrepGitCalls checks that -L, whose output does not say whether a line
+// was selected, runs a second search for the exit code only when its output is
+// printed: with -q one search answers both.
+func TestGrepGitCalls(t *testing.T) {
+	cfg := setup(t)
+	for _, c := range []struct {
+		args []string
+		want int
+	}{
+		{[]string{"grep", "-L", "lease", "global"}, 2},
+		{[]string{"grep", "-q", "-L", "lease", "global"}, 1},
+		{[]string{"grep", "-l", "lease", "global"}, 1},
+		{[]string{"grep", "lease", "global"}, 1},
+	} {
+		trace := filepath.Join(t.TempDir(), "trace")
+		t.Setenv("GIT_TRACE", trace)
+		runCLI(t, cfg, "", c.args...)
+		b, _ := os.ReadFile(trace)
+		if n := strings.Count(string(b), "built-in: git grep "); n != c.want {
+			t.Errorf("%v: git grep ran %d times, want %d", c.args, n, c.want)
+		}
+	}
+}
+
+// TestGrepFilesWithoutMatch checks that -L prints the files without a matching
+// line while the exit code, as in GNU grep, tells whether a line was selected:
+// -L can print paths and still exit with 1.
+func TestGrepFilesWithoutMatch(t *testing.T) {
+	cfg := setup(t)
+	for _, c := range []struct {
+		args []string
+		code int
+		out  string
+		errs string
+	}{
+		{[]string{"grep", "-L", "lease", "global"}, ExitOK, "global/index.md\n", ""},
+		{[]string{"grep", "-L", "zzz", "global"}, ExitError, "global/index.md\nglobal/push.md\n", ""},
+		{[]string{"grep", "-L", "lease", "global/push.md"}, ExitOK, "", ""},
+		{[]string{"grep", "-q", "-L", "lease", "global"}, ExitOK, "", ""},
+		{[]string{"grep", "-q", "-L", "zzz", "global"}, ExitError, "", ""},
+		{[]string{"grep", "-L", "lease", "none", "global"}, ExitUsage, "global/index.md\n", "none: no such file or directory"},
+		{[]string{"grep", "-q", "-L", "lease", "none", "global"}, ExitOK, "", "none: no such file or directory"},
+		{[]string{"grep", "-q", "-L", "zzz", "none", "global"}, ExitUsage, "", "none: no such file or directory"},
+	} {
+		code, out, errs := runCLI(t, cfg, "", c.args...)
+		if code != c.code || out != c.out || !strings.Contains(errs, c.errs) {
 			t.Errorf("%v: code=%d out=%q errs=%q", c.args, code, out, errs)
 		}
 	}

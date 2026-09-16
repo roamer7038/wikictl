@@ -64,8 +64,10 @@ func (a *app) checkGrep(c *command, args []string) error {
 }
 
 // cmdGrep searches the files under the paths with git grep, taking the options
-// of GNU grep. It exits with 0 when anything is selected, 1 when nothing is,
-// and 2 when a path does not exist, unless -q selected anything.
+// of GNU grep. It exits with 0 when a line is selected, 1 when none is, and 2
+// when a path does not exist, unless -q selected anything. With -L, which
+// prints the files without a matching line, the code still tells whether a
+// line was selected.
 func (a *app) cmdGrep(c *command, args []string) error {
 	patterns, paths := a.patterns, a.cleaned
 	missing, err := a.absent(paths)
@@ -101,10 +103,18 @@ func (a *app) cmdGrep(c *command, args []string) error {
 	if a.allMatch {
 		flags = append(flags, "--all-match")
 	}
+	// matchFlags is set for -L, whose output does not say whether a line was
+	// selected: a second search with -l answers that for the exit code.
+	var matchFlags []string
 	switch {
 	case a.filesWith:
 		flags = append(flags, "-l")
+	case a.filesWithout && a.quiet:
+		// -q prints nothing, so one search for the files with a matching line
+		// answers the exit code by itself.
+		flags = append(flags, "-l")
 	case a.filesWithout:
+		matchFlags = append(slices.Clone(flags), "-l")
 		flags = append(flags, "-L")
 	case a.countLines:
 		flags = append(flags, "-c")
@@ -115,17 +125,17 @@ func (a *app) cmdGrep(c *command, args []string) error {
 	}
 	search := slices.DeleteFunc(slices.Clone(paths), func(p string) bool { return slices.Contains(missing, p) })
 	var records [][]string
+	selected := false
 	if len(paths) == 0 || len(search) > 0 {
-		records, err = a.repo.GrepRecords(flags, patterns, search)
-		// git reports a pattern that does not compile as "fatal: -e option, '<pattern>': <reason>".
-		var ge *repo.GitError
-		if errors.As(err, &ge) {
-			if _, reason, ok := strings.Cut(ge.Stderr, "fatal: -e option, '"); ok {
-				return &usageError{c, "invalid pattern: '" + strings.TrimSpace(reason)}
-			}
+		if records, err = a.grepRecords(c, flags, patterns, search); err != nil {
+			return err
 		}
-		if err != nil {
-			return &gitError{err}
+		if matchFlags != nil {
+			matching, err := a.grepRecords(c, matchFlags, patterns, search)
+			if err != nil {
+				return err
+			}
+			selected = len(matching) > 0
 		}
 	}
 	items := []any{}
@@ -160,15 +170,36 @@ func (a *app) cmdGrep(c *command, args []string) error {
 	for _, p := range missing {
 		fmt.Fprintf(a.stderr, "wikictl: %s: no such file or directory\n", escapeControl(p))
 	}
+	// Every search but the -L one records the files with a selected line.
+	if matchFlags == nil {
+		selected = len(items) > 0
+	}
 	switch {
-	case a.quiet && len(items) > 0:
+	case a.quiet && selected:
 		return nil
 	case len(missing) > 0:
 		return exitStatus(ExitUsage)
-	case len(items) == 0:
+	case !selected:
 		return exitStatus(ExitError)
 	}
 	return nil
+}
+
+// grepRecords runs git grep with flags and reports a pattern that does not
+// compile as a usage error of c.
+func (a *app) grepRecords(c *command, flags, patterns, search []string) ([][]string, error) {
+	records, err := a.repo.GrepRecords(flags, patterns, search)
+	// git reports a pattern that does not compile as "fatal: -e option, '<pattern>': <reason>".
+	var ge *repo.GitError
+	if errors.As(err, &ge) {
+		if _, reason, ok := strings.Cut(ge.Stderr, "fatal: -e option, '"); ok {
+			return nil, &usageError{c, "invalid pattern: '" + strings.TrimSpace(reason)}
+		}
+	}
+	if err != nil {
+		return nil, &gitError{err}
+	}
+	return records, nil
 }
 
 // absent returns the paths that are neither a file nor a directory in the
