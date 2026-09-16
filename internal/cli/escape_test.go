@@ -142,6 +142,7 @@ func TestPathOutputEscapesControl(t *testing.T) {
 	var errb bytes.Buffer
 	a := &app{stderr: &errb}
 	a.warn(page.Issue{Path: "d/\x1b[2Kx.md", Line: 1, Code: "links_syntax", Message: "m\r"})
+	a.flushWarnings()
 	if got := errb.String(); got != `wikictl: warning: d/\x1b[2Kx.md:1: links_syntax: m\x0d`+"\n" {
 		t.Errorf("warn: %q", got)
 	}
