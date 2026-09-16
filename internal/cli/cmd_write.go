@@ -19,18 +19,28 @@ import (
 )
 
 // commit writes changes as one commit. A conflict is returned as a
-// conflictError. rerun names the command to run again on a conflict; it is
-// empty for put, whose conflicts are resolved by reapplying the change.
-func (a *app) commit(changes []repo.Change, msg, rerun string) (*repo.Result, error) {
+// conflictError, a push that lost every race as a movedError. cmd names the
+// command; it is not named in the message of a conflict of put, whose
+// conflicts are resolved by reapplying the change instead of by running it
+// again.
+func (a *app) commit(changes []repo.Change, msg, cmd string) (*repo.Result, error) {
 	au, err := a.author()
 	if err != nil {
 		return nil, &usageError{msg: err.Error()}
+	}
+	rerun := cmd
+	if cmd == "put" {
+		rerun = ""
 	}
 	res, err := a.repo.Commit(changes, msg, au)
 	if err != nil {
 		var cf *repo.Conflict
 		if errors.As(err, &cf) {
 			return nil, &conflictError{cf, rerun}
+		}
+		var mv *repo.Moved
+		if errors.As(err, &mv) {
+			return nil, &movedError{mv, cmd}
 		}
 		var pe *repo.PathError
 		if errors.As(err, &pe) {
@@ -104,12 +114,7 @@ func (a *app) writeFile(p string, content []byte, base, cmd string) error {
 	} else if err := checkFilePath(p); err != nil {
 		return a.badPath(p, err)
 	}
-	// put resolves a conflict by reapplying the change; edit is run again.
-	rerun := ""
-	if cmd != "put" {
-		rerun = cmd
-	}
-	res, err := a.commit([]repo.Change{{Path: p, Content: content, Base: &base}}, a.commitMessage(cmd, []string{p}), rerun)
+	res, err := a.commit([]repo.Change{{Path: p, Content: content, Base: &base}}, a.commitMessage(cmd, []string{p}), cmd)
 	if err != nil {
 		return err
 	}

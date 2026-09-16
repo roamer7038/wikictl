@@ -720,6 +720,49 @@ func TestMvRewriteScope(t *testing.T) {
 	}
 }
 
+// moveRemoteBeforePush puts a git wrapper first on PATH that adds a commit to
+// the main branch of remote before every push and then pushes as usual, so
+// that the lease of the push is stale on every attempt.
+func moveRemoteBeforePush(t *testing.T, remote string) {
+	t.Helper()
+	counter := shQuote(filepath.Join(t.TempDir(), "count"))
+	wrapGit(t, func(real string) string {
+		g := real + " --git-dir=" + shQuote(remote)
+		return "*' push --porcelain '*)\n" +
+			"  n=$(cat " + counter + " 2>/dev/null || echo 0)\n" +
+			"  echo $((n + 1)) > " + counter + "\n" +
+			// The message differs every time, so that each commit is a new object.
+			"  t=$(" + g + " rev-parse main^{tree}) || exit 1\n" +
+			"  c=$(" + g + " -c user.name=o -c user.email=o@o commit-tree $t -p main -m \"other $n\") || exit 1\n" +
+			"  " + g + " update-ref refs/heads/main $c || exit 1\n" +
+			"  ;;\n"
+	})
+}
+
+// TestPutRemoteKeepsMoving checks that a write whose every push attempt loses
+// the race with another push is reported as a conflict with reason "moved",
+// so that the caller can tell that running the command again is safe, instead
+// of as a git failure.
+func TestPutRemoteKeepsMoving(t *testing.T) {
+	cfg := setup(t)
+	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
+	moveRemoteBeforePush(t, remote)
+	code, out, errs := runCLI(t, cfg, "---\nsummary: new\n---\n# New\n", "--json", "put", "global/new.md")
+	if code != ExitConflict {
+		t.Fatalf("exit code %d, want %d\nstdout: %s\nstderr: %s", code, ExitConflict, out, errs)
+	}
+	var cf struct{ Error, Reason, Message string }
+	mustUnmarshal(t, out, &cf)
+	keys, _ := jsonKeys(out)
+	if cf.Error != "conflict" || cf.Reason != "moved" || !strings.Contains(cf.Message, "run put again") ||
+		!slices.Equal(keys, []string{"error", "message", "reason"}) {
+		t.Errorf("stdout: %s", out)
+	}
+	if files := gitOut(t, "--git-dir", remote, "ls-tree", "-r", "--name-only", "main"); strings.Contains(files, "global/new.md") {
+		t.Errorf("the page was written:\n%s", files)
+	}
+}
+
 // TestMvRmStaleMirror checks that mv and rm report a conflict and write
 // nothing when a page they read was changed from another mirror in between.
 func TestMvRmStaleMirror(t *testing.T) {

@@ -61,6 +61,11 @@ const writesHelp = `Writes:
   content are empty when the file has been deleted. With --no-fetch, edit, mv
   and rm read the mirror as last fetched, so a file that changed since then is
   reported as a conflict.
+  A write that another clone pushes over is retried; when every attempt loses
+  the race, nothing is written either and the command exits with code 3 and
+  reason "moved", with no path, sha or content: text output prints "wikictl:
+  conflict (moved): <message>" on standard error and --json prints {error,
+  reason, message}. Nothing has to be re-read; run the command again.
 `
 
 const mirrorHelp = `Mirror:
@@ -103,6 +108,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Exit codes:")
 	fmt.Fprintln(w, "  0 success   1 error   2 usage or configuration   3 conflict   4 invalid page   5 git failure")
+	fmt.Fprintln(w, "  A write that lost the push race on every attempt also exits with 3, with reason \"moved\".")
 	fmt.Fprintln(w, "  A git failure while reading the wiki also exits with 5 and prints no partial result;")
 	fmt.Fprintln(w, "  so does a page that exists but cannot be read, instead of \"no such file or directory\".")
 	fmt.Fprintln(w)

@@ -55,6 +55,18 @@ func (e *conflictError) Error() string { return e.cf.Error() }
 
 func (e *conflictError) Unwrap() error { return e.cf }
 
+// movedError is a commit that every attempt failed to push because another
+// push moved the remote branch first. Nothing was written, so it is reported
+// as a conflict, with reason "moved", that cmd resolves by running again.
+type movedError struct {
+	mv  *repo.Moved
+	cmd string
+}
+
+func (e *movedError) Error() string { return e.mv.Error() }
+
+func (e *movedError) Unwrap() error { return e.mv }
+
 // exitStatus ends the command with its value as the exit code after the
 // command has written its output, such as lint with violations.
 type exitStatus int
@@ -75,6 +87,14 @@ type conflictOut struct {
 	Message string `json:"message"`
 }
 
+// movedOut is the conflict of a push that lost every race. It has no path,
+// sha or content: no file was read, checked or written.
+type movedOut struct {
+	Error   string `json:"error"`
+	Reason  string `json:"reason"`
+	Message string `json:"message"`
+}
+
 // exitCode returns the exit code and the "error" field of err. An error of no
 // type defined here is a general error.
 func exitCode(err error) (code int, kind string) {
@@ -83,6 +103,7 @@ func exitCode(err error) (code int, kind string) {
 		ie *invalidError
 		ge *gitError
 		ce *conflictError
+		me *movedError
 		es exitStatus
 	)
 	switch {
@@ -92,7 +113,7 @@ func exitCode(err error) (code int, kind string) {
 		return int(es), ""
 	case errors.As(err, &ue):
 		return ExitUsage, "usage"
-	case errors.As(err, &ce):
+	case errors.As(err, &ce), errors.As(err, &me):
 		return ExitConflict, "conflict"
 	case errors.As(err, &ie):
 		return ExitInvalid, "invalid"
@@ -110,9 +131,17 @@ func (a *app) report(err error) int {
 	var (
 		ue *usageError
 		ce *conflictError
+		me *movedError
 	)
 	switch {
 	case code == ExitOK || kind == "":
+	case errors.As(err, &me):
+		msg := movedMessage(me.cmd)
+		if a.json {
+			a.emit(movedOut{kind, "moved", msg}, nil)
+		} else {
+			fmt.Fprintf(a.stderr, "wikictl: conflict (moved): %s\n", msg)
+		}
 	case errors.As(err, &ce):
 		cf := ce.cf
 		if a.json {
@@ -131,6 +160,11 @@ func (a *app) report(err error) int {
 		}
 	}
 	return code
+}
+
+// movedMessage returns the "message" of a push that lost every race.
+func movedMessage(cmd string) string {
+	return "the remote branch moved while the change was being pushed; nothing was written, run " + cmd + " again"
 }
 
 // conflictMessage returns the "message" of a conflict for its reason.

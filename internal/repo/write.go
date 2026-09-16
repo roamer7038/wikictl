@@ -40,6 +40,20 @@ type Conflict struct {
 
 func (c *Conflict) Error() string { return fmt.Sprintf("conflict(%s): %s", c.Reason, c.Path) }
 
+// Moved is a commit that every attempt failed to push because another push
+// moved the remote branch first. Nothing was written, so the caller can run
+// the same command again.
+type Moved struct {
+	Attempts int   // attempts made before giving up
+	Err      error // rejection of the last attempt
+}
+
+func (e *Moved) Error() string {
+	return fmt.Sprintf("conflict(moved): the remote branch moved during %d attempts", e.Attempts)
+}
+
+func (e *Moved) Unwrap() error { return e.Err }
+
 // Result is a successful commit.
 type Result struct {
 	Commit string
@@ -50,18 +64,20 @@ const zeroSHA = "0000000000000000000000000000000000000000"
 
 // Commit fetches, checks every Base, builds a commit on top of the remote
 // branch and pushes it with --force-with-lease. When another push wins the
-// race the whole sequence is retried, up to three attempts, after a random
-// wait so that writers rejected together do not retry together. It never
-// creates a working tree or a merge state.
+// race the whole sequence is retried, up to attempts times, after a random
+// wait so that writers rejected together do not retry together. When every
+// attempt loses the race, the error is a Moved. It never creates a working
+// tree or a merge state.
 func (r *Repo) Commit(changes []Change, msg string, au Author) (*Result, error) {
 	unlock, err := r.lock()
 	if err != nil {
 		return nil, err
 	}
 	defer unlock()
+	const attempts = 3
 	var last error
 	var wait time.Duration
-	for attempt := 0; attempt < 3; attempt++ {
+	for attempt := 0; attempt < attempts; attempt++ {
 		if attempt > 0 {
 			time.Sleep(retryWait(wait, attempt))
 		}
@@ -107,7 +123,7 @@ func (r *Repo) Commit(changes []Change, msg string, au Author) (*Result, error) 
 		}
 		wait = time.Since(start)
 	}
-	return nil, last
+	return nil, &Moved{Attempts: attempts, Err: last}
 }
 
 // PathError is a change that would replace a directory with a file, or write

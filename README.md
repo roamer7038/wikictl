@@ -168,9 +168,11 @@ The profile is chosen by `--profile`, else `$WIKICTL_PROFILE`, else `match` (the
 | 0 | success |
 | 1 | error, for example a missing page |
 | 2 | usage or configuration error |
-| 3 | conflict: the page already exists, or changed or was deleted since it was read |
+| 3 | conflict: the page already exists, or changed or was deleted since it was read, or another push moved the branch while the change was being pushed |
 | 4 | the page or path violates the wiki format; `lint` exits with 4 on any finding, or with 1 when a path does not exist |
 | 5 | a git command failed, while reading or writing |
+
+A conflict never writes anything: re-read the page and reapply the change, or, when the reason is `moved`, simply run the command again.
 
 ## Mirror
 
