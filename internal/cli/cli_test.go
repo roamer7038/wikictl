@@ -720,6 +720,143 @@ func TestMvRewriteScope(t *testing.T) {
 	}
 }
 
+// moveRemoteOnPush puts a git wrapper first on PATH that adds a commit to the
+// main branch of remote around every push: before it, so that the lease of the
+// push is stale, or after it, so that the branch has moved by the time the
+// rejection of the push is classified.
+func moveRemoteOnPush(t *testing.T, remote string, after bool) {
+	t.Helper()
+	counter := shQuote(filepath.Join(t.TempDir(), "count"))
+	wrapGit(t, func(real string) string {
+		g := real + " --git-dir=" + shQuote(remote)
+		// The message differs every time, so that each commit is a new object.
+		move := "  n=$(cat " + counter + " 2>/dev/null || echo 0)\n" +
+			"  echo $((n + 1)) > " + counter + "\n" +
+			"  t=$(" + g + " rev-parse main^{tree}) || exit 1\n" +
+			"  c=$(" + g + " -c user.name=o -c user.email=o@o commit-tree $t -p main -m \"other $n\") || exit 1\n" +
+			"  " + g + " update-ref refs/heads/main $c || exit 1\n"
+		if after {
+			return "*' push --porcelain '*)\n" +
+				"  " + real + " \"$@\"\n  s=$?\n" + move + "  exit $s\n  ;;\n"
+		}
+		return "*' push --porcelain '*)\n" + move + "  ;;\n"
+	})
+}
+
+// TestPutRemoteKeepsMoving checks that a write whose every push attempt loses
+// the race with another push is reported as a conflict with reason "moved",
+// so that the caller can tell that running the command again is safe, instead
+// of as a git failure.
+func TestPutRemoteKeepsMoving(t *testing.T) {
+	cfg := setup(t)
+	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
+	moveRemoteOnPush(t, remote, false)
+	code, out, errs := runCLI(t, cfg, "---\nsummary: new\n---\n# New\n", "--json", "put", "global/new.md")
+	if code != ExitConflict {
+		t.Fatalf("exit code %d, want %d\nstdout: %s\nstderr: %s", code, ExitConflict, out, errs)
+	}
+	var cf struct{ Error, Reason, Message, Detail string }
+	mustUnmarshal(t, out, &cf)
+	keys, _ := jsonKeys(out)
+	if cf.Error != "conflict" || cf.Reason != "moved" || !strings.Contains(cf.Message, "run put again") ||
+		!strings.Contains(cf.Detail, "stale info") ||
+		!slices.Equal(keys, []string{"detail", "error", "message", "reason"}) {
+		t.Errorf("stdout: %s", out)
+	}
+	if files := gitOut(t, "--git-dir", remote, "ls-tree", "-r", "--name-only", "main"); strings.Contains(files, "global/new.md") {
+		t.Errorf("the page was written:\n%s", files)
+	}
+}
+
+// rejectPushWithLostLease puts a git wrapper first on PATH that rejects every
+// push the way a server does when another push moves the branch between the
+// check of the lease and the update of the ref, without contacting the remote.
+func rejectPushWithLostLease(t *testing.T, remote string) {
+	t.Helper()
+	const at, expected = "1111111111111111111111111111111111111111", "2222222222222222222222222222222222222222"
+	porcelain := shQuote("To " + remote + "\n!\t" + at + ":refs/heads/main\t[remote rejected] (failed to update ref)\nDone")
+	lock := shQuote("remote: error: cannot lock ref 'refs/heads/main': is at " + at + " but expected " + expected)
+	failed := shQuote("error: failed to push some refs to '" + remote + "'")
+	wrapGit(t, func(string) string {
+		return "*' push --porcelain '*)\n" +
+			"  printf '%s\\n' " + porcelain + "\n" +
+			"  printf '%s\\n' " + lock + " >&2\n" +
+			"  printf '%s\\n' " + failed + " >&2\n" +
+			"  exit 1\n" +
+			"  ;;\n"
+	})
+}
+
+// TestPutLosesLeaseAtTheServer checks that a rejection whose only cause is
+// losing the lease when the server updates the ref, which it reports as
+// "cannot lock ref ... is at <X> but expected <Y>", is reported as moved like
+// the stale lease the client finds itself, instead of as a git failure.
+func TestPutLosesLeaseAtTheServer(t *testing.T) {
+	cfg := setup(t)
+	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
+	rejectPushWithLostLease(t, remote)
+	code, out, errs := runCLI(t, cfg, "---\nsummary: new\n---\n# New\n", "--json", "put", "global/new.md")
+	if code != ExitConflict {
+		t.Fatalf("exit code %d, want %d\nstdout: %s\nstderr: %s", code, ExitConflict, out, errs)
+	}
+	var cf struct{ Error, Reason, Message, Detail string }
+	mustUnmarshal(t, out, &cf)
+	if cf.Error != "conflict" || cf.Reason != "moved" || !strings.Contains(cf.Detail, "but expected") {
+		t.Errorf("stdout: %s", out)
+	}
+}
+
+// TestPushFailureStaysGitFailure checks that a push failure that running the
+// command again would not fix keeps the git failure code and the message of
+// git, even when the retries are exhausted and the branch looks as if another
+// push had moved it.
+func TestPushFailureStaysGitFailure(t *testing.T) {
+	cases := []struct {
+		name    string
+		prepare func(t *testing.T, remote string)
+		want    string // part of the message
+	}{
+		{"unwritable refs", func(t *testing.T, remote string) {
+			if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+				t.Skip("needs a directory the user cannot write")
+			}
+			dir := filepath.Join(remote, "refs", "heads")
+			if err := os.Chmod(dir, 0o555); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { os.Chmod(dir, 0o755) })
+		}, "cannot lock ref"},
+		{"stale ref lock", func(t *testing.T, remote string) {
+			if err := os.WriteFile(filepath.Join(remote, "refs", "heads", "main.lock"), nil, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}, "cannot lock ref"},
+		{"rejecting hook while the branch moves", func(t *testing.T, remote string) {
+			hook := filepath.Join(remote, "hooks", "pre-receive")
+			if err := os.WriteFile(hook, []byte("#!/bin/sh\necho denied >&2\nexit 1\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			moveRemoteOnPush(t, remote, true)
+		}, "remote: denied"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			cfg := setup(t)
+			remote := filepath.Join(filepath.Dir(cfg), "remote.git")
+			c.prepare(t, remote)
+			code, out, errs := runCLI(t, cfg, "---\nsummary: new\n---\n# New\n", "--json", "put", "global/new.md")
+			if code != ExitGit {
+				t.Fatalf("exit code %d, want %d\nstdout: %s\nstderr: %s", code, ExitGit, out, errs)
+			}
+			var e errorOut
+			mustUnmarshal(t, out, &e)
+			if e.Error != "git" || !strings.Contains(e.Message, c.want) {
+				t.Errorf("stdout: %s", out)
+			}
+		})
+	}
+}
+
 // TestMvRmStaleMirror checks that mv and rm report a conflict and write
 // nothing when a page they read was changed from another mirror in between.
 func TestMvRmStaleMirror(t *testing.T) {
