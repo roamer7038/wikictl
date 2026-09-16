@@ -575,3 +575,43 @@ func TestLongNames(t *testing.T) {
 		t.Errorf("edit: code=%d errs=%q", code, errs)
 	}
 }
+
+// TestRefusedPath checks that put, edit and mv to a path that git leaves out
+// of the index, here a name of .git on NTFS, exit with code 4 as bad_path and
+// commit nothing, instead of reporting success without the file or, for mv,
+// with only the source deleted.
+func TestRefusedPath(t *testing.T) {
+	cfg := setup(t)
+	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
+	head := gitOut(t, "--git-dir", remote, "rev-parse", "main")
+	for _, c := range []struct {
+		args  []string
+		stdin string
+		want  string
+	}{
+		{[]string{"put", "-v", "global/git~1/x.txt"}, "hi\n", "wikictl: bad_path: global/git~1/x.txt: git refuses the path\n"},
+		{[]string{"mv", "-v", "global/push.md", "global/git~1/push.md"}, "", "wikictl: bad_path: global/git~1/push.md: git refuses the path\n"},
+		{[]string{"mv", "global/push.md", "global/GIT~1"}, "", "wikictl: bad_path: global/GIT~1: git refuses the path\n"},
+	} {
+		if code, out, errs := runCLI(t, cfg, c.stdin, c.args...); code != ExitInvalid || out != "" || errs != c.want {
+			t.Errorf("%v: code=%d out=%q errs=%q", c.args, code, out, errs)
+		}
+	}
+	want := `{"error":"invalid","message":"bad_path: global/git~1/x.txt: git refuses the path"}` + "\n"
+	if code, out, _ := runCLI(t, cfg, "x", "put", "--json", "global/git~1/x.txt"); code != ExitInvalid || out != want {
+		t.Errorf("put --json: code=%d out=%q", code, out)
+	}
+	editWith(t, "printf 'edited\\n' > \"$1\"\n")
+	code, _, errs := runCLI(t, cfg, "", "edit", "global/git~1/x.txt")
+	if code != ExitInvalid || !strings.Contains(errs, "wikictl: bad_path: global/git~1/x.txt: git refuses the path\n") {
+		t.Errorf("edit: code=%d errs=%q", code, errs)
+	} else if got := keptFile(t, errs); got != "edited\n" {
+		t.Errorf("edit kept %q", got)
+	}
+	if got := gitOut(t, "--git-dir", remote, "rev-parse", "main"); got != head {
+		t.Errorf("a refused write moved the remote branch: %s -> %s", head, got)
+	}
+	if code, _, errs := runCLI(t, cfg, "", "stat", "global/push.md"); code != ExitOK {
+		t.Errorf("stat global/push.md after the refused mv: code=%d errs=%q", code, errs)
+	}
+}

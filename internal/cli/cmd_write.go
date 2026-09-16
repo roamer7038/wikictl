@@ -46,6 +46,10 @@ func (a *app) commit(changes []repo.Change, msg, cmd string) (*repo.Result, erro
 		if errors.As(err, &pe) {
 			return nil, pe
 		}
+		var rp *repo.RefusedPath
+		if errors.As(err, &rp) {
+			return nil, &invalidError{"bad_path: " + rp.Error()}
+		}
 		return nil, &gitError{err}
 	}
 	return res, nil

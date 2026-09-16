@@ -153,6 +153,14 @@ type PathError struct{ Path, Reason string }
 
 func (e *PathError) Error() string { return e.Path + ": " + e.Reason }
 
+// RefusedPath is a path that git refuses to have in a tree, such as one with
+// a component that is a name of .git on NTFS ("git~1") or, where
+// core.protectHFS is on, on HFS+. update-index skips such a path with
+// "Ignoring path" and still exits with 0, so the commit would lack the change.
+type RefusedPath struct{ Path string }
+
+func (e *RefusedPath) Error() string { return e.Path + ": git refuses the path" }
+
 // entries returns the type and object sha at commit head of the path of every
 // change and of every directory above a written path, from one "ls-tree" of
 // the directories that hold them; ls-tree reads no blob, and fails when a
@@ -327,6 +335,9 @@ func (r *Repo) buildAndPush(head string, changes []Change, msg string, au Author
 	if _, err := git(info.Bytes(), "update-index", "-z", "--index-info"); err != nil {
 		return nil, noRetry, err
 	}
+	if err := checkIndex(git, changes, shas); err != nil {
+		return nil, noRetry, err
+	}
 	out, err := git(nil, "write-tree")
 	if err != nil {
 		return nil, noRetry, err
@@ -371,6 +382,48 @@ func (r *Repo) buildAndPush(head string, changes []Change, msg string, au Author
 		}
 		return nil, retry, fmt.Errorf("push failed: %s", strings.TrimSpace(pout))
 	}
+}
+
+// checkIndex returns a RefusedPath for the first change that update-index did
+// not apply: a written path whose index entry does not have its blob sha in
+// shas, or a deleted path that is still in the index. read-tree already fails
+// on a tree that holds a path git refuses, so in practice only a write is
+// refused. The messages of update-index are not read. The whole index is
+// listed, which read-tree and write-tree go through anyway, so that no path
+// passes through a pathspec or the command line. Modes are not compared, since
+// the index turns one such as 100664 into 100644.
+func checkIndex(git func([]byte, ...string) (string, error), changes []Change, shas map[string]string) error {
+	out, err := git(nil, "ls-files", "-z", "--stage")
+	if err != nil {
+		return err
+	}
+	// The last change to a path decides what the index holds.
+	want := map[string]string{}
+	for _, c := range changes {
+		want[c.Path] = ""
+		if !c.Delete {
+			want[c.Path] = shas[c.Path]
+		}
+	}
+	// Only the changed paths are kept, so that a large index costs no more
+	// than reading it.
+	index := make(map[string]string, len(want))
+	for rec := range strings.SplitSeq(out, "\x00") {
+		// <mode> SP <sha> SP <stage> TAB <path>
+		meta, p, ok := strings.Cut(rec, "\t")
+		if _, w := want[p]; !ok || !w {
+			continue
+		}
+		_, rest, _ := strings.Cut(meta, " ")
+		sha, _, _ := strings.Cut(rest, " ")
+		index[p] = sha
+	}
+	for _, c := range changes {
+		if index[c.Path] != want[c.Path] {
+			return &RefusedPath{c.Path}
+		}
+	}
+	return nil
 }
 
 // updateTrackingRef moves the tracking ref from head to the pushed commit. A
