@@ -41,10 +41,11 @@ type Conflict struct {
 func (c *Conflict) Error() string { return fmt.Sprintf("conflict(%s): %s", c.Reason, c.Path) }
 
 // Moved is a commit that every attempt failed to push because another push
-// moved the remote branch first: the lease of the last attempt was stale.
-// Nothing was written, so the caller can run the same command again. A push
-// rejected for any other reason is not a Moved, since running it again would
-// not help.
+// moved the remote branch first: the lease of the last attempt was lost,
+// either as the client found it stale or as the server reported it when
+// updating the ref. Nothing was written, so the caller can run the same
+// command again. A push rejected for any other reason is not a Moved, since
+// running it again would not help.
 type Moved struct {
 	Attempts int   // attempts made before giving up
 	Err      error // rejection of the last attempt, as git reported it
@@ -126,10 +127,11 @@ func (r *Repo) Commit(changes []Change, msg string, au Author) (*Result, error) 
 		}
 		wait = time.Since(start)
 	}
-	// Only a stale lease is certainly another push winning the race. A ref
-	// that could not be locked, or a branch that moved while the push was
-	// rejected, can also be a permission, lock file or hook failure that
-	// running the command again would not fix, so it stays a git failure.
+	// Only a lost lease is certainly another push winning the race. A ref
+	// that could not be locked for another reason, or a branch that moved
+	// while the push was rejected, can also be a permission, lock file or
+	// hook failure that running the command again would not fix, so it stays
+	// a git failure.
 	if lastRetry == retryStale {
 		return nil, &Moved{Attempts: attempts, Err: last}
 	}
@@ -351,12 +353,10 @@ func (r *Repo) buildAndPush(head string, changes []Change, msg string, au Author
 		}
 		return &Result{Commit: commit, SHAs: shas}, noRetry, nil
 	case pushStale:
-		return nil, retryStale, fmt.Errorf("push rejected: %s", redactText(strings.TrimSpace(pout)))
+		// The last line of "push --porcelain" is "Done", which says nothing.
+		return nil, retryStale, fmt.Errorf("push rejected: %s", redactText(strings.TrimSuffix(strings.TrimSpace(pout), "\nDone")))
 	default:
-		retry := noRetry
-		if r.remoteMoved(head, pout, perr) {
-			retry = retryLocked
-		}
+		retry := r.pushRetry(head, pout, perr)
 		if perr != nil {
 			return nil, retry, perr
 		}
@@ -382,25 +382,33 @@ func (r *Repo) updateTrackingRef(head, commit string) error {
 	return err
 }
 
-// remoteMoved reports whether a failed push lost a race with another push.
-// The server rejects the ref update with "cannot lock ref" when another push
+// pushRetry classifies a push that was not rejected for a stale lease. The
+// server rejects the ref update with "cannot lock ref" when another push
 // updated or locked the branch first; that message appears in the porcelain
-// line or on stderr depending on the server. Otherwise the branch is fetched
-// and compared with head.
-func (r *Repo) remoteMoved(head, pout string, perr error) bool {
+// line or on stderr depending on the server. When it also says "is at <X> but
+// expected <Y>", the server checked the lease and another push had moved the
+// branch, which is the same outcome as the stale lease the client finds; any
+// other lock failure, such as a lock file that cannot be created, may not be
+// contention at all. Otherwise the branch is fetched and compared with head.
+func (r *Repo) pushRetry(head, pout string, perr error) retryReason {
 	msg := pout
 	var ge *GitError
 	if errors.As(perr, &ge) {
 		msg += ge.Stderr
 	}
 	if strings.Contains(msg, "cannot lock ref") {
-		return true
+		if strings.Contains(msg, "is at ") && strings.Contains(msg, " but expected ") {
+			return retryStale
+		}
+		return retryLocked
 	}
 	if r.Fetch() != nil {
-		return false
+		return noRetry
 	}
-	cur, err := r.trackingHead()
-	return err == nil && cur != head
+	if cur, err := r.trackingHead(); err == nil && cur != head {
+		return retryLocked
+	}
+	return noRetry
 }
 
 // pushResult is the outcome of a push as reported by pushStatus.

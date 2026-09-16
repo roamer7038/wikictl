@@ -768,6 +768,44 @@ func TestPutRemoteKeepsMoving(t *testing.T) {
 	}
 }
 
+// rejectPushWithLostLease puts a git wrapper first on PATH that rejects every
+// push the way a server does when another push moves the branch between the
+// check of the lease and the update of the ref, without contacting the remote.
+func rejectPushWithLostLease(t *testing.T, remote string) {
+	t.Helper()
+	const at, expected = "1111111111111111111111111111111111111111", "2222222222222222222222222222222222222222"
+	porcelain := shQuote("To " + remote + "\n!\t" + at + ":refs/heads/main\t[remote rejected] (failed to update ref)\nDone")
+	lock := shQuote("remote: error: cannot lock ref 'refs/heads/main': is at " + at + " but expected " + expected)
+	failed := shQuote("error: failed to push some refs to '" + remote + "'")
+	wrapGit(t, func(string) string {
+		return "*' push --porcelain '*)\n" +
+			"  printf '%s\\n' " + porcelain + "\n" +
+			"  printf '%s\\n' " + lock + " >&2\n" +
+			"  printf '%s\\n' " + failed + " >&2\n" +
+			"  exit 1\n" +
+			"  ;;\n"
+	})
+}
+
+// TestPutLosesLeaseAtTheServer checks that a rejection whose only cause is
+// losing the lease when the server updates the ref, which it reports as
+// "cannot lock ref ... is at <X> but expected <Y>", is reported as moved like
+// the stale lease the client finds itself, instead of as a git failure.
+func TestPutLosesLeaseAtTheServer(t *testing.T) {
+	cfg := setup(t)
+	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
+	rejectPushWithLostLease(t, remote)
+	code, out, errs := runCLI(t, cfg, "---\nsummary: new\n---\n# New\n", "--json", "put", "global/new.md")
+	if code != ExitConflict {
+		t.Fatalf("exit code %d, want %d\nstdout: %s\nstderr: %s", code, ExitConflict, out, errs)
+	}
+	var cf struct{ Error, Reason, Message, Detail string }
+	mustUnmarshal(t, out, &cf)
+	if cf.Error != "conflict" || cf.Reason != "moved" || !strings.Contains(cf.Detail, "but expected") {
+		t.Errorf("stdout: %s", out)
+	}
+}
+
 // TestPushFailureStaysGitFailure checks that a push failure that running the
 // command again would not fix keeps the git failure code and the message of
 // git, even when the retries are exhausted and the branch looks as if another
