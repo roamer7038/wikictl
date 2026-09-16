@@ -416,7 +416,7 @@ func TestMoveQuotedName(t *testing.T) {
 
 // TestMvDotDirMarkdown checks that mv moves a .md file below a directory
 // starting with a dot, which is not a page, as it moves any other file: its
-// content is kept, and links to it are left as written.
+// content is kept, and links to it from pages are rewritten.
 func TestMvDotDirMarkdown(t *testing.T) {
 	cfg := setup(t)
 	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
@@ -438,7 +438,7 @@ func TestMvDotDirMarkdown(t *testing.T) {
 		Commit    string      `json:"commit"`
 	}
 	mustUnmarshal(t, out, &res)
-	if len(res.Moved) != 1 || res.Moved[0] != (movedFile{".github/PULL_REQUEST_TEMPLATE.md", "global/pr.md"}) || res.Rewritten != 0 || len(res.Commit) != 40 {
+	if len(res.Moved) != 1 || res.Moved[0] != (movedFile{".github/PULL_REQUEST_TEMPLATE.md", "global/pr.md"}) || res.Rewritten != 1 || len(res.Commit) != 40 {
 		t.Errorf("mv output: %q", out)
 	}
 	files := strings.Split(gitOut(t, "--git-dir", remote, "ls-tree", "-r", "-z", "--name-only", "main"), "\x00")
@@ -448,7 +448,7 @@ func TestMvDotDirMarkdown(t *testing.T) {
 	if got := gitOut(t, "--git-dir", remote, "cat-file", "-p", "main:global/pr.md"); got != strings.TrimSuffix(tmpl, "\n") {
 		t.Errorf("moved file: %q", got)
 	}
-	if got := gitOut(t, "--git-dir", remote, "cat-file", "-p", "main:global/ref.md"); got != strings.TrimSuffix(ref, "\n") {
+	if got := gitOut(t, "--git-dir", remote, "cat-file", "-p", "main:global/ref.md"); got != "---\nsummary: r\n---\n# r\n[t](pr.md)" {
 		t.Errorf("page linking to the moved file: %q", got)
 	}
 
