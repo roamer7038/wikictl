@@ -231,7 +231,7 @@ func (a *app) cmdRm(c *command, args []string) error {
 }
 
 func mvFlags(a *app, fs *pflag.FlagSet) {
-	fs.BoolVarP(&a.noTargetDir, "no-target-directory", "T", false, "treat the destination as the new name, not as a directory")
+	fs.BoolVarP(&a.noTargetDir, "no-target-directory", "T", false, "rename even when the destination is a directory")
 	fs.StringVarP(&a.targetDir, "target-directory", "t", "", "move every source into `dir`")
 	msgFlag(a, fs)
 	fs.BoolVarP(&a.verbose, "verbose", "v", false, "print each moved file and the commit")

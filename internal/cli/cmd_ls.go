@@ -91,7 +91,7 @@ type lsItem struct {
 func lsFlags(a *app, fs *pflag.FlagSet) {
 	fs.BoolVarP(&a.long, "long", "l", false, "show the type, last update and summary of each entry")
 	fs.BoolVarP(&a.recursive, "recursive", "R", false, "list subdirectories recursively")
-	fs.BoolVarP(&a.all, "all", "a", false, "include names starting with a dot and pages with status: deprecated")
+	fs.BoolVarP(&a.all, "all", "a", false, "include dot names and pages with status: deprecated")
 	fs.BoolVarP(&a.byTime, "time", "t", false, "sort by last update, newest first")
 }
 
@@ -283,7 +283,7 @@ type treeItem struct {
 }
 
 func treeFlags(a *app, fs *pflag.FlagSet) {
-	fs.BoolVarP(&a.all, "all", "a", false, "include names starting with a dot and pages with status: deprecated")
+	fs.BoolVarP(&a.all, "all", "a", false, "include dot names and pages with status: deprecated")
 	fs.BoolVarP(&a.dirsOnly, "dirs", "d", false, "list directories only")
 	fs.VarP(&a.level, "level", "L", "descend at most `N` levels of directories")
 }

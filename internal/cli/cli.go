@@ -56,6 +56,11 @@ compile is a usage error. A path that does not exist is reported on standard
 error, the other paths are still searched, and the command exits with code 2,
 or with 0 when -q selected anything.
 
+The paths printed by -l and -L are one per line: pass them to another command
+with "| tr '\n' '\0' | xargs -0 -r wikictl ls -lt", which keeps names holding
+quotation marks or spaces intact and runs nothing when nothing matched; a name
+holding a newline cannot be passed this way.
+
 Output: items[] {path, line, text}; with -l or -L, items[] {path}; with -c,
 items[] {path, count}; with -q, nothing.`,
 		flags: grepFlags, check: (*app).checkGrep, run: (*app).cmdGrep},
@@ -76,7 +81,8 @@ it, and the attributes read from the page: title (the first heading, else the
 file name), summary (or description), type, tags, status and aliases. A path
 that does not exist or is a directory is reported as cat reports it.
 
-Output: items[] {path, sha, updated, title, summary, type, tags, status, aliases}.`,
+Output: items[] {path, sha, updated, title, summary, type, tags, status,
+aliases}.`,
 		run: (*app).cmdStat},
 	{name: "links", args: "<path>", minArgs: 1, maxArgs: 1, paths: true,
 		summary: "List the links in a page and to it",
@@ -148,14 +154,14 @@ the meantime, the command exits with code 3 and prints the current content and
 sha (see "wikictl help"). A path that breaks the file name rules (see "help
 lint") is rejected with exit code 4. A path ending in .md is a page: a page
 whose frontmatter is invalid or that is over the size limits is rejected with
-exit code 4, and a
-missing summary, Links lines that do not parse, links to files missing from
-the wiki and names outside the recommended form only produce warnings on
-standard error; "description" in the frontmatter is read as a synonym of
-"summary", and "summary" wins when it is not blank. When the content equals
-the current file, no commit is created and commit is the current commit. A
-path that is a directory, a symbolic link or a submodule, or that is below a
-file, is rejected with exit code 1; a file replaced keeps its mode.
+exit code 4, and a missing summary, Links lines that do not parse, links to
+files missing from the wiki and names outside the recommended form only
+produce warnings on standard error; "description" in the frontmatter is read
+as a synonym of "summary", and "summary" wins when it is not blank. When the
+content equals the current file, no commit is created and commit is the
+current commit. A path that is a directory, a symbolic link or a submodule,
+or that is below a file, is rejected with exit code 1; a file replaced keeps
+its mode.
 
 Output: {path, sha, commit}; with -v, text output is
 "<path><TAB><sha><TAB><commit>".`,
@@ -169,11 +175,11 @@ shell characters is run by the shell, so it may include arguments. Nothing is
 committed when the content is unchanged, which includes a new file left empty.
 When the result cannot be committed, because the file changed in the meantime
 (exit code 3; see "wikictl help"), the content breaks the rules that put
-applies (exit code 4), or
-the editor fails, or the editor leaves something that is not the regular file
-wikictl created, such as a symbolic link (exit code 1), the edited content is
-kept in a temporary file whose path is printed on standard error. Standard
-input must be a terminal; otherwise the command exits with code 2.
+applies (exit code 4), or the editor fails, or the editor leaves something
+that is not the regular file wikictl created, such as a symbolic link (exit
+code 1), the edited content is kept in a temporary file whose path is printed
+on standard error. Standard input must be a terminal; otherwise the command
+exits with code 2.
 
 Output: {path, sha, commit}, printed only when the file is committed.`,
 		flags: editFlags, check: (*app).checkEdit, run: (*app).cmdEdit},
@@ -204,7 +210,7 @@ absent, a sequence (block or flow style), or null; otherwise no alias is added
 and no warning is printed.
 
 Only links of the form [text](path) are rewritten. A bare path in a Links line,
-such as "- part_of: index.md" or "- index.md", is left unchanged and becomes
+such as "- see_also: other.md" or "- other.md", is left unchanged and becomes
 a broken link; write page targets as [text](path).
 
 If a file that mv changes or deletes changed since mv read it, or a new path
@@ -243,8 +249,9 @@ every page of the wiki is checked. Exits with code 4 when violations are found.
 A path that does not exist ("no such file or directory") is reported on
 standard error, also with --json, the other paths are still checked, and the
 command exits with code 1, even when violations are found.
-Each finding is printed as "<path>:<line>: <code>: <message>"; line 0 means the
-whole file.
+
+Each finding is printed as "<path>:<line>: <code>: <message>"; line 0 means
+the whole file.
 
 missing_summary: no summary or description, or no frontmatter.
 links_syntax: a line in the Links section is not a valid Links line.
@@ -258,10 +265,10 @@ treat such a page as having no frontmatter.
 File name rules: a page is <dir>/<name>.md, never at the wiki root. A file or
 directory name must not be empty, start with a dot or <, or contain
 whitespace, control characters or any of the characters " \ # ? : ( ) ` + "`" + `
-(bad_path; put, mv and rm reject such paths). Lowercase ASCII letters, digits and hyphens are
-recommended; other names are reported as name_style. Names in one directory
-that differ only by case collide on case-insensitive file systems and are
-reported as case_collision, against the whole wiki.
+(bad_path; put, edit, mv and rm reject such paths). Lowercase ASCII letters,
+digits and hyphens are recommended; other names are reported as name_style.
+Names in one directory that differ only by case collide on case-insensitive
+file systems and are reported as case_collision, against the whole wiki.
 
 A Links line is "- <type>: <target> | <note>", or "- <target>" for an untyped
 see_also relation (an untyped URL must be "<scheme>://..."); the bullet may
@@ -269,14 +276,13 @@ be "-", "*" or "+" and may be indented. The "## Links" heading must be the last
 heading of the page; one followed by another heading is reported as
 links_syntax.
 
-A page link is a relative path ending in .md, optionally followed by a
-?query or a #fragment; absolute paths and paths that leave the wiki are not
-page links.
-Links of the form [text](path) in the body are also read, except inside code
-fences and code spans: links lists them as "mentions", and lint
-reports them as broken_link when the page is missing. Code fences are never
-interpreted, so a "## Links" heading inside a fence does not start the
-Links section.
+A page link is a relative path ending in .md, optionally followed by a ?query
+or a #fragment; absolute paths and paths that leave the wiki are not page
+links. Links of the form [text](path) in the body are also read, except inside
+code fences and code spans: links lists them as "mentions", and lint reports
+them as broken_link when the page is missing. Code fences are never
+interpreted, so a "## Links" heading inside a fence does not start the Links
+section.
 
 Code fences follow CommonMark. A fence opens with a line of three or more
 backticks or tildes indented by up to three spaces (after backticks, the rest
@@ -292,7 +298,7 @@ removed only when a space or a tab precedes it, so "# C#" has the title "C#".
 Output: items[] {path, line, code, message}.`,
 		run: (*app).cmdLint},
 	{name: "tree", args: "[<dir>...]", maxArgs: -1, paths: true,
-		summary: "Show directories as a tree",
+		summary: "Show files and directories as a tree",
 		detail: `Show the files and directories under each directory as a tree, or under the
 root of the wiki without arguments, followed by the number of directories and
 files. As in tree, a directory shown at the top counts as a directory only
@@ -383,10 +389,10 @@ type app struct {
 // Their defaults are the current values, so that registering them again for
 // the command arguments keeps the values given before the command name.
 func (a *app) globalFlags(fs *pflag.FlagSet) {
-	fs.StringVar(&a.cfgPath, "config", a.cfgPath, "read the configuration from `path` instead of $WIKICTL_CONFIG or $XDG_CONFIG_HOME/wikictl/config.yaml (~/.config/wikictl/config.yaml)")
-	fs.StringVar(&a.profile, "profile", a.profile, "use the profile `name` from the config file instead of $WIKICTL_PROFILE, match or default_profile")
+	fs.StringVar(&a.cfgPath, "config", a.cfgPath, "read the configuration from `path`")
+	fs.StringVar(&a.profile, "profile", a.profile, "use the profile `name` from the config file")
 	fs.BoolVar(&a.json, "json", a.json, "print JSON")
-	fs.BoolVar(&a.noFetch, "no-fetch", a.noFetch, "do not fetch from the remote before reading; writes still fetch before committing")
+	fs.BoolVar(&a.noFetch, "no-fetch", a.noFetch, "do not fetch before reading; writes still fetch")
 	fs.BoolVar(&a.version, "version", a.version, "print the version and exit")
 }
 
