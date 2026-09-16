@@ -75,7 +75,7 @@ Each top-level directory is a scope that answers "where is this knowledge valid?
 | `projects/<name>/` | one project |
 | `machines/<name>/` | one execution environment |
 
-Commands that take paths read the whole wiki when the paths are omitted; wikictl does not choose directories from the current directory.
+Commands whose paths are optional (`grep`, `ls`, `find`, `lint`, `tree`) read the whole wiki when the paths are omitted; wikictl does not choose directories from the current directory.
 
 `personal/` holds facts that an agent looks up when they become relevant; rules for every conversation belong in the agent's standing instructions, such as `CLAUDE.md`. In a wiki shared by several people, everyone reads the same `personal/`, so do not use it there.
 
@@ -88,10 +88,10 @@ type: concept
 ---
 # Title
 
-Body. Link to other pages with relative paths: [index](index.md).
+Body. Link to other pages with relative paths: [push](git-push.md).
 
 ## Links
-- part_of: [index](index.md)
+- see_also: [push](git-push.md)
 - cites: https://example.com/spec | what this source supports
 ```
 
@@ -116,12 +116,14 @@ Body. Link to other pages with relative paths: [index](index.md).
 | `mv <src>... <dst>` | Move or rename files and directories, rewriting links |
 | `rm <path>...` | Delete files or directories |
 | `lint [<path>...]` | Report pages that violate the wiki format |
-| `tree [<dir>...]` | Show directories as a tree |
+| `tree [<dir>...]` | Show files and directories as a tree |
 | `context` | Show the resolved configuration |
 | `help [<command>]` | Show help for a command |
 | `version` | Print the version |
 
 `wikictl help <command>` describes the flags, the behavior and the JSON output of each command. Add `--json` to any command except `help` for machine-readable output.
+
+Paths printed one per line, such as those of `grep -l`, are passed to another command with `| tr '\n' '\0' | xargs -0 -r wikictl ls -lt`: names holding quotation marks or spaces stay intact, and `-r` runs nothing when nothing matched. With `set -o pipefail`, the pipeline exits with 1 when `grep` matched nothing. A name holding a newline cannot be passed this way, and neither can one holding a control character, which text output escapes as `\xNN`; `--json` prints the exact names, but wikictl rejects a path holding a control character with exit code 4.
 
 To update an existing page, pass the `sha` printed by `stat` to `put --base`. If the page changed in between, `put` exits with code 3 and prints the current content; wikictl never merges.
 
@@ -171,6 +173,8 @@ The profile is chosen by `--profile`, else `$WIKICTL_PROFILE`, else `match` (the
 | 3 | conflict: the page already exists, or changed or was deleted since it was read, or another push moved the branch while the change was being pushed |
 | 4 | the page or path violates the wiki format; `lint` exits with 4 on any finding, or with 1 when a path does not exist |
 | 5 | a git command failed, while reading or writing |
+
+`grep` is the exception: it exits with 1 when no line matched, and with 2 when a path does not exist, while the other paths are still searched.
 
 A conflict never writes anything: re-read the page and reapply the change, or, when the reason is `moved`, simply run the command again.
 

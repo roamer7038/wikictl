@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // runNoConfig invokes Main with a config path that does not exist, so that
@@ -105,6 +106,32 @@ func TestEveryCommandHasHelp(t *testing.T) {
 	for _, code := range []string{"missing_summary", "frontmatter_invalid", "links_syntax", "bad_path", "name_style", "case_collision", "page_too_large", "broken_link"} {
 		if !strings.Contains(out, code) {
 			t.Errorf("help lint must describe %s", code)
+		}
+	}
+}
+
+// TestHelpFitsEightyColumns keeps every line of the help within 80 columns,
+// so that it reads in a terminal of that width. The help is ASCII, so one
+// rune is one column.
+func TestHelpFitsEightyColumns(t *testing.T) {
+	topics := []string{""}
+	for _, c := range commands {
+		topics = append(topics, c.name)
+	}
+	topics = append(topics, "help", "version")
+	for _, topic := range topics {
+		args := []string{"help"}
+		if topic != "" {
+			args = append(args, topic)
+		}
+		code, out, _ := runNoConfig(t, args...)
+		if code != ExitOK {
+			t.Fatalf("%v: code=%d", args, code)
+		}
+		for i, line := range strings.Split(out, "\n") {
+			if n := utf8.RuneCountInString(line); n > 80 {
+				t.Errorf("%v: line %d is %d columns: %s", args, i+1, n, line)
+			}
 		}
 	}
 }

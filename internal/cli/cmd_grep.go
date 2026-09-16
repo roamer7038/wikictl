@@ -30,18 +30,18 @@ type grepCount struct {
 
 func grepFlags(a *app, fs *pflag.FlagSet) {
 	fs.BoolVarP(&a.ignoreCase, "ignore-case", "i", false, "ignore case; letters other than ASCII only with -F")
-	fs.BoolVarP(&a.filesWith, "files-with-matches", "l", false, "print only the paths of the files with a matching line")
-	fs.BoolVarP(&a.filesWithout, "files-without-match", "L", false, "print only the paths of the files without a matching line")
-	fs.BoolVarP(&a.countLines, "count", "c", false, "print the number of matching lines of each file that has one")
+	fs.BoolVarP(&a.filesWith, "files-with-matches", "l", false, "print only the paths of the files with a match")
+	fs.BoolVarP(&a.filesWithout, "files-without-match", "L", false, "print only the paths of the files without a match")
+	fs.BoolVarP(&a.countLines, "count", "c", false, "print the number of matching lines of each file")
 	fs.BoolVarP(&a.lineNumber, "line-number", "n", false, "print the line number before each line")
 	fs.BoolVarP(&a.noFilename, "no-filename", "h", false, "print the lines and counts without the path")
 	fs.BoolVarP(&a.word, "word-regexp", "w", false, "match whole words only")
 	fs.BoolVarP(&a.invert, "invert-match", "v", false, "select the lines that do not match")
-	fs.BoolVarP(&a.quiet, "quiet", "q", false, "print nothing, also with --json; the exit code tells whether anything was selected")
+	fs.BoolVarP(&a.quiet, "quiet", "q", false, "print nothing; only the exit code tells the result")
 	fs.BoolVarP(&a.extended, "extended-regexp", "E", false, "read the patterns as extended regular expressions")
 	fs.BoolVarP(&a.fixed, "fixed-strings", "F", false, "read the patterns as fixed strings")
 	fs.StringArrayVarP(&a.patterns, "regexp", "e", nil, "search for `pattern`; may be given more than once")
-	fs.BoolVar(&a.allMatch, "all-match", false, "with several -e, select only the files that match every pattern; not with -L")
+	fs.BoolVar(&a.allMatch, "all-match", false, "select the files that match every -e; not with -L")
 }
 
 func (a *app) checkGrep(c *command, args []string) error {

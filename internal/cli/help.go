@@ -42,7 +42,9 @@ const outputHelp = `Output:
   other than tab are printed as \xNN, except that a newline in an error or a
   configuration warning, such as in the output of git, starts a line indented
   by two spaces; JSON output and the content of files printed by cat or on a
-  conflict are not changed.
+  conflict are not changed. A backslash is not escaped, so a name holding the
+  four characters \x01 cannot be told from the byte 0x01; --json keeps the
+  control characters as stored, although invalid UTF-8 becomes U+FFFD there.
 `
 
 const writesHelp = `Writes:
@@ -106,15 +108,22 @@ func printUsage(w io.Writer) {
 	(&app{}).globalFlags(fs)
 	printFlags(w, fs)
 	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Without --config, the configuration is $WIKICTL_CONFIG, else")
+	fmt.Fprintln(w, "$XDG_CONFIG_HOME/wikictl/config.yaml (~/.config/wikictl/config.yaml); without")
+	fmt.Fprintln(w, "--profile, the profile is $WIKICTL_PROFILE, else match, else default_profile,")
+	fmt.Fprintln(w, `as "wikictl help context" describes.`)
+	fmt.Fprintln(w)
 	fmt.Fprint(w, outputHelp)
 	fmt.Fprintln(w)
 	fmt.Fprint(w, writesHelp)
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Exit codes:")
-	fmt.Fprintln(w, "  0 success   1 error   2 usage or configuration   3 conflict   4 invalid page   5 git failure")
-	fmt.Fprintln(w, "  A write that lost the push race on every attempt also exits with 3, with reason \"moved\".")
-	fmt.Fprintln(w, "  A git failure while reading the wiki also exits with 5 and prints no partial result;")
-	fmt.Fprintln(w, "  so does a page that exists but cannot be read, instead of \"no such file or directory\".")
+	fmt.Fprintln(w, "  0 success   1 error   2 usage or configuration   3 conflict")
+	fmt.Fprintln(w, "  4 invalid path or page   5 git failure")
+	fmt.Fprintln(w, "  A write that lost the push race on every attempt also exits with 3, with")
+	fmt.Fprintln(w, "  reason \"moved\". A git failure while reading the wiki also exits with 5 and")
+	fmt.Fprintln(w, "  prints no partial result; so does a page that exists but cannot be read,")
+	fmt.Fprintln(w, "  instead of \"no such file or directory\".")
 	fmt.Fprintln(w)
 	fmt.Fprint(w, mirrorHelp)
 	fmt.Fprintln(w)
@@ -160,7 +169,7 @@ func printFlags(w io.Writer, fs *pflag.FlagSet) {
 		if value != "" {
 			left += " <" + value + ">"
 		}
-		if f.DefValue != "" && f.DefValue != "false" && f.DefValue != "0" {
+		if f.DefValue != "" && f.DefValue != "false" && f.DefValue != "0" && f.DefValue != "[]" {
 			usage += " (default " + f.DefValue + ")"
 		}
 		fmt.Fprintf(tw, "  %s\t%s\n", left, usage)
