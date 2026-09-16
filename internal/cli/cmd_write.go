@@ -496,9 +496,10 @@ func (a *app) badPath(p string, err error) error {
 }
 
 // moveChanges builds the changes that move the files of mapping (old path ->
-// new path), each keeping its mode from modes: pages through wiki.Relocate
-// over entries, the files of the whole tree, with the old name added to
-// aliases when it changes, and other files unchanged. It also returns the
+// new path), each keeping its mode from modes: pages, as repo.IsPagePath
+// decides as wiki.Relocate does, through wiki.Relocate over entries, the files
+// of the whole tree, with the old name added to aliases when it changes, and
+// other files unchanged. It also returns the
 // number of other pages whose links were rewritten.
 func (a *app) moveChanges(entries []repo.Entry, mapping, modes map[string]string) ([]repo.Change, int, error) {
 	sources := slices.Collect(maps.Keys(mapping))
@@ -511,7 +512,7 @@ func (a *app) moveChanges(entries []repo.Entry, mapping, modes map[string]string
 	}
 	pages, others := map[string]string{}, []string{}
 	for f, np := range mapping {
-		if strings.HasSuffix(f, ".md") {
+		if repo.IsPagePath(f) {
 			pages[f] = np
 		} else {
 			others = append(others, f)

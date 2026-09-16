@@ -414,6 +414,64 @@ func TestMoveQuotedName(t *testing.T) {
 	}
 }
 
+// TestMvDotDirMarkdown checks that mv moves a .md file below a directory
+// starting with a dot, which is not a page, as it moves any other file: its
+// content is kept, and links to it are left as written.
+func TestMvDotDirMarkdown(t *testing.T) {
+	cfg := setup(t)
+	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
+	tmpl := "# PR\n[x](../projects/app/x.md)\n"
+	ref := "---\nsummary: r\n---\n# r\n[t](../.github/PULL_REQUEST_TEMPLATE.md)\n"
+	pushFiles(t, cfg, map[string]string{
+		".github/PULL_REQUEST_TEMPLATE.md": tmpl,
+		".github/ISSUE_TEMPLATE/bug.md":    "# bug\n",
+		".github/workflows/test.yml":       "on: push\n",
+		"global/ref.md":                    ref,
+	})
+	code, out, errs := runCLI(t, cfg, "", "mv", "--json", ".github/PULL_REQUEST_TEMPLATE.md", "global/pr.md")
+	if code != 0 || errs != "" {
+		t.Fatalf("mv of a .md below a dot directory: code=%d out=%q errs=%q", code, out, errs)
+	}
+	var res struct {
+		Moved     []movedFile `json:"moved"`
+		Rewritten int         `json:"rewritten"`
+		Commit    string      `json:"commit"`
+	}
+	mustUnmarshal(t, out, &res)
+	if len(res.Moved) != 1 || res.Moved[0] != (movedFile{".github/PULL_REQUEST_TEMPLATE.md", "global/pr.md"}) || res.Rewritten != 0 || len(res.Commit) != 40 {
+		t.Errorf("mv output: %q", out)
+	}
+	files := strings.Split(gitOut(t, "--git-dir", remote, "ls-tree", "-r", "-z", "--name-only", "main"), "\x00")
+	if slices.Contains(files, ".github/PULL_REQUEST_TEMPLATE.md") || !slices.Contains(files, "global/pr.md") {
+		t.Errorf("files after mv: %q", files)
+	}
+	if got := gitOut(t, "--git-dir", remote, "cat-file", "-p", "main:global/pr.md"); got != strings.TrimSuffix(tmpl, "\n") {
+		t.Errorf("moved file: %q", got)
+	}
+	if got := gitOut(t, "--git-dir", remote, "cat-file", "-p", "main:global/ref.md"); got != strings.TrimSuffix(ref, "\n") {
+		t.Errorf("page linking to the moved file: %q", got)
+	}
+
+	// A directory starting with a dot moves with every file below it.
+	if code, _, errs := runCLI(t, cfg, "", "mv", ".github", "global/github"); code != 0 || errs != "" {
+		t.Fatalf("mv of a dot directory: code=%d errs=%q", code, errs)
+	}
+	files = strings.Split(gitOut(t, "--git-dir", remote, "ls-tree", "-r", "-z", "--name-only", "main"), "\x00")
+	for _, f := range []string{"global/github/ISSUE_TEMPLATE/bug.md", "global/github/workflows/test.yml"} {
+		if !slices.Contains(files, f) {
+			t.Errorf("%s does not exist after mv: %q", f, files)
+		}
+	}
+	if slices.ContainsFunc(files, func(f string) bool { return strings.HasPrefix(f, ".github/") }) {
+		t.Errorf("files left below .github: %q", files)
+	}
+
+	// A destination starting with a dot is still rejected.
+	if code, _, errs := runCLI(t, cfg, "", "mv", "global/pr.md", ".github/pr.md"); code != ExitInvalid || !strings.Contains(errs, "bad_path") {
+		t.Errorf("mv to a dot directory: code=%d errs=%q", code, errs)
+	}
+}
+
 // TestWarningsOnlyWithACommit checks that the warnings about a page are
 // printed when the commit succeeds and left out when the write fails, so that
 // a failure reports only what stopped it.

@@ -207,9 +207,10 @@ Output: {path, sha, commit}, printed only when the file is committed.`,
 is not a directory of the wiki, rename the source to the destination; otherwise
 move every source into the destination directory, keeping its name. -T renames
 even when the destination is a directory, and -t moves every argument into the
-directory given. Files that are not pages move with their directory, every
-moved file keeps its mode, and a source that is or contains a submodule is
-reported and not moved. A destination that exists is never replaced: it is
+directory given. Files that are not pages, including a .md file below a
+directory whose name starts with a dot, move unchanged with their directory,
+every moved file keeps its mode, and a source that is or contains a submodule
+is reported and not moved. A destination that exists is never replaced: it is
 reported on standard error as "not replacing". A source that does not exist, a
 destination below a file or ending with "/" that is not a directory
 ("not a directory"), and a directory moved into itself are reported too; the
