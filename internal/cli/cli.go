@@ -207,26 +207,28 @@ Output: {path, sha, commit}, printed only when the file is committed.`,
 is not a directory of the wiki, rename the source to the destination; otherwise
 move every source into the destination directory, keeping its name. -T renames
 even when the destination is a directory, and -t moves every argument into the
-directory given. Files that are not pages move with their directory, every
-moved file keeps its mode, and a source that is or contains a submodule is
-reported and not moved. A destination that exists is never replaced: it is
-reported on standard error as "not replacing". A source that does not exist, a
-destination below a file or ending with "/" that is not a directory
-("not a directory"), and a directory moved into itself are reported too; the
-other sources are still moved, and the command exits with code 1. A file at the
-root of the wiki, the root itself, or a destination that breaks the file name
-rules (see "help lint") is rejected with exit code 4, and nothing is moved. A
-file added under a directory after mv read it is not moved.
+directory given. Files that are not pages, including a .md file with a path
+component starting with a dot, move with their directory and keep their
+content, every moved file keeps its mode, and a source that is or contains a
+submodule is reported and not moved. A destination that exists is never
+replaced: it is reported on standard error as "not replacing". A source that
+does not exist, a destination below a file or ending with "/" that is not a
+directory ("not a directory"), and a directory moved into itself are reported
+too; the other sources are still moved, and the command exits with code 1. A
+file at the root of the wiki, the root itself, or a destination that breaks the
+file name rules (see "help lint") is rejected with exit code 4, and nothing is
+moved. A file added under a directory after mv read it is not moved.
 
-Links to a moved page from other pages, and relative links inside a moved page
-whose destination changes with the move, are rewritten in the same commit.
-Other links, links to files that are not pages, and links inside code spans
-and code fences are left as written. Only the path of a rewritten link
-changes; a leading "./", angle brackets, a query, a fragment and a title are
-kept. When the name of a page changes, the old name (without .md) is added to
-aliases if the frontmatter is empty or a block-style mapping and aliases is
-absent, a sequence (block or flow style), or null; otherwise no alias is added
-and no warning is printed.
+Links in other pages to a moved .md file, whether a page or not, and relative
+links inside a moved page whose destination changes with the move, are
+rewritten in the same commit. Other links, links to files not ending in .md,
+links inside files that are not pages, and links inside code spans and code
+fences are left as written. Only the path of a rewritten link changes; a
+leading "./", angle brackets, a query, a fragment and a title are kept. When
+the name of a page changes, the old name (without .md) is added to aliases if
+the frontmatter is empty or a block-style mapping and aliases is absent, a
+sequence (block or flow style), or null; otherwise no alias is added and no
+warning is printed.
 
 Only links of the form [text](path) are rewritten. A bare path in a Links line,
 such as "- see_also: other.md" or "- other.md", is left unchanged and becomes
