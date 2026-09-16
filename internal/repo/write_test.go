@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -173,6 +174,36 @@ func TestCommitInQuarantineEnvironment(t *testing.T) {
 	empty := ""
 	if _, err := r.Commit([]Change{{Path: "global/q.md", Content: []byte("---\nsummary: q\n---\n"), Base: &empty}}, "put", Author{"a", "a@a"}); err != nil {
 		t.Fatalf("Commit with GIT_QUARANTINE_PATH set: %v", err)
+	}
+}
+
+// TestCommitRefusedPath checks that a path which update-index skips with
+// "Ignoring path", here one with a component that names .git on NTFS, is an
+// error and writes nothing, so that a move does not only delete its source.
+func TestCommitRefusedPath(t *testing.T) {
+	remote := newRemote(t, true)
+	r := openFetched(t, remote)
+	git := func(args ...string) string {
+		t.Helper()
+		return strings.TrimSpace(run(t, "", "git", append([]string{"--git-dir", remote}, args...)...))
+	}
+	sha := git("rev-parse", "main:global/index.md")
+	empty := ""
+	for _, changes := range [][]Change{
+		{{Path: "docs/git~1/x.txt", Content: []byte("hi\n"), Base: &empty}},
+		{{Path: "global/index.md", Delete: true, Base: &sha}, {Path: "global/git~1/index.md", Content: []byte("x"), Base: &empty}},
+		{{Path: "global/GIT~1", Content: []byte("x"), Base: &empty}},
+	} {
+		last := changes[len(changes)-1].Path
+		before := git("rev-parse", "main")
+		_, err := r.Commit(changes, "refused", Author{"a", "a@a"})
+		var rp *RefusedPath
+		if !errors.As(err, &rp) || rp.Path != last {
+			t.Errorf("Commit(%s): got %v, want RefusedPath", last, err)
+		}
+		if after := git("rev-parse", "main"); after != before {
+			t.Errorf("Commit(%s) moved the branch", last)
+		}
 	}
 }
 

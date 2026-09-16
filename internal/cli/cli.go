@@ -168,16 +168,17 @@ must be inside a directory. Omit --base for a new file. For an existing file
 pass --base with the blob sha from stat; without it, or if the file changed in
 the meantime, the command exits with code 3 and prints the current content and
 sha (see "wikictl help"). A path that breaks the file name rules (see "help
-lint") is rejected with exit code 4. A path ending in .md is a page: a page
-whose frontmatter is invalid or that is over the size limits is rejected with
-exit code 4, and a missing summary, Links lines that do not parse, links to
-files missing from the wiki and names outside the recommended form only
-produce warnings on standard error; "description" in the frontmatter is read
-as a synonym of "summary", and "summary" wins when it is not blank. When the
-content equals the current file, no commit is created and commit is the
-current commit. A path that is a directory, a symbolic link or a submodule,
-or that is below a file, is rejected with exit code 1; a file replaced keeps
-its mode.
+lint"), or that git refuses to store, such as one with a component git~1,
+which names .git on NTFS, is rejected as bad_path with exit code 4 and nothing
+is committed. A path ending in .md is a page: a page whose frontmatter is
+invalid or that is over the size limits is rejected with exit code 4, and a
+missing summary, Links lines that do not parse, links to files missing from
+the wiki and names outside the recommended form only produce warnings on
+standard error; "description" in the frontmatter is read as a synonym of
+"summary", and "summary" wins when it is not blank. When the content equals
+the current file, no commit is created and commit is the current commit. A
+path that is a directory, a symbolic link or a submodule, or that is below a
+file, is rejected with exit code 1; a file replaced keeps its mode.
 
 Output: {path, sha, commit}; with -v, text output is
 "<path><TAB><sha><TAB><commit>".`,
@@ -190,14 +191,14 @@ starts empty. The editor is $VISUAL, else $EDITOR, else vi; one with spaces or
 shell characters is run by the shell, so it may include arguments. Nothing is
 committed when the content is unchanged, which includes a new file left empty.
 When the result cannot be committed, because the file changed in the meantime
-(exit code 3; see "wikictl help"), the content breaks the rules that put
-applies (exit code 4), or the editor fails, or the editor leaves something
-that is not the regular file wikictl created, such as a symbolic link (exit
-code 1), the edited content is kept in a temporary file whose path is printed
-on standard error; SIGTERM and SIGHUP while the editor runs print it too and
-end wikictl with 128 plus the number of the signal, while an interrupt is left
-to the editor. Standard input must be a terminal; otherwise the command exits
-with code 2.
+(exit code 3; see "wikictl help"), the path or the content breaks the rules
+that put applies (exit code 4), or the editor fails, or the editor leaves
+something that is not the regular file wikictl created, such as a symbolic
+link (exit code 1), the edited content is kept in a temporary file whose path
+is printed on standard error; SIGTERM and SIGHUP while the editor runs print
+it too and end wikictl with 128 plus the number of the signal, while an
+interrupt is left to the editor. Standard input must be a terminal; otherwise
+the command exits with code 2.
 
 Output: {path, sha, commit}, printed only when the file is committed.`,
 		flags: editFlags, check: (*app).checkEdit, run: (*app).cmdEdit},
@@ -215,8 +216,9 @@ destination below a file or ending with "/" that is not a directory
 ("not a directory"), and a directory moved into itself are reported too; the
 other sources are still moved, and the command exits with code 1. A file at the
 root of the wiki, the root itself, or a destination that breaks the file name
-rules (see "help lint") is rejected with exit code 4, and nothing is moved. A
-file added under a directory after mv read it is not moved.
+rules (see "help lint") or that git refuses to store (see "help put") is
+rejected with exit code 4, and nothing is moved. A file added under a
+directory after mv read it is not moved.
 
 Links to a moved page from other pages, and relative links inside a moved page
 whose destination changes with the move, are rewritten in the same commit.
