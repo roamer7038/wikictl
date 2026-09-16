@@ -367,6 +367,12 @@ func (a *app) cmdMv(c *command, args []string) error {
 				if err := page.CheckName(seg); err != nil {
 					return &invalidError{"bad_path: " + err.Error()}
 				}
+				// The length is checked here, not only through the path of
+				// each moved file below, so that the message names the
+				// segment as it does for put.
+				if err := page.CheckLength(seg); err != nil {
+					return &invalidError{"bad_path: " + err.Error()}
+				}
 				if !page.Recommended(seg) {
 					a.warn(page.NameStyle(target+"/", seg))
 				}

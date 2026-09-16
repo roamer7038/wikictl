@@ -50,12 +50,13 @@ func CheckName(s string) error {
 // usual file systems refuse a longer name, so a clone of a wiki holding one
 // fails with "File name too long". CheckName does not apply the limit: a
 // name already in the wiki must stay removable with rm and movable away with
-// mv, so only the paths that a command writes are checked, through CheckPath
-// and CheckFilePath.
+// mv, so only the paths that a command writes are checked, through CheckPath,
+// CheckFilePath and CheckLength.
 const MaxNameLen = 255
 
-// checkLength returns an error when a component of p is over MaxNameLen bytes.
-func checkLength(p string) error {
+// CheckLength returns an error when a component of p, which may be a single
+// name, is over MaxNameLen bytes.
+func CheckLength(p string) error {
 	for _, x := range strings.Split(p, "/") {
 		if len(x) > MaxNameLen {
 			return fmt.Errorf("name %q is longer than %d bytes", x, MaxNameLen)
@@ -74,7 +75,7 @@ func CheckPath(p string) error {
 	if err := CheckFilePath(strings.TrimSuffix(p, ".md")); err != nil {
 		return err
 	}
-	return checkLength(p)
+	return CheckLength(p)
 }
 
 // CheckFilePath returns nil when p can be the path of a file: at least one
@@ -90,7 +91,7 @@ func CheckFilePath(p string) error {
 			return err
 		}
 	}
-	return checkLength(p)
+	return CheckLength(p)
 }
 
 // Recommended reports whether s has the recommended form of a name:

@@ -444,6 +444,14 @@ func TestWarningsOnlyWithACommit(t *testing.T) {
 	if code != ExitError || !strings.Contains(errs, "not replacing") || strings.Contains(errs, "warning") {
 		t.Errorf("mv to a page that exists: code=%d errs=%q", code, errs)
 	}
+	// A mv that moves one source and fails on another reports the failure
+	// first: the warnings wait for the commit.
+	code, _, errs = runCLI(t, cfg, "", "mv", "global/Note.md", "global/none.md", "machines/h1")
+	failed := strings.Index(errs, "wikictl: global/none.md: no such file or directory")
+	warned := strings.Index(errs, "wikictl: warning: machines/h1/Note.md:0: name_style")
+	if code != ExitError || failed < 0 || warned < 0 || failed > warned {
+		t.Errorf("mv of one source that fails: code=%d errs=%q", code, errs)
+	}
 }
 
 // TestLongNames checks that a name over 255 bytes, which a clone cannot check
@@ -451,17 +459,23 @@ func TestWarningsOnlyWithACommit(t *testing.T) {
 // takes one, so that a page already in the wiki can be removed.
 func TestLongNames(t *testing.T) {
 	cfg := setup(t)
-	longPage := "global/" + strings.Repeat("a", 253) + ".md" // 256 bytes with .md
+	longName := strings.Repeat("a", 253) // 256 bytes with .md
+	longPage := "global/" + longName + ".md"
+	longFile := strings.Repeat("c", 256) + ".png"
+	longDir := strings.Repeat("b", 256)
+	// Every path that is written names the segment that is too long, whether
+	// it is a page, another file or a directory of the destination.
 	for _, c := range []struct {
 		args  []string
 		stdin string
+		want  string
 	}{
-		{[]string{"put", longPage}, "---\nsummary: s\n---\n"},
-		{[]string{"put", "global/" + strings.Repeat("c", 256) + ".png"}, "x"},
-		{[]string{"mv", "global/push.md", longPage}, ""},
-		{[]string{"mv", "global", "projects/" + strings.Repeat("b", 256)}, ""},
+		{[]string{"put", longPage}, "---\nsummary: s\n---\n", `bad_path: name "` + longName + `.md" is longer than 255 bytes`},
+		{[]string{"put", "global/" + longFile}, "x", `bad_path: name "` + longFile + `" is longer than 255 bytes`},
+		{[]string{"mv", "global/push.md", longPage}, "", `bad_path: name "` + longName + `.md" is longer than 255 bytes`},
+		{[]string{"mv", "global", "projects/" + longDir}, "", `bad_path: name "` + longDir + `" is longer than 255 bytes`},
 	} {
-		if code, _, errs := runCLI(t, cfg, c.stdin, c.args...); code != ExitInvalid || !strings.Contains(errs, "bad_path") {
+		if code, _, errs := runCLI(t, cfg, c.stdin, c.args...); code != ExitInvalid || !strings.Contains(errs, c.want) {
 			t.Errorf("%v: code=%d errs=%q", c.args, code, errs)
 		}
 	}
