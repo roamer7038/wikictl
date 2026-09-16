@@ -44,6 +44,45 @@ func keptFile(t *testing.T, errs string) string {
 	return string(b)
 }
 
+// TestEditTemporaryFileReplaced checks that an editor which replaces the
+// temporary file with a symbolic link does not make edit read and commit the
+// content the link points at, and that an editor which writes a new file and
+// renames it into place, as vim does with backupcopy=no, keeps working.
+func TestEditTemporaryFileReplaced(t *testing.T) {
+	cfg := setup(t)
+	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
+	head := func() string { return gitOut(t, "--git-dir", remote, "rev-parse", "main") }
+
+	secret := filepath.Join(t.TempDir(), "secret")
+	if err := os.WriteFile(secret, []byte("---\nsummary: secret\n---\n# secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before := head()
+	editWith(t, "rm \"$1\"\nln -s "+shQuote(secret)+" \"$1\"\n")
+	code, _, errs := runCLI(t, cfg, "", "edit", "global/push.md")
+	if code != ExitError || !strings.Contains(errs, "symbolic link") {
+		t.Errorf("editor replacing the file with a symlink: code=%d errs=%q", code, errs)
+	}
+	if _, after, ok := strings.Cut(errs, "kept in "); ok {
+		p, _, _ := strings.Cut(after, "\n")
+		os.Remove(p)
+	}
+	if head() != before {
+		t.Error("the content the symlink points at was committed")
+	}
+	if _, out, _ := runCLI(t, cfg, "", "cat", "global/push.md"); strings.Contains(out, "secret") {
+		t.Errorf("page after the symlink: %q", out)
+	}
+
+	editWith(t, "printf -- '---\\nsummary: renamed\\n---\\n# renamed\\n' > \"$1.new\"\nmv \"$1.new\" \"$1\"\n")
+	if code, _, errs := runCLI(t, cfg, "", "edit", "global/push.md"); code != 0 {
+		t.Fatalf("editor writing a new file and renaming it: code=%d errs=%q", code, errs)
+	}
+	if _, out, _ := runCLI(t, cfg, "", "cat", "global/push.md"); out != "---\nsummary: renamed\n---\n# renamed\n" {
+		t.Errorf("page after the rename: %q", out)
+	}
+}
+
 func TestEdit(t *testing.T) {
 	cfg := setup(t)
 	remote := filepath.Join(filepath.Dir(cfg), "remote.git")

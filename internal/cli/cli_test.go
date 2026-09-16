@@ -1096,17 +1096,61 @@ func TestCredentialsRedacted(t *testing.T) {
 	}
 
 	// Without branch, the remote HEAD is read with ls-remote, which fails for
-	// the unknown scheme; the arguments of the git command are in the message.
+	// the unknown scheme; the arguments of the git command are in the message,
+	// and they name the remote instead of spelling out its URL.
 	os.WriteFile(cfg, []byte("repo: nope://alice:ghp_repo@example.com/other.git\nauthor: {name: agent, email: a@a}\n"), 0o600)
 	code, out, errs = runCLI(t, cfg, "", "ls")
-	if code != ExitGit || !strings.Contains(errs, "ls-remote --symref nope://***@example.com/other.git HEAD") || strings.Contains(out+errs, "ghp_") {
+	if code != ExitGit || !strings.Contains(errs, "ls-remote --symref origin HEAD") || strings.Contains(out+errs, "ghp_") {
 		t.Errorf("ls: code=%d %s %s", code, out, errs)
 	}
 	code, out, _ = runCLI(t, cfg, "", "--json", "ls")
 	var e errorOut
 	mustUnmarshal(t, out, &e)
-	if code != ExitGit || e.Error != "git" || strings.Contains(e.Message, "ghp_") || !strings.Contains(e.Message, "nope://***@example.com") {
+	if code != ExitGit || e.Error != "git" || strings.Contains(e.Message, "ghp_") || !strings.Contains(e.Message, "ls-remote --symref origin HEAD") {
 		t.Errorf("ls --json: code=%d %s", code, out)
+	}
+}
+
+// The URL of the repository must not be an argument of any git command wikictl
+// runs: the arguments of a running process can be read by every user on the
+// machine, so credentials in the URL would leak through the process list.
+func TestRepoURLNotAGitArgument(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "args")
+	wrapGit(t, func(string) string {
+		return "*)\n  printf '%s\\n' \"$*\" >> " + shQuote(log) + "\n  ;;\n"
+	})
+	cfg := setupEmpty(t)
+	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
+	// A local repository: the mirror is created and the branch read with
+	// ls-remote, since the configuration has no branch.
+	if code, _, errs := runCLI(t, cfg, "", "ls"); code != ExitOK {
+		t.Fatalf("ls: code=%d errs=%q", code, errs)
+	}
+	// A URL with credentials, whose scheme no git helper knows: the commands
+	// that prepare the mirror run before the one that reaches the remote fails.
+	os.WriteFile(cfg, []byte("repo: nope://alice:ghp_secret@example.com/wiki.git\nauthor: {name: agent, email: a@a}\n"), 0o600)
+	if code, _, _ := runCLI(t, cfg, "", "ls"); code != ExitGit {
+		t.Fatalf("ls with an unknown scheme: code=%d", code)
+	}
+
+	b, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Only the commands wikictl runs are checked; they all start with the
+	// options that point git at the mirror.
+	n := 0
+	for line := range strings.SplitSeq(string(b), "\n") {
+		if !strings.HasPrefix(line, "--git-dir=.") {
+			continue
+		}
+		n++
+		if strings.Contains(line, "ghp_secret") || strings.Contains(line, remote) {
+			t.Errorf("the URL of the repository is a git argument: git %s", line)
+		}
+	}
+	if n == 0 {
+		t.Fatal("no git command of wikictl was recorded")
 	}
 }
 

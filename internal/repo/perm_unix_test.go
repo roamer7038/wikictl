@@ -47,6 +47,18 @@ func TestMirrorPermissions(t *testing.T) {
 		assertPerm(t, mirror, 0o700)
 		assertPerm(t, mirror+".lock", 0o600)
 		assertPerm(t, filepath.Join(mirror, "wikictl.lock"), 0o600)
+		// The configuration holds the URL of the repository, which may carry
+		// credentials, so it is private to the owner; an existing mirror whose
+		// configuration others can read is tightened when it is opened again.
+		config := filepath.Join(mirror, "config")
+		assertPerm(t, config, 0o600)
+		if err := os.Chmod(config, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Open(mirror, remote, ""); err != nil {
+			t.Fatal(err)
+		}
+		assertPerm(t, config, 0o600)
 	}
 }
 
