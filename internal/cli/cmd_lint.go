@@ -79,7 +79,11 @@ func (a *app) cmdLint(c *command, args []string) error {
 		}
 	})
 	if len(missing) > 0 {
-		return a.reportMissing(missing, nil)
+		msg, err := a.fileMessage(missing)
+		if err != nil {
+			return err
+		}
+		return a.reportMissing(missing, msg)
 	}
 	if len(items) > 0 {
 		return exitStatus(ExitInvalid)
