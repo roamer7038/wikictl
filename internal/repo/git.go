@@ -58,9 +58,13 @@ func reportsError(stderr string) bool {
 
 // localEnvVars are the repository-local variables reported by
 // "git rev-parse --local-env-vars", plus GIT_NAMESPACE, which prefixes the
-// refs. Inherited from a git hook or alias, they would point the commands at
-// the caller's repository instead of the mirror.
+// refs, and GIT_QUARANTINE_PATH. Inherited from a git hook or alias, they
+// would point the commands at the caller's repository instead of the mirror.
+// GIT_QUARANTINE_PATH is not in the list of git 2.43, but a pre-receive hook
+// runs with it set, and git then refuses every ref update of the mirror with
+// "ref updates forbidden inside quarantine environment".
 var localEnvVars = map[string]bool{
+	"GIT_QUARANTINE_PATH":              true,
 	"GIT_ALTERNATE_OBJECT_DIRECTORIES": true,
 	"GIT_CONFIG":                       true,
 	"GIT_CONFIG_PARAMETERS":            true,

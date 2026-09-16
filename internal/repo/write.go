@@ -77,6 +77,15 @@ func (r *Repo) Commit(changes []Change, msg string, au Author) (*Result, error) 
 		return nil, err
 	}
 	defer unlock()
+	// Remove the index directories that a killed process left behind. Nothing
+	// else can be using one while the lock is held.
+	if ents, rerr := os.ReadDir(r.Dir); rerr == nil {
+		for _, e := range ents {
+			if strings.HasPrefix(e.Name(), "wikictl-index-") {
+				os.RemoveAll(filepath.Join(r.Dir, e.Name()))
+			}
+		}
+	}
 	const attempts = 3
 	var last error
 	var lastRetry retryReason

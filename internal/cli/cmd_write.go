@@ -118,6 +118,7 @@ func (a *app) writeFile(p string, content []byte, base, cmd string) error {
 	if err != nil {
 		return err
 	}
+	a.flushWarnings()
 	out := map[string]string{"path": p, "sha": res.SHAs[p], "commit": res.Commit}
 	a.emit(out, func(w io.Writer) {
 		if a.verbose {
@@ -141,9 +142,17 @@ func (a *app) commitMessage(cmd string, args []string) string {
 	return msg
 }
 
-// warn prints a non-blocking issue on stderr.
-func (a *app) warn(is page.Issue) {
-	fmt.Fprintf(a.stderr, "wikictl: warning: %s:%d: %s: %s\n", escapeControl(is.Path), is.Line, is.Code, escapeControl(is.Message))
+// warn records a non-blocking issue of a write. The issues are printed by
+// flushWarnings once the commit succeeded, so that a write which fails
+// reports only what stopped it.
+func (a *app) warn(is page.Issue) { a.warnings = append(a.warnings, is) }
+
+// flushWarnings prints the recorded issues on stderr.
+func (a *app) flushWarnings() {
+	for _, is := range a.warnings {
+		fmt.Fprintf(a.stderr, "wikictl: warning: %s:%d: %s: %s\n", escapeControl(is.Path), is.Line, is.Code, escapeControl(is.Message))
+	}
+	a.warnings = nil
 }
 
 // checkRm requires a path unless -f is given, which lets rm be run with paths
@@ -358,6 +367,12 @@ func (a *app) cmdMv(c *command, args []string) error {
 				if err := page.CheckName(seg); err != nil {
 					return &invalidError{"bad_path: " + err.Error()}
 				}
+				// The length is checked here, not only through the path of
+				// each moved file below, so that the message names the
+				// segment as it does for put.
+				if err := page.CheckLength(seg); err != nil {
+					return &invalidError{"bad_path: " + err.Error()}
+				}
 				if !page.Recommended(seg) {
 					a.warn(page.NameStyle(target+"/", seg))
 				}
@@ -424,6 +439,7 @@ func (a *app) cmdMv(c *command, args []string) error {
 		if err != nil {
 			return err
 		}
+		a.flushWarnings()
 		for _, f := range slices.Sorted(maps.Keys(mapping)) {
 			moved = append(moved, movedFile{f, mapping[f]})
 		}

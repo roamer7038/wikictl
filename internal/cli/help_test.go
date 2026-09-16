@@ -110,6 +110,20 @@ func TestEveryCommandHasHelp(t *testing.T) {
 	}
 }
 
+// TestHelpNotesFilesAddedWhileReading checks that mv and rm both say that a
+// file added after the command read the tree is left where it is.
+func TestHelpNotesFilesAddedWhileReading(t *testing.T) {
+	for cmd, want := range map[string]string{
+		"mv": "A file added under a directory after mv read it is not moved.",
+		"rm": "A file added under a directory after rm read it is not deleted.",
+	} {
+		_, out, _ := runNoConfig(t, "help", cmd)
+		if !strings.Contains(strings.Join(strings.Fields(out), " "), want) {
+			t.Errorf("help %s must say %q", cmd, want)
+		}
+	}
+}
+
 // TestHelpFitsEightyColumns keeps every line of the help within 80 columns,
 // so that it reads in a terminal of that width. The help is ASCII, so one
 // rune is one column.

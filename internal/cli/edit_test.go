@@ -1,12 +1,14 @@
 package cli
 
 import (
+	"bytes"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // editWith makes edit take the test input as a terminal and run script as
@@ -86,6 +88,34 @@ func TestEditTemporaryFileReplaced(t *testing.T) {
 	}
 	if head() != before {
 		t.Error("a directory in place of the edited file created a commit")
+	}
+
+	// A file replaced by a named pipe is rejected instead of making the open
+	// wait for a writer that never comes.
+	editWith(t, "rm \"$1\"\nmkfifo \"$1\"\n")
+	done := make(chan struct{})
+	var fifoCode int
+	var fifoErrs string
+	go func() {
+		defer close(done)
+		var out, errb bytes.Buffer
+		fifoCode = Main([]string{"--config", cfg, "edit", "global/push.md"}, strings.NewReader(""), &out, &errb)
+		fifoErrs = errb.String()
+	}()
+	select {
+	case <-done:
+		if fifoCode != ExitError || !strings.Contains(fifoErrs, "replaced the file with a named pipe") {
+			t.Errorf("editor replacing the file with a named pipe: code=%d errs=%q", fifoCode, fifoErrs)
+		}
+		if _, after, ok := strings.Cut(fifoErrs, "kept in "); ok {
+			p, _, _ := strings.Cut(after, "\n")
+			os.Remove(p)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("edit is waiting for a writer of the named pipe the editor left")
+	}
+	if head() != before {
+		t.Error("a named pipe in place of the edited file created a commit")
 	}
 
 	editWith(t, "printf -- '---\\nsummary: renamed\\n---\\n# renamed\\n' > \"$1.new\"\nmv \"$1.new\" \"$1\"\n")
