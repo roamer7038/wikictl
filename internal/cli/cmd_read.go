@@ -144,8 +144,13 @@ func stringList(v any) []string {
 	return out
 }
 
-// noSuchFile is the message for a path that does not exist.
-const noSuchFile = "no such file or directory"
+// noSuchFile is the message for a path that does not exist, and isSubmodule
+// the one for a submodule, which the read commands do not read; put and edit
+// refuse to write over one with the same message.
+const (
+	noSuchFile  = "no such file or directory"
+	isSubmodule = "is a submodule"
+)
 
 // missing returns the paths for which found is false, after checking with
 // git that each of them is absent rather than unreadable.
@@ -163,19 +168,22 @@ func (a *app) missing(paths []string, found func(string) bool) ([]string, error)
 }
 
 // fileMessage returns the message for reportMissing of paths that are not
-// files where a file is required: "is a directory" for a directory, else
-// noSuchFile.
+// files where a file is required: "is a directory" for a directory, "is a
+// submodule" for a submodule, else noSuchFile.
 func (a *app) fileMessage(paths []string) (func(string) string, error) {
-	var files []string
+	var ents []repo.Entry
 	if len(paths) > 0 {
 		var err error
-		if files, err = a.repo.Files(paths); err != nil {
+		if ents, err = a.repo.Entries(paths); err != nil {
 			return nil, &gitError{err}
 		}
 	}
 	return func(p string) string {
-		if p == "." || slices.ContainsFunc(files, func(f string) bool { return strings.HasPrefix(f, p+"/") }) {
+		switch {
+		case p == "." || slices.ContainsFunc(ents, func(e repo.Entry) bool { return strings.HasPrefix(e.Path, p+"/") }):
 			return "is a directory"
+		case slices.ContainsFunc(ents, func(e repo.Entry) bool { return e.Path == p && e.Type == "commit" }):
+			return isSubmodule
 		}
 		return noSuchFile
 	}, nil

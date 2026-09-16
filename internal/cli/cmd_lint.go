@@ -18,6 +18,16 @@ func (a *app) cmdLint(c *command, args []string) error {
 		return err
 	}
 	all := slices.DeleteFunc(slices.Clone(t.files), func(p string) bool { return !repo.IsPagePath(p) })
+	// Names are the paths collisions are found against: the pages, and the
+	// submodules named like one, whose name breaks a clone on a
+	// case-insensitive file system as any other colliding name does.
+	names := slices.Clone(all)
+	for p := range t.subs {
+		if repo.IsPagePath(p) {
+			names = append(names, p)
+		}
+	}
+	slices.Sort(names)
 	paths := all
 	var files []string // the arguments that are not directories
 	if len(args) > 0 {
@@ -50,8 +60,10 @@ func (a *app) cmdLint(c *command, args []string) error {
 	}
 	items := []page.Issue{}
 	// Collisions are found against the whole tree, since the colliding name
-	// may lie outside the checked directories.
-	for _, is := range page.CaseCollisions(all) {
+	// may lie outside the checked directories. Only the checked paths are
+	// reported, so a submodule contributes its name but gets no line of its
+	// own; the message of the page it collides with names it.
+	for _, is := range page.CaseCollisions(names) {
 		if checked[is.Path] {
 			items = append(items, is)
 		}
@@ -79,7 +91,11 @@ func (a *app) cmdLint(c *command, args []string) error {
 		}
 	})
 	if len(missing) > 0 {
-		return a.reportMissing(missing, nil)
+		msg, err := a.fileMessage(missing)
+		if err != nil {
+			return err
+		}
+		return a.reportMissing(missing, msg)
 	}
 	if len(items) > 0 {
 		return exitStatus(ExitInvalid)
