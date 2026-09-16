@@ -3,6 +3,8 @@ package repo
 import (
 	"cmp"
 	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,6 +33,11 @@ func Open(mirrorDir, remote, branch string) (*Repo, error) {
 			return nil, err
 		}
 	}
+	// An existing mirror whose configuration others can read is tightened, as
+	// privateDir does for the cache directory.
+	if err := privateConfig(mirrorDir); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
 	// The URL is left out of the message because it may hold credentials.
 	if out, _ := r.Git("config", "--get-all", "remote.origin.url"); strings.TrimSuffix(out, "\n") != remote {
 		return nil, errors.New("mirror " + mirrorDir + " is for another repository (its remote.origin.url is not the configured repo); delete it and run the command again")
@@ -45,7 +52,9 @@ func Open(mirrorDir, remote, branch string) (*Repo, error) {
 	saved := strings.TrimSpace(out)
 	branch = cmp.Or(branch, saved)
 	if branch == "" {
-		out, err := r.Git("ls-remote", "--symref", remote, "HEAD")
+		// The remote is named, not spelled out, so that a URL holding
+		// credentials is not passed as a command argument.
+		out, err := r.Git("ls-remote", "--symref", "origin", "HEAD")
 		if err != nil {
 			return nil, err
 		}
@@ -94,8 +103,50 @@ func privateDir(dir string) error {
 	return nil
 }
 
-// create builds the mirror with "init --bare" and "remote add" while holding
-// a lock on <mirror>.lock, so that concurrent processes initialize it once.
+// privateConfig sets the mirror's git configuration to mode 0600. It holds the
+// URL of the repository, which may carry credentials, and git keeps the mode
+// of the file when it rewrites it.
+func privateConfig(mirrorDir string) error {
+	p := filepath.Join(mirrorDir, "config")
+	fi, err := os.Stat(p)
+	if err != nil {
+		return err
+	}
+	if fi.Mode().Perm() != 0o600 {
+		return os.Chmod(p, 0o600)
+	}
+	return nil
+}
+
+// addRemote adds the origin remote to the git configuration of the mirror at
+// dir by writing the file, instead of running "git remote add <url>", so that
+// a URL holding credentials is never a command argument: the arguments of a
+// running process can be read by every user on the machine. The configuration
+// is made private first, so that the URL is not written to a file others can
+// read even for a moment. The refspec is the one "git remote add" writes.
+func addRemote(dir, remote string) error {
+	if err := privateConfig(dir); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(filepath.Join(dir, "config"), os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(f, "[remote \"origin\"]\n\turl = %s\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n", configValue(remote))
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	return err
+}
+
+var configEscaper = strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`, "\t", `\t`, "\b", `\b`)
+
+// configValue quotes a value for git's configuration file, where an unquoted
+// value ends at a comment character and loses its surrounding spaces.
+func configValue(s string) string { return `"` + configEscaper.Replace(s) + `"` }
+
+// create builds the mirror with "init --bare" and adds the origin remote while
+// holding a lock on <mirror>.lock, so that concurrent processes initialize it once.
 // The repository is built in a temporary directory next to the mirror and
 // renamed into place, so that no process sees a mirror without its remote.
 // The temporary directory, and therefore the mirror, has mode 0700. No
@@ -130,7 +181,7 @@ func (r *Repo) create() error {
 	if _, err := t.Git("init", "-q", "--bare", "--template="); err != nil {
 		return err
 	}
-	if _, err := t.Git("remote", "add", "origin", r.Remote); err != nil {
+	if err := addRemote(tmp, r.Remote); err != nil {
 		return err
 	}
 	return os.Rename(tmp, r.Dir)
