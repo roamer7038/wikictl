@@ -676,8 +676,8 @@ func TestPutRm(t *testing.T) {
 	}
 }
 
-// TestRmRejectsBadPath checks that rm refuses paths that are not page paths,
-// including a path whose newline would add entries to the tree.
+// TestRmRejectsBadPath checks that rm refuses the paths that name no file of
+// the wiki, including a path whose newline would add entries to the tree.
 func TestRmRejectsBadPath(t *testing.T) {
 	cfg := setup(t)
 	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
@@ -698,7 +698,8 @@ func TestRmRejectsBadPath(t *testing.T) {
 	for _, p := range []string{
 		"global/index.md\n120000 " + sha + "\tglobal/link.md\n100644 " + sha + "\t.github/workflows/x.yml",
 		"global/index.md\x00",
-		"global/.hidden.md",
+		".",
+		"/",
 	} {
 		if code, _, errs := runCLI(t, cfg, "", "rm", p); code != 4 || !strings.Contains(errs, "bad_path") {
 			t.Errorf("rm %q: code=%d errs=%q", p, code, errs)

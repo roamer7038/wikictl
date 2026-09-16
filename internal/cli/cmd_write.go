@@ -177,11 +177,16 @@ func (a *app) cmdRm(c *command, args []string) error {
 		a.emit(map[string]any{"paths": []string{}, "commit": ""}, nil)
 		return nil
 	}
+	// The file name rules are not applied, as to the sources of mv, so that a
+	// file already in the wiki can be deleted whatever its name. The arguments
+	// were cleaned, which rejects control characters and paths outside the
+	// wiki.
 	for _, p := range args {
-		for _, x := range strings.Split(p, "/") {
-			if err := page.CheckName(x); err != nil {
-				return &invalidError{"bad_path: " + err.Error()}
-			}
+		switch p {
+		case "":
+			return &invalidError{"bad_path: empty name"}
+		case ".":
+			return &invalidError{"bad_path: the root of the wiki cannot be deleted"}
 		}
 	}
 	entries, err := a.repo.Entries(args)
