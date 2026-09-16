@@ -250,7 +250,8 @@ exits with code 1; with -f a path that does not exist is ignored, and -f
 without any path deletes nothing and exits with code 0. A file at the root of
 the wiki, the root itself, or an empty path without -f is rejected with exit
 code 4 and nothing is deleted. The file name rules (see "help lint") are not
-applied, so a file whose name breaks them can be deleted. A file added under a
+applied, so a file whose name breaks them can be deleted, except a name holding
+a control character, which is rejected as every path is. A file added under a
 directory after rm read it is not deleted. Pages that link to a deleted page
 are left unchanged; lint reports them as broken_link. If a file
 changed since rm read it, the command exits with code 3 and deletes nothing
@@ -289,7 +290,8 @@ directory name must not be empty, start with a dot or <, or contain
 whitespace, control characters or any of the characters " \ # ? : ( ) ` + "`" + `
 (bad_path). A name over 255 bytes is bad_path too, since a clone cannot check
 it out. put, edit and the destination of mv reject a path that breaks these
-rules, while rm and moving such a file away still work. Lowercase
+rules, while rm and moving such a file away still work, except for a name
+holding a control character, which every command rejects. Lowercase
 ASCII letters, digits and hyphens are recommended; other names are reported as
 name_style.
 Names in one directory that differ only by case collide on case-insensitive
