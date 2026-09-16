@@ -74,6 +74,20 @@ func TestEditTemporaryFileReplaced(t *testing.T) {
 		t.Errorf("page after the symlink: %q", out)
 	}
 
+	// A file replaced by something that is not a regular file is named in words.
+	editWith(t, "rm \"$1\"\nmkdir \"$1\"\n")
+	code, _, errs = runCLI(t, cfg, "", "edit", "global/push.md")
+	if code != ExitError || !strings.Contains(errs, "replaced the file with a directory") {
+		t.Errorf("editor replacing the file with a directory: code=%d errs=%q", code, errs)
+	}
+	if _, after, ok := strings.Cut(errs, "kept in "); ok {
+		p, _, _ := strings.Cut(after, "\n")
+		os.Remove(p)
+	}
+	if head() != before {
+		t.Error("a directory in place of the edited file created a commit")
+	}
+
 	editWith(t, "printf -- '---\\nsummary: renamed\\n---\\n# renamed\\n' > \"$1.new\"\nmv \"$1.new\" \"$1\"\n")
 	if code, _, errs := runCLI(t, cfg, "", "edit", "global/push.md"); code != 0 {
 		t.Fatalf("editor writing a new file and renaming it: code=%d errs=%q", code, errs)

@@ -53,9 +53,28 @@ func readEdited(name string) ([]byte, error) {
 		return nil, err
 	}
 	if !fi.Mode().IsRegular() {
-		return nil, fmt.Errorf("%s: the editor replaced the file with %s", name, fi.Mode().Type())
+		return nil, fmt.Errorf("%s: the editor replaced the file with %s", name, fileKind(fi.Mode()))
 	}
 	return io.ReadAll(f)
+}
+
+// fileKind names the kind of a file that is not a regular file.
+func fileKind(m os.FileMode) string {
+	switch {
+	case m.IsDir():
+		return "a directory"
+	case m&os.ModeSymlink != 0:
+		return "a symbolic link"
+	case m&os.ModeNamedPipe != 0:
+		return "a named pipe"
+	case m&os.ModeSocket != 0:
+		return "a socket"
+	case m&os.ModeCharDevice != 0:
+		return "a character device"
+	case m&os.ModeDevice != 0:
+		return "a block device"
+	}
+	return "another kind of file"
 }
 
 // cmdEdit opens the file in an editor and commits the result as put does,
