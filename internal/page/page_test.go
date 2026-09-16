@@ -19,6 +19,21 @@ func TestCheckPath(t *testing.T) {
 	if err := CheckName("my page"); err == nil || !strings.Contains(err.Error(), "whitespace") {
 		t.Errorf("CheckName: %v", err)
 	}
+	// A name over MaxNameLen bytes, counted with the .md suffix, cannot be
+	// checked out by a clone. CheckName itself does not apply the limit.
+	long := strings.Repeat("a", MaxNameLen)
+	if err := CheckPath("global/" + long + ".md"); err == nil {
+		t.Error("a page name over 255 bytes should be rejected")
+	}
+	if err := CheckFilePath("global/" + long + "b/x.png"); err == nil {
+		t.Error("a directory name over 255 bytes should be rejected")
+	}
+	if err := CheckPath("global/" + strings.Repeat("a", MaxNameLen-len(".md")) + ".md"); err != nil {
+		t.Errorf("a page name of 255 bytes should be accepted: %v", err)
+	}
+	if err := CheckName(long + "b"); err != nil {
+		t.Errorf("CheckName must not apply the length limit: %v", err)
+	}
 }
 
 func TestRecommended(t *testing.T) {

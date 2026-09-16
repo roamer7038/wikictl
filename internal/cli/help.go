@@ -78,8 +78,9 @@ const mirrorHelp = `Mirror:
   wikictl keeps a bare mirror of the wiki under $XDG_CACHE_HOME/wikictl
   (~/.cache/wikictl), shown by "wikictl context". If a mirror breaks, delete
   it; the next command creates it again. git in the mirror runs without the
-  variables listed by "git rev-parse --local-env-vars" and GIT_NAMESPACE, so
-  settings given with "git -c" do not apply; put them in a git config file.
+  variables listed by "git rev-parse --local-env-vars", GIT_NAMESPACE and
+  GIT_QUARANTINE_PATH, so settings given with "git -c" do not apply; put them
+  in a git config file.
 `
 
 // printUsage writes the top-level help.

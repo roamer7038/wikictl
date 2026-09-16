@@ -1870,3 +1870,19 @@ func TestGrepFilesWithoutMatch(t *testing.T) {
 		}
 	}
 }
+
+// TestGrepOnEmptyWiki checks that grep in a wiki without any commit exits as
+// it does in one holding files: a pattern that does not compile is a usage
+// error, and a pattern that matches nothing selects no line.
+func TestGrepOnEmptyWiki(t *testing.T) {
+	cfg := setupEmpty(t)
+	if code, out, errs := runCLI(t, cfg, "", "grep", "["); code != ExitUsage || out != "" || !strings.Contains(errs, "invalid pattern") {
+		t.Errorf("grep '[': code=%d out=%q errs=%q", code, out, errs)
+	}
+	if code, out, errs := runCLI(t, cfg, "", "grep", "lease"); code != ExitError || out != "" || errs != "" {
+		t.Errorf("grep of a word that is nowhere: code=%d out=%q errs=%q", code, out, errs)
+	}
+	if code, out, errs := runCLI(t, cfg, "", "grep", "--json", "-l", "lease"); code != ExitError || out != `{"items":[]}`+"\n" || errs != "" {
+		t.Errorf("grep -l --json: code=%d out=%q errs=%q", code, out, errs)
+	}
+}

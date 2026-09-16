@@ -102,20 +102,29 @@ func FoldPattern(word string) string {
 	return b.String()
 }
 
+// emptyTree is the object name of the empty tree, which every repository
+// knows without holding the object.
+const emptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
 // GrepRecords runs "git grep -z" with flags and the patterns, each given with
 // -e, on the files under dirs at the commit that reads use, and returns one
 // record per entry of the output: a path with -l or -L, a path and a count
 // with -c, and otherwise a path, a line number and the line. Column output is
 // turned off whatever the git configuration says. No match is not an error.
 func (r *Repo) GrepRecords(flags, patterns, dirs []string) ([][]string, error) {
-	if r.snapshot == "" {
-		return nil, nil
+	// A wiki without any commit is searched as the empty tree instead of
+	// skipping git, so that the exit codes stay the same: a pattern that does
+	// not compile is still an error of git, and one that matches nothing is
+	// still no match.
+	tree := r.snapshot
+	if tree == "" {
+		tree = emptyTree
 	}
 	args := append([]string{"grep", "-z", "--no-column"}, flags...)
 	for _, p := range patterns {
 		args = append(args, "-e", p)
 	}
-	args = append(append(args, r.snapshot), pathspec(dirs)...)
+	args = append(append(args, tree), pathspec(dirs)...)
 	out, err := r.gitStrict(args...)
 	if noResult(err) {
 		return nil, nil
@@ -132,7 +141,7 @@ func (r *Repo) GrepRecords(flags, patterns, dirs []string) ([][]string, error) {
 	case slices.Contains(flags, "-c"):
 		fields = 2
 	}
-	prefix := r.snapshot + ":"
+	prefix := tree + ":"
 	var res [][]string
 	for out != "" {
 		f := make([]string, fields)

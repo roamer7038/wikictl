@@ -18,6 +18,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/roamer7038/wikictl/internal/config"
+	"github.com/roamer7038/wikictl/internal/page"
 	"github.com/roamer7038/wikictl/internal/repo"
 )
 
@@ -210,7 +211,8 @@ destination below a file or ending with "/" that is not a directory
 ("not a directory"), and a directory moved into itself are reported too; the
 other sources are still moved, and the command exits with code 1. A file at the
 root of the wiki, the root itself, or a destination that breaks the file name
-rules (see "help lint") is rejected with exit code 4, and nothing is moved.
+rules (see "help lint") is rejected with exit code 4, and nothing is moved. A
+file added under a directory after mv read it is not moved.
 
 Links to a moved page from other pages, and relative links inside a moved page
 whose destination changes with the move, are rewritten in the same commit.
@@ -279,8 +281,11 @@ treat such a page as having no frontmatter.
 File name rules: a page is <dir>/<name>.md, never at the wiki root. A file or
 directory name must not be empty, start with a dot or <, or contain
 whitespace, control characters or any of the characters " \ # ? : ( ) ` + "`" + `
-(bad_path; put, edit, mv and rm reject such paths). Lowercase ASCII letters,
-digits and hyphens are recommended; other names are reported as name_style.
+(bad_path; put, edit, mv and rm reject such paths). A name over 255 bytes is
+bad_path too, since a clone cannot check it out; put, edit and the destination
+of mv reject one, while rm and moving such a file away still work. Lowercase
+ASCII letters, digits and hyphens are recommended; other names are reported as
+name_style.
 Names in one directory that differ only by case collide on case-insensitive
 file systems and are reported as case_collision, against the whole wiki.
 
@@ -397,8 +402,9 @@ type app struct {
 	allMatch     bool
 	patterns     []string
 
-	find    *findQuery
-	cleaned []string // the paths cleaned by the check of grep; for mv, the sources and the destination
+	find     *findQuery
+	cleaned  []string     // the paths cleaned by the check of grep; for mv, the sources and the destination
+	warnings []page.Issue // non-blocking issues of a write, printed when its commit succeeds
 }
 
 // globalFlags registers the flags accepted before or after the command name.

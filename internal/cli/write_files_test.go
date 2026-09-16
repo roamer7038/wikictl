@@ -413,3 +413,69 @@ func TestMoveQuotedName(t *testing.T) {
 		t.Errorf("referring page: %q", ref)
 	}
 }
+
+// TestWarningsOnlyWithACommit checks that the warnings about a page are
+// printed when the commit succeeds and left out when the write fails, so that
+// a failure reports only what stopped it.
+func TestWarningsOnlyWithACommit(t *testing.T) {
+	cfg := setup(t)
+	body := "# Note\n"
+	// A page without a summary whose name is not recommended is written with
+	// both warnings.
+	code, _, errs := runCLI(t, cfg, body, "put", "global/Note.md")
+	if code != ExitOK || !strings.Contains(errs, "name_style") || !strings.Contains(errs, "missing_summary") {
+		t.Errorf("put: code=%d errs=%q", code, errs)
+	}
+	// A put below a file, and a put that conflicts, print no warning.
+	code, _, errs = runCLI(t, cfg, body, "put", "global/push.md/Note.md")
+	if code != ExitError || strings.Contains(errs, "warning") {
+		t.Errorf("put below a file: code=%d errs=%q", code, errs)
+	}
+	code, _, errs = runCLI(t, cfg, body, "put", "global/Note.md")
+	if code != ExitConflict || strings.Contains(errs, "warning") {
+		t.Errorf("put of a page that exists: code=%d errs=%q", code, errs)
+	}
+	// mv warns about its destination only when it moved something.
+	code, _, errs = runCLI(t, cfg, "", "mv", "global/push.md", "projects/app/Note.md")
+	if code != ExitOK || !strings.Contains(errs, "name_style") {
+		t.Errorf("mv: code=%d errs=%q", code, errs)
+	}
+	code, _, errs = runCLI(t, cfg, "", "mv", "global/index.md", "projects/app/Note.md")
+	if code != ExitError || !strings.Contains(errs, "not replacing") || strings.Contains(errs, "warning") {
+		t.Errorf("mv to a page that exists: code=%d errs=%q", code, errs)
+	}
+}
+
+// TestLongNames checks that a name over 255 bytes, which a clone cannot check
+// out, is rejected as the destination of put, edit and mv, while rm still
+// takes one, so that a page already in the wiki can be removed.
+func TestLongNames(t *testing.T) {
+	cfg := setup(t)
+	longPage := "global/" + strings.Repeat("a", 253) + ".md" // 256 bytes with .md
+	for _, c := range []struct {
+		args  []string
+		stdin string
+	}{
+		{[]string{"put", longPage}, "---\nsummary: s\n---\n"},
+		{[]string{"put", "global/" + strings.Repeat("c", 256) + ".png"}, "x"},
+		{[]string{"mv", "global/push.md", longPage}, ""},
+		{[]string{"mv", "global", "projects/" + strings.Repeat("b", 256)}, ""},
+	} {
+		if code, _, errs := runCLI(t, cfg, c.stdin, c.args...); code != ExitInvalid || !strings.Contains(errs, "bad_path") {
+			t.Errorf("%v: code=%d errs=%q", c.args, code, errs)
+		}
+	}
+	// A name of exactly 255 bytes is accepted.
+	if code, _, errs := runCLI(t, cfg, "---\nsummary: s\n---\n", "put", "global/"+strings.Repeat("a", 252)+".md"); code != ExitOK {
+		t.Errorf("a name of 255 bytes: code=%d errs=%q", code, errs)
+	}
+	// rm does not apply the limit, so such a path is only missing.
+	if code, _, errs := runCLI(t, cfg, "", "rm", longPage); code != ExitError || !strings.Contains(errs, "no such file or directory") {
+		t.Errorf("rm: code=%d errs=%q", code, errs)
+	}
+	// edit rejects it before running the editor.
+	editWith(t, "exit 7\n")
+	if code, _, errs := runCLI(t, cfg, "", "edit", longPage); code != ExitInvalid || !strings.Contains(errs, "bad_path") {
+		t.Errorf("edit: code=%d errs=%q", code, errs)
+	}
+}

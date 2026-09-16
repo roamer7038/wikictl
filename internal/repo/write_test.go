@@ -2,6 +2,8 @@ package repo
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -130,6 +132,47 @@ func TestCommitRejectsPathSeparators(t *testing.T) {
 				t.Fatalf("Commit(%q, delete=%v) changed the tree:\n%s", p, c.Delete, after)
 			}
 		}
+	}
+}
+
+// TestCommitRemovesLeftOverIndexDirs checks that the index directories a
+// killed process left in the mirror are deleted by the next Commit, which
+// holds the lock that keeps anything else from using one.
+func TestCommitRemovesLeftOverIndexDirs(t *testing.T) {
+	remote := newRemote(t, true)
+	r := openFetched(t, remote)
+	stale := filepath.Join(r.Dir, "wikictl-index-stale")
+	if err := os.MkdirAll(stale, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stale, "index"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	empty := ""
+	if _, err := r.Commit([]Change{{Path: "global/p.md", Content: []byte("---\nsummary: p\n---\n"), Base: &empty}}, "put", Author{"a", "a@a"}); err != nil {
+		t.Fatal(err)
+	}
+	ents, err := os.ReadDir(r.Dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range ents {
+		if strings.HasPrefix(e.Name(), "wikictl-index-") {
+			t.Errorf("%s is left in the mirror", e.Name())
+		}
+	}
+}
+
+// TestCommitInQuarantineEnvironment checks that a write works from inside a
+// pre-receive hook, which git runs with GIT_QUARANTINE_PATH set. Inherited,
+// that variable makes git refuse every ref update of the mirror.
+func TestCommitInQuarantineEnvironment(t *testing.T) {
+	remote := newRemote(t, true)
+	r := openFetched(t, remote)
+	t.Setenv("GIT_QUARANTINE_PATH", filepath.Join(t.TempDir(), "quarantine"))
+	empty := ""
+	if _, err := r.Commit([]Change{{Path: "global/q.md", Content: []byte("---\nsummary: q\n---\n"), Base: &empty}}, "put", Author{"a", "a@a"}); err != nil {
+		t.Fatalf("Commit with GIT_QUARANTINE_PATH set: %v", err)
 	}
 }
 
