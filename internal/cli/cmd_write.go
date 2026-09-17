@@ -199,8 +199,12 @@ func (a *app) cmdRm(c *command, args []string) error {
 	}
 	files := make([]string, len(entries))
 	shas := map[string]string{}
+	subs := map[string]bool{}
 	for i, e := range entries {
 		files[i], shas[e.Path] = e.Path, e.SHA
+		if e.Type == "commit" {
+			subs[e.Path] = true
+		}
 	}
 	slices.Sort(files)
 	for _, p := range args {
@@ -216,7 +220,20 @@ func (a *app) cmdRm(c *command, args []string) error {
 			fmt.Fprintf(a.stderr, "wikictl: %s: is a directory\n", escapeControl(p))
 			failed = true
 		case len(sub) > 0:
-			targets = append(targets, sub...)
+			// A submodule under a directory removed with -r is left in
+			// place and reported, as one given directly is; the other files
+			// under the directory are still deleted.
+			for _, f := range sub {
+				if subs[f] {
+					fmt.Fprintf(a.stderr, "wikictl: %s: %s\n", escapeControl(f), isSubmodule)
+					failed = true
+				} else {
+					targets = append(targets, f)
+				}
+			}
+		case subs[p]:
+			fmt.Fprintf(a.stderr, "wikictl: %s: %s\n", escapeControl(p), isSubmodule)
+			failed = true
 		case shas[p] != "":
 			targets = append(targets, p)
 		case !a.force:

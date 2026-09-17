@@ -348,7 +348,12 @@ func TestNonRegularFiles(t *testing.T) {
 	if m := mode("global/sub"); m != "160000" {
 		t.Errorf("submodule after a refused mv: mode %q", m)
 	}
-	if code, _, errs := runCLI(t, cfg, "", "rm", "-r", "global/sub", "projects/link2.md", "mods"); code != 0 || mode("global/sub")+mode("projects/link2.md")+mode("mods/lib/sub") != "" {
+	// rm reports a submodule given directly, and one found under a directory
+	// removed with -r, as "is a submodule" and does not delete either, while
+	// still deleting the other paths given, such as the symbolic link.
+	if code, _, errs := runCLI(t, cfg, "", "rm", "-r", "global/sub", "projects/link2.md", "mods"); code != ExitError ||
+		errs != "wikictl: global/sub: is a submodule\nwikictl: mods/lib/sub: is a submodule\n" ||
+		mode("global/sub") != "160000" || mode("projects/link2.md") != "" || mode("mods/lib/sub") != "160000" {
 		t.Errorf("rm of submodules and a symbolic link: code=%d %s", code, errs)
 	}
 }

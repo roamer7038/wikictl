@@ -249,16 +249,19 @@ empty when nothing was moved. With -v, text output is
 	{name: "rm", args: "<path>...", maxArgs: -1, paths: true,
 		summary: "Delete files or directories",
 		detail: `Delete files, and with -r directories with every file under them, in one
-commit. A path that is a directory without -r, or that does not exist, is
-reported on standard error, the other paths are still deleted, and the command
-exits with code 1; with -f a path that does not exist is ignored, and -f
-without any path deletes nothing and exits with code 0. A file at the root of
-the wiki, the root itself, or an empty path without -f is rejected with exit
-code 4 and nothing is deleted. The file name rules (see "help lint") are not
-applied, so a file whose name breaks them can be deleted, except a name holding
-a control character, which is rejected as every path is. A file added under a
-directory after rm read it is not deleted. Pages that link to a deleted page
-are left unchanged; lint reports them as broken_link. If a file
+commit. A path that is a directory without -r, is a submodule, or does not
+exist, is reported on standard error, the other paths are still deleted, and
+the command exits with code 1; with -f a path that does not exist is ignored,
+and -f without any path deletes nothing and exits with code 0; -f does not
+suppress the report of a submodule. With -r, a submodule under a deleted
+directory is reported and left undeleted the same way, while the other files
+under the directory are still deleted. A file at the root of the wiki, the
+root itself, or an empty path without -f is rejected with exit code 4 and
+nothing is deleted. The file name rules (see "help lint") are not
+applied, so a file whose name breaks them can be deleted, except a name
+holding a control character, which is rejected as every path is. A file added
+under a directory after rm read it is not deleted. Pages that link to a
+deleted page are left unchanged; lint reports them as broken_link. If a file
 changed since rm read it, the command exits with code 3 and deletes nothing
 (see "wikictl help"); run it again.
 
