@@ -74,6 +74,22 @@ func (ps Pages) Parse(p string) *page.Page {
 	return page.Parse(p, ps.contents[p])
 }
 
+// Frontmatter returns the top-level keys of the frontmatter of p as
+// page.Frontmatter does; ok is false when the file has no frontmatter. A file
+// over page.MaxPageSize is not parsed, and a frontmatter that does not parse
+// is reported as the issue lint reports for it.
+func (ps Pages) Frontmatter(p string) (keys []page.FrontmatterKey, ok bool, iss *page.Issue) {
+	if ps.Objects[p].Size > page.MaxPageSize {
+		too := page.TooLargeIssue(p)
+		return nil, false, &too
+	}
+	keys, ok, err := page.Frontmatter(ps.contents[p])
+	if err != nil {
+		return nil, false, &page.Issue{Path: p, Line: 1, Code: "frontmatter_invalid", Message: err.Error()}
+	}
+	return keys, ok, nil
+}
+
 // Deprecated returns the set of pages whose frontmatter has status:
 // deprecated. The candidates are the pages that contain the word, which any
 // way of writing status: deprecated in YAML does; the frontmatter of each

@@ -155,6 +155,121 @@ func TestGlob(t *testing.T) {
 	}
 }
 
+// TestFindFrontmatter checks --frontmatter: the line of each key is counted
+// from the start of the file, the keys can be narrowed, the values are the
+// ones -meta compares against, a file that is not a page is covered too, and
+// a flow mapping puts every key on one line.
+func TestFindFrontmatter(t *testing.T) {
+	cfg := setup(t)
+	pushFiles(t, cfg, map[string]string{
+		"fm/plain.md":   "---\nsummary: s\ntype: adr\ntags: [a, b]\n---\n# p\n",
+		"fm/merge.md":   "---\ndefaults: &d\n  type: adr\n  status: draft\nsummary: m\n<<: *d\nstatus: final\n---\n# m\n",
+		"fm/nums.md":    "---\nbig: .inf\nsmall: -.inf\nnan: .nan\n---\n# n\n",
+		"fm/flow.md":    "---\n{a: 1, b: 2}\n---\n# f\n",
+		"fm/empty.md":   "---\n---\n# e\n",
+		"fm/none.md":    "# none\n",
+		"docs/k8s.yaml": "---\nkind: Deployment\nname: web\n---\n",
+	})
+	for args, want := range map[string]string{
+		// The frontmatter starts on line 2, after the "---" delimiter.
+		"fm/plain.md --frontmatter":              "fm/plain.md\t2\t\"summary\"\t\"s\"\nfm/plain.md\t3\t\"type\"\t\"adr\"\nfm/plain.md\t4\t\"tags\"\t[\"a\",\"b\"]\n",
+		"fm/plain.md --frontmatter=type":         "fm/plain.md\t3\t\"type\"\t\"adr\"\n",
+		"fm/plain.md --frontmatter=type,missing": "fm/plain.md\t3\t\"type\"\t\"adr\"\n",
+		"fm/plain.md --frontmatter=missing":      "",
+		"fm/none.md --frontmatter":               "",
+		"fm/empty.md --frontmatter":              "",
+		// Every key of a flow mapping is written on the same line.
+		"fm/flow.md --frontmatter": "fm/flow.md\t2\t\"a\"\t1\nfm/flow.md\t2\t\"b\"\t2\n",
+		// A key that the merge key brought in has the line of the "<<", the
+		// "<<" itself is not listed, and a key written at the top level keeps
+		// its own line and value.
+		"fm/merge.md --frontmatter":             "fm/merge.md\t2\t\"defaults\"\t{\"status\":\"draft\",\"type\":\"adr\"}\nfm/merge.md\t5\t\"summary\"\t\"m\"\nfm/merge.md\t6\t\"type\"\t\"adr\"\nfm/merge.md\t7\t\"status\"\t\"final\"\n",
+		"fm/merge.md --frontmatter=status,type": "fm/merge.md\t6\t\"type\"\t\"adr\"\nfm/merge.md\t7\t\"status\"\t\"final\"\n",
+		// A file that is not a page has its frontmatter read as well.
+		"docs/k8s.yaml --frontmatter": "docs/k8s.yaml\t2\t\"kind\"\t\"Deployment\"\ndocs/k8s.yaml\t3\t\"name\"\t\"web\"\n",
+		// The text output is a list of the frontmatter keys: a directory and a
+		// file without the key are not printed at all.
+		"fm --frontmatter=summary": "fm/merge.md\t5\t\"summary\"\t\"m\"\nfm/plain.md\t2\t\"summary\"\t\"s\"\n",
+		// The values agree with what -meta compares against.
+		"-meta status=final":  "fm/merge.md\n",
+		"fm -meta type=adr":   "fm/merge.md\nfm/plain.md\n",
+		"fm -meta status=adr": "",
+	} {
+		if code, out, errs := runCLI(t, cfg, "", append([]string{"find"}, strings.Fields(args)...)...); code != ExitOK || out != want {
+			t.Errorf("find %s: code=%d out=%q, want %q, errs=%q", args, code, out, want, errs)
+		}
+	}
+
+	// --json distinguishes a file without frontmatter, which has no
+	// frontmatter field, from one whose frontmatter has no key, which has an
+	// empty list. A number that is not finite is a string, so the output is
+	// valid JSON. A directory never has the field.
+	for args, want := range map[string]string{
+		"fm/none.md":                     `{"items":[{"path":"fm/none.md","kind":"file"}]}`,
+		"fm/empty.md":                    `{"items":[{"path":"fm/empty.md","kind":"file","frontmatter":[]}]}`,
+		"fm/nums.md":                     `{"items":[{"path":"fm/nums.md","kind":"file","frontmatter":[{"key":"big","line":2,"value":".inf"},{"key":"small","line":3,"value":"-.inf"},{"key":"nan","line":4,"value":".nan"}]}]}`,
+		"fm/plain.md --frontmatter=tags": `{"items":[{"path":"fm/plain.md","kind":"file","frontmatter":[{"key":"tags","line":4,"value":["a","b"]}]}]}`,
+		"fm -maxdepth 0":                 `{"items":[{"path":"fm","kind":"dir"}]}`,
+	} {
+		argv := append([]string{"find", "--json"}, strings.Fields(args)...)
+		if !strings.Contains(args, "--frontmatter") {
+			argv = append(argv, "--frontmatter")
+		}
+		code, out, errs := runCLI(t, cfg, "", argv...)
+		var res struct{ Items []any }
+		mustUnmarshal(t, out, &res)
+		if code != ExitOK || out != want+"\n" {
+			t.Errorf("%v: code=%d out=%q, want %q, errs=%q", argv, code, out, want, errs)
+		}
+	}
+
+	// The "=" is required: a key written as a separate argument is a path.
+	if code, out, errs := runCLI(t, cfg, "", "find", "fm/plain.md", "--frontmatter", "status"); code != ExitError ||
+		errs != "wikictl: status: no such file or directory\n" {
+		t.Errorf("--frontmatter with a separate key: code=%d out=%q errs=%q", code, out, errs)
+	}
+}
+
+// TestFindFrontmatterErrors checks that a frontmatter that does not parse and
+// a file over the size limit are reported as frontmatter_error with --json
+// and as a warning in text output, and that neither changes the exit code.
+func TestFindFrontmatterErrors(t *testing.T) {
+	cfg := setup(t)
+	pushFiles(t, cfg, map[string]string{
+		"fm/bad.md": "---\nsummary: [\n---\n# b\n",
+		"fm/ok.md":  "---\nsummary: ok\n---\n# ok\n",
+		"fm/big.md": "---\nsummary: big\n---\n# big\n" + strings.Repeat("x", 1<<20),
+	})
+	code, out, errs := runCLI(t, cfg, "", "find", "fm", "--frontmatter=summary")
+	if code != ExitOK || out != "fm/ok.md\t2\t\"summary\"\t\"ok\"\n" ||
+		!strings.Contains(errs, "wikictl: warning: fm/bad.md:1: frontmatter_invalid: ") ||
+		!strings.Contains(errs, "wikictl: warning: fm/big.md:0: page_too_large: ") {
+		t.Errorf("text output: code=%d out=%q errs=%q", code, out, errs)
+	}
+	code, out, errs = runCLI(t, cfg, "", "find", "--json", "fm", "--frontmatter")
+	var res struct {
+		Items []struct {
+			Path             string
+			Frontmatter      []struct{ Key string }
+			FrontmatterError *struct{ Code, Message string } `json:"frontmatter_error"`
+		}
+	}
+	mustUnmarshal(t, out, &res)
+	codes := map[string]string{}
+	for _, it := range res.Items {
+		if it.FrontmatterError != nil {
+			codes[it.Path] = it.FrontmatterError.Code
+			if it.Frontmatter != nil || it.FrontmatterError.Message == "" {
+				t.Errorf("%s: %+v", it.Path, it)
+			}
+		}
+	}
+	if code != ExitOK || errs != "" || len(codes) != 2 ||
+		codes["fm/bad.md"] != "frontmatter_invalid" || codes["fm/big.md"] != "page_too_large" {
+		t.Errorf("json output: code=%d out=%q errs=%q codes=%v", code, out, errs, codes)
+	}
+}
+
 func TestMetaHas(t *testing.T) {
 	for _, c := range []struct {
 		v     any
