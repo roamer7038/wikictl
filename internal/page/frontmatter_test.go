@@ -1,9 +1,13 @@
 package page
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/goccy/go-yaml/ast"
+	"github.com/goccy/go-yaml/parser"
 )
 
 func TestSplitFrontmatter(t *testing.T) {
@@ -38,6 +42,87 @@ func TestParseFrontmatter(t *testing.T) {
 	}
 	if _, err := parseFrontmatter([]byte("summary: a: b\n")); err == nil {
 		t.Error("expected error for invalid yaml")
+	}
+}
+
+// TestFrontmatter checks the keys, their lines counted from the start of the
+// file, and their values, which come from decoding the whole frontmatter so
+// that anchors and merge keys are resolved as parseFrontmatter resolves them.
+func TestFrontmatter(t *testing.T) {
+	keys, ok, err := Frontmatter([]byte("---\nsummary: s\ntype: adr\n---\n# t\n"))
+	if err != nil || !ok || len(keys) != 2 ||
+		keys[0] != (FrontmatterKey{"summary", 2, "s"}) || keys[1] != (FrontmatterKey{"type", 3, "adr"}) {
+		t.Errorf("plain: keys=%+v ok=%v err=%v", keys, ok, err)
+	}
+	// A BOM is not a line of its own.
+	if keys, _, _ := Frontmatter([]byte("\xef\xbb\xbf---\nsummary: s\n---\n")); len(keys) != 1 || keys[0].Line != 2 {
+		t.Errorf("bom: %+v", keys)
+	}
+	// A merge key gives its line to every key it brings in and is not listed
+	// itself; a key written at the top level keeps its own line.
+	keys, _, err = Frontmatter([]byte("---\nd: &d\n  a: 1\n  b: 2\n<<: *d\nb: 9\n---\n"))
+	if err != nil || len(keys) != 3 || keys[0].Key != "d" ||
+		keys[1] != (FrontmatterKey{"a", 5, uint64(1)}) || keys[2] != (FrontmatterKey{"b", 6, uint64(9)}) {
+		t.Errorf("merge: keys=%+v err=%v", keys, err)
+	}
+	// A merge of a sequence of aliases is resolved in order.
+	keys, _, err = Frontmatter([]byte("---\nx: &x {a: 1}\ny: &y {b: 2}\n<<: [*x, *y]\n---\n"))
+	if err != nil || len(keys) != 4 || keys[2] != (FrontmatterKey{"a", 4, uint64(1)}) ||
+		keys[3] != (FrontmatterKey{"b", 4, uint64(2)}) {
+		t.Errorf("merge list: keys=%+v err=%v", keys, err)
+	}
+	// So is a mapping written in place of an alias.
+	keys, _, err = Frontmatter([]byte("---\n<<: {c: 3}\nd: 4\n---\n"))
+	if err != nil || len(keys) != 2 || keys[0] != (FrontmatterKey{"c", 2, uint64(3)}) ||
+		keys[1] != (FrontmatterKey{"d", 3, uint64(4)}) {
+		t.Errorf("merge inline: keys=%+v err=%v", keys, err)
+	}
+	// Numbers that JSON cannot hold become the strings YAML writes them as,
+	// nested values included.
+	keys, _, err = Frontmatter([]byte("---\nn: [.inf, -.inf, {k: .nan}]\n---\n"))
+	if err != nil || len(keys) != 1 {
+		t.Fatalf("infinity: keys=%+v err=%v", keys, err)
+	}
+	if b, err := json.Marshal(keys[0].Value); err != nil || string(b) != `[".inf","-.inf",{"k":".nan"}]` {
+		t.Errorf("infinity: %s %v", b, err)
+	}
+	for _, c := range []struct {
+		name, in string
+		keys     int
+		ok       bool
+		bad      bool
+	}{
+		{"empty", "---\n---\n", 0, true, false},
+		{"blank", "---\n\n---\n", 0, true, false},
+		{"none", "# t\n", 0, false, false},
+		{"unclosed", "---\nsummary: s\n", 0, false, false},
+		{"invalid", "---\nsummary: [\n---\n", 0, false, true},
+		{"sequence", "---\n- a\n---\n", 0, false, true},
+		{"duplicate", "---\na: 1\na: 2\n---\n", 0, false, true},
+		// An alias that refers to itself is rejected while the values are
+		// decoded, before the keys are read.
+		{"cycle", "---\na: &a\n  <<: *a\n---\n", 0, false, true},
+	} {
+		keys, ok, err := Frontmatter([]byte(c.in))
+		if ok != c.ok || (err != nil) != c.bad || len(keys) != c.keys {
+			t.Errorf("%s: keys=%+v ok=%v err=%v", c.name, keys, ok, err)
+		}
+		if c.ok && c.keys == 0 && keys == nil {
+			t.Errorf("%s: an empty frontmatter must give an empty list, not nil", c.name)
+		}
+	}
+
+	// mergedKeys stops when an alias leads back to the anchor it came from.
+	// Decoding rejects such a frontmatter before Frontmatter reads the syntax
+	// tree, so the guard is checked on the tree itself.
+	f, err := parser.ParseBytes([]byte("a: &a\n  <<: *a\n"), 0)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	anchors := map[string]ast.Node{}
+	ast.Walk(anchorCollector(anchors), f.Docs[0].Body)
+	if got := mergedKeys(anchors["a"], anchors, map[string]bool{}); len(got) != 0 {
+		t.Errorf("cyclic merge: %v", got)
 	}
 }
 

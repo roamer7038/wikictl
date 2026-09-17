@@ -125,6 +125,8 @@ Body. Link to other pages with relative paths: [push](git-push.md).
 
 Paths printed one per line, such as those of `grep -l`, are passed to another command with `| tr '\n' '\0' | xargs -0 -r wikictl ls -lt`: names holding quotation marks or spaces stay intact, and `-r` runs nothing when nothing matched. With `set -o pipefail`, the pipeline exits with 1 when `grep` matched nothing. A name holding a newline cannot be passed this way, and neither can one holding a control character, which text output escapes as `\xNN`; `--json` prints the exact names, but wikictl rejects a path holding a control character with exit code 4.
 
+`find --frontmatter=KEY,...` reads the frontmatter of every file that has one, not only of the pages, and prints each key with the line it is written on, so that the attributes of many pages can be collected in one command. Without keys it prints every key; the `=` is required.
+
 To update an existing page, pass the `sha` printed by `stat` to `put --base`. If the page changed in between, `put` exits with code 3 and prints the current content; wikictl never merges.
 
 ## Configuration

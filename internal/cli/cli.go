@@ -156,13 +156,30 @@ In a pattern, a class name such as [:alpha:] covers ASCII characters only.
 A path with no time of its own, such as a directory that holds only
 submodules, matches neither -mtime nor -newer.
 
+--frontmatter=KEY,... prints the frontmatter of every file that has one, as
+-meta reads it, not only of the pages: each top-level key, the line it is
+written on counted from the start of the file, and its value. The "=" is
+required, so "--frontmatter status" reads status as a path; without keys
+every key is printed. Text output becomes a list of the frontmatter keys,
+one line per key as "<path><TAB><line><TAB><key><TAB><value>", where the
+key and the value are JSON, so a file without frontmatter, or without any
+of the keys given, prints no line at all. A key that a merge key ("<<")
+brought in has the line of the "<<", which is not printed itself, and a
+number that is not finite is ".inf", "-.inf" or ".nan". A frontmatter that
+does not parse, or a file over 1 MiB, is a warning on standard error that
+does not change the exit code, or frontmatter_error with --json.
+
 Only -h and the arguments starting with "--", such as --json, are flags. A
 path that does not exist ("no such file or directory") or is a submodule ("is
 a submodule") is reported on standard error, the other paths are still
 searched, and the command exits with code 1.
 
-Output: items[] {path, kind}; kind is "file" or "dir".`,
-		check: (*app).checkFind, run: (*app).cmdFind},
+Output: items[] {path, kind}; kind is "file" or "dir". With --frontmatter,
+each item also has frontmatter[] {key, line, value}, empty when no key is
+printed and absent when the file has no frontmatter at all, or
+frontmatter_error {code, message}, whose code is frontmatter_invalid or
+page_too_large.`,
+		flags: findFlags, check: (*app).checkFind, run: (*app).cmdFind},
 	{name: "put", args: "<path> < content", minArgs: 1, maxArgs: 1, paths: true,
 		summary: "Create or replace a file from standard input",
 		detail: `Read the content of a file from standard input and commit it as <path>, at the
@@ -445,6 +462,7 @@ type app struct {
 	patterns     []string
 
 	find     *findQuery
+	fmKeys   frontmatterKeys
 	cleaned  []string     // the paths cleaned by the check of grep; for mv, the sources and the destination
 	warnings []page.Issue // non-blocking issues of a write, printed when its commit succeeds
 }

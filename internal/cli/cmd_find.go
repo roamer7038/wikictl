@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/spf13/pflag"
 
+	"github.com/roamer7038/wikictl/internal/page"
 	"github.com/roamer7038/wikictl/internal/wiki"
 )
 
@@ -40,6 +43,82 @@ type findTest struct {
 type findEntry struct {
 	path string
 	dir  bool
+}
+
+// findItem is one entry of the output of find. The frontmatter fields are
+// filled in only with --frontmatter, and a file without frontmatter keeps
+// them empty: the list is a pointer so that a frontmatter holding no key is
+// printed as [] while a file that has none has no field at all.
+type findItem struct {
+	Path             string                 `json:"path"`
+	Kind             string                 `json:"kind"`
+	Frontmatter      *[]page.FrontmatterKey `json:"frontmatter,omitempty"`
+	FrontmatterError *frontmatterError      `json:"frontmatter_error,omitempty"`
+}
+
+// frontmatterError is a frontmatter that find could not read, with the code
+// and the message that lint reports for it.
+type frontmatterError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// allFrontmatterKeys is the value pflag gives --frontmatter when it is written
+// without "=". An argument cannot hold a NUL, so it cannot be mistaken for a
+// list of keys.
+const allFrontmatterKeys = "\x00"
+
+// frontmatterKeys is the value of --frontmatter: whether it was given, and the
+// keys to print, none of them standing for all.
+type frontmatterKeys struct {
+	on   bool
+	keys []string
+}
+
+func (f *frontmatterKeys) String() string { return strings.Join(f.keys, ",") }
+
+func (f *frontmatterKeys) Type() string { return "keys" }
+
+// Set replaces the keys of an earlier --frontmatter, so that the last one
+// written wins, as it does for a flag that is not a list.
+func (f *frontmatterKeys) Set(s string) error {
+	f.on = true
+	if s == allFrontmatterKeys {
+		f.keys = nil
+		return nil
+	}
+	var keys []string
+	for _, k := range strings.Split(s, ",") {
+		if k == "" {
+			return errors.New("a key must not be empty")
+		}
+		keys = append(keys, k)
+	}
+	f.keys = keys
+	return nil
+}
+
+// wanted reports whether the key k is one of those to print.
+func (f *frontmatterKeys) wanted(k string) bool {
+	return len(f.keys) == 0 || slices.Contains(f.keys, k)
+}
+
+func findFlags(a *app, fs *pflag.FlagSet) {
+	fs.Var(&a.fmKeys, "frontmatter", "print the frontmatter, or only the `keys` given")
+	fs.Lookup("frontmatter").NoOptDefVal = allFrontmatterKeys
+}
+
+// jsonText returns v as the JSON that --frontmatter prints for a key or a
+// value in text output, with the control characters escaped as the rest of the
+// text output escapes them.
+func jsonText(v any) string {
+	var b strings.Builder
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return "null"
+	}
+	return escapeControl(strings.TrimSuffix(b.String(), "\n"))
 }
 
 // findValue lists the primaries that take a value.
@@ -317,9 +396,9 @@ func (a *app) cmdFind(c *command, args []string) error {
 		}
 		q.now = time.Now()
 	}
+	var pages wiki.Pages
 	if q.needPages {
-		pages, err := wiki.ReadPages(a.repo, files)
-		if err != nil {
+		if pages, err = wiki.ReadPages(a.repo, files); err != nil {
 			return &gitError{err}
 		}
 		q.frontmatter = map[string]map[string]any{}
@@ -327,20 +406,67 @@ func (a *app) cmdFind(c *command, args []string) error {
 			q.frontmatter[p] = pages.Parse(p).Frontmatter
 		}
 	}
-	items := []treeItem{}
+	items := []findItem{}
+	var matched []string
 	for _, e := range entries {
 		if !slices.ContainsFunc(q.tests, func(ft findTest) bool { return ft.match(e) == ft.not }) {
 			kind := "file"
 			if e.dir {
 				kind = "dir"
+			} else {
+				matched = append(matched, e.path)
 			}
-			items = append(items, treeItem{e.path, kind})
+			items = append(items, findItem{Path: e.path, Kind: kind})
+		}
+	}
+	var warnings []page.Issue
+	if a.fmKeys.on {
+		// Without -meta nothing has been read yet, and only the files that
+		// matched are needed.
+		if !q.needPages {
+			if pages, err = wiki.ReadPages(a.repo, matched); err != nil {
+				return &gitError{err}
+			}
+		}
+		for i := range items {
+			if items[i].Kind != "file" {
+				continue
+			}
+			keys, ok, iss := pages.Frontmatter(items[i].Path)
+			switch {
+			case iss != nil:
+				items[i].FrontmatterError = &frontmatterError{iss.Code, iss.Message}
+				warnings = append(warnings, *iss)
+			case ok:
+				kept := []page.FrontmatterKey{}
+				for _, k := range keys {
+					if a.fmKeys.wanted(k.Key) {
+						kept = append(kept, k)
+					}
+				}
+				items[i].Frontmatter = &kept
+			}
 		}
 	}
 	a.emit(map[string]any{"items": items}, func(w io.Writer) {
 		for _, it := range items {
-			fmt.Fprintln(w, escapeControl(it.Path))
+			if !a.fmKeys.on {
+				fmt.Fprintln(w, escapeControl(it.Path))
+				continue
+			}
+			if it.Frontmatter == nil {
+				continue
+			}
+			for _, k := range *it.Frontmatter {
+				fmt.Fprintf(w, "%s\t%d\t%s\t%s\n", escapeControl(it.Path), k.Line, jsonText(k.Key), jsonText(k.Value))
+			}
 		}
 	})
+	// With --json the error is in the output of each item already.
+	if !a.json {
+		for _, is := range warnings {
+			fmt.Fprintf(a.stderr, "wikictl: warning: %s:%d: %s: %s\n", escapeControl(is.Path), is.Line, is.Code, escapeControl(is.Message))
+		}
+	}
 	return a.reportMissing(missing, t.pathMessage)
 }

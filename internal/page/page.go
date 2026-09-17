@@ -83,8 +83,13 @@ func Parse(p string, content []byte) *Page {
 // MaxPageSize, for a caller that knows the size without reading the content.
 func TooLarge(p string) *Page {
 	pg := named(p)
-	pg.Issues = append(pg.Issues, Issue{Path: p, Line: 0, Code: "page_too_large", Message: fmt.Sprintf("page is larger than %d bytes", MaxPageSize)})
+	pg.Issues = append(pg.Issues, TooLargeIssue(p))
 	return pg
+}
+
+// TooLargeIssue returns the page_too_large issue of p.
+func TooLargeIssue(p string) Issue {
+	return Issue{Path: p, Line: 0, Code: "page_too_large", Message: fmt.Sprintf("page is larger than %d bytes", MaxPageSize)}
 }
 
 // named returns the page p with only its path issues and the title from the
