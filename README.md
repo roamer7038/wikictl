@@ -66,7 +66,7 @@ Binaries for Linux and macOS (x86_64 and arm64) are on the [releases page](https
 
 ## Wiki layout
 
-wikictl gives no meaning to directory names: a page can be placed in any directory, and commands whose paths are optional (`grep`, `ls`, `find`, `lint`, `tree`) read the whole wiki when the paths are omitted. wikictl does not choose directories from the current directory.
+wikictl gives no meaning to directory names: a page can be placed in any directory, and commands whose paths are optional (`grep`, `links`, `ls`, `find`, `lint`, `tree`) read the whole wiki when the paths are omitted. wikictl does not choose directories from the current directory.
 
 For a new wiki, one layout is to make each top-level directory a scope that answers "where is this knowledge valid?" and to place a page in the narrowest scope that fits:
 
@@ -108,7 +108,7 @@ Body. Link to other pages with relative paths: [push](git-push.md).
 | `grep <pattern> [<path>...]` | Print the lines that match a pattern |
 | `cat <path>...` | Print files as stored |
 | `stat <path>...` | Show the sha, last update and attributes of files |
-| `links <path>` | List the links in a page and to it |
+| `links [<path>...]` | List the links in pages and to them |
 | `ls [<path>...]` | List the entries of directories |
 | `find [<path>...] [<expression>]` | Find files and directories by name, type, update time or frontmatter |
 | `put <path> < content` | Create or replace a file from standard input |
