@@ -386,19 +386,37 @@ func TestSubmoduleReads(t *testing.T) {
 		out != "global/push.md\nmachines/h1/y.md\nprojects/app/x.md\n" {
 		t.Errorf("grep -l: code=%d out=%q", code, out)
 	}
-	// The write side is unchanged: rm refuses a submodule at the wiki root as
-	// it refuses any entry there, and deletes one below it without -r. This
-	// runs last, as it changes the tree.
+	// The write side matches the read side: rm refuses a submodule at the
+	// wiki root as it refuses any entry there, reports one given directly as
+	// "is a submodule" instead of deleting it, and leaves one under a
+	// directory removed with -r in place. This runs last, as it changes the
+	// tree.
 	if code, _, errs := runCLI(t, cfg, "", "rm", "topsub"); code != ExitInvalid ||
 		errs != "wikictl: bad_path: topsub: a file at the wiki root cannot be deleted\n" {
 		t.Errorf("rm topsub: code=%d errs=%q", code, errs)
 	}
-	if code, _, errs := runCLI(t, cfg, "", "rm", "projects/subm"); code != ExitOK {
+	if code, _, errs := runCLI(t, cfg, "", "rm", "projects/subm"); code != ExitError ||
+		errs != "wikictl: projects/subm: is a submodule\n" {
 		t.Errorf("rm projects/subm: code=%d errs=%q", code, errs)
 	}
-	if out := gitOut(t, "--git-dir", remote, "ls-tree", "main", "--", "projects/subm", "topsub"); out == "" ||
-		strings.Contains(out, "projects/subm") {
-		t.Errorf("tree after rm: %q", out)
+	if out := gitOut(t, "--git-dir", remote, "ls-tree", "main", "--", "projects/subm", "topsub"); !strings.Contains(out, "projects/subm") {
+		t.Errorf("tree after rm projects/subm: %q", out)
+	}
+	// rm -r deletes the other files of a directory but leaves a submodule
+	// under it, and .gitmodules-equivalent, untouched.
+	if code, _, errs := runCLI(t, cfg, "", "rm", "-r", "projects"); code != ExitOK || errs != "" {
+		t.Errorf("rm -r projects: code=%d errs=%q", code, errs)
+	}
+	if out := gitOut(t, "--git-dir", remote, "ls-tree", "-r", "main", "--", "projects"); !strings.Contains(out, "projects/subm") || strings.Contains(out, "projects/app") {
+		t.Errorf("tree after rm -r projects: %q", out)
+	}
+	// A directory that holds only a submodule has nothing to delete, so rm -r
+	// succeeds without deleting anything.
+	if code, out, errs := runCLI(t, cfg, "", "rm", "-r", "--json", "mods/lib"); code != ExitOK || errs != "" || out != `{"commit":"","paths":[]}`+"\n" {
+		t.Errorf("rm -r mods/lib: code=%d out=%q errs=%q", code, out, errs)
+	}
+	if out := gitOut(t, "--git-dir", remote, "ls-tree", "-r", "main", "--", "mods/lib"); !strings.Contains(out, "mods/lib/sub") {
+		t.Errorf("tree after rm -r mods/lib: %q", out)
 	}
 }
 
