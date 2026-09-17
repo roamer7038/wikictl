@@ -84,29 +84,54 @@ func IsPagePath(p string) bool {
 }
 
 // CheckPath returns nil when p can be a page path: a .md suffix and, without
-// it, a path that CheckFilePath accepts. The length of a name is checked with
-// the suffix, which is part of the file name.
+// it, every component accepted by CheckName. The length of a name is checked
+// with the suffix, which is part of the file name.
 func CheckPath(p string) error {
 	if !strings.HasSuffix(p, ".md") {
 		return errors.New("path must end in .md")
 	}
-	if err := CheckFilePath(strings.TrimSuffix(p, ".md")); err != nil {
-		return err
-	}
-	return CheckLength(p)
-}
-
-// CheckFilePath returns nil when p can be the path of a file: every component
-// passing CheckName and no component over MaxNameLen bytes. A file at the wiki
-// root is such a path of one component; the root itself is not, since CheckName
-// rejects both "." and the empty name.
-func CheckFilePath(p string) error {
-	for _, x := range strings.Split(p, "/") {
+	for _, x := range strings.Split(strings.TrimSuffix(p, ".md"), "/") {
 		if err := CheckName(x); err != nil {
 			return err
 		}
 	}
 	return CheckLength(p)
+}
+
+// CheckFilePath returns nil when p can be the path of a file that is not a
+// page: every component accepted by checkNonPageName and no component over
+// MaxNameLen bytes. A file at the wiki root is such a path of one component.
+// Unlike CheckPath, a leading dot, "<", whitespace and the characters listed
+// in breaking are allowed: such a file's content is never scanned for links,
+// and ls only lists it with -a.
+func CheckFilePath(p string) error {
+	for _, x := range strings.Split(p, "/") {
+		if err := checkNonPageName(x); err != nil {
+			return err
+		}
+	}
+	return CheckLength(p)
+}
+
+// checkNonPageName returns nil when s can be a file or directory name of a
+// path that is not a page, or an error naming the rule it breaks. Only names
+// that the file system or git themselves refuse are rejected: the empty
+// name, "." and "..", and a name holding a control character.
+func checkNonPageName(s string) error {
+	switch s {
+	case "":
+		return errors.New("empty name")
+	case ".":
+		return errors.New(`name "." is not allowed`)
+	case "..":
+		return errors.New(`name ".." is not allowed`)
+	}
+	for _, r := range s {
+		if unicode.IsControl(r) {
+			return fmt.Errorf("name %q contains a control character", s)
+		}
+	}
+	return nil
 }
 
 // Recommended reports whether s has the recommended form of a name:

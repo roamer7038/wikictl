@@ -64,7 +64,7 @@ func TestTopLevelWrites(t *testing.T) {
 	if code, _, _ := runCLI(t, cfg, "", "cat", "README.md"); code != ExitError {
 		t.Error("README.md was not deleted")
 	}
-	// The root itself is still rejected, and so is a name starting with a dot.
+	// The root itself is still rejected.
 	for _, c := range []struct {
 		args []string
 		want string
@@ -74,11 +74,17 @@ func TestTopLevelWrites(t *testing.T) {
 		{[]string{"rm", "."}, "the root of the wiki cannot be deleted"},
 		{[]string{"mv", ".", "global"}, "the root of the wiki cannot be moved"},
 		{[]string{"mv", "-T", "global", "."}, "the root of the wiki cannot be replaced"},
-		{[]string{"put", ".hidden"}, "bad_path"},
-		{[]string{"put", ".hidden.md"}, "bad_path"},
 	} {
 		if code, _, errs := runCLI(t, cfg, "x", c.args...); code != ExitInvalid || !strings.Contains(errs, c.want) {
 			t.Errorf("%v: code=%d errs=%q, want %q", c.args, code, errs, c.want)
+		}
+	}
+	// A name starting with a dot at the root is not a page (IsPagePath
+	// excludes a leading dot even with a .md suffix), so it follows the
+	// looser rules of a file that is not a page and can be written.
+	for _, p := range []string{".hidden", ".hidden.md"} {
+		if code, _, errs := runCLI(t, cfg, "x", "put", p); code != ExitOK || errs != "" {
+			t.Errorf("put %s: code=%d errs=%q", p, code, errs)
 		}
 	}
 }
@@ -170,6 +176,57 @@ func TestRmNamesBreakingRules(t *testing.T) {
 	}
 }
 
+// TestNonPageNameRules checks #177: a file that is not a page (page.IsPagePath)
+// follows a loose name rule instead of the page rule, put and mv choose the
+// rule per destination path, and name_style is only warned for a page.
+func TestNonPageNameRules(t *testing.T) {
+	cfg := setup(t)
+	// put accepts a non-page path that the page rule would reject: below a
+	// directory starting with a dot, holding whitespace, or starting with a
+	// dot itself.
+	for _, p := range []string{".github/workflows/test.yml", "docs/My File.png", ".gitattributes"} {
+		if code, _, errs := runCLI(t, cfg, "x", "put", p); code != ExitOK || errs != "" {
+			t.Errorf("put %s: code=%d errs=%q", p, code, errs)
+		}
+	}
+	// A page keeps its unchanged rule: whitespace is still rejected.
+	if code, _, errs := runCLI(t, cfg, "---\nsummary: x\n---\n", "put", "docs/My Page.md"); code != ExitInvalid || !strings.Contains(errs, "bad_path") {
+		t.Errorf("put docs/My Page.md: code=%d errs=%q", code, errs)
+	}
+	// A leading dot makes a path not a page even with a .md suffix
+	// (page.IsPagePath), so it follows the loose rule instead of being
+	// rejected as a page name would be.
+	if code, _, errs := runCLI(t, cfg, "x", "put", "docs/.hidden.md"); code != ExitOK || errs != "" {
+		t.Errorf("put docs/.hidden.md: code=%d errs=%q", code, errs)
+	}
+	// name_style is never warned for a file that is not a page, however
+	// unconventional its name.
+	if code, _, errs := runCLI(t, cfg, "x", "put", ".github/Not-Recommended_Name.txt"); code != ExitOK || errs != "" {
+		t.Errorf("put with an unconventional non-page name: code=%d errs=%q", code, errs)
+	}
+
+	// mv of a directory holding only files that are not pages accepts a
+	// destination name a page would reject: a leading dot and whitespace.
+	pushFiles(t, cfg, map[string]string{"assets/logo.png": "png", "assets/notes.txt": "note"})
+	if code, _, errs := runCLI(t, cfg, "", "mv", "assets", ".assets new"); code != ExitOK || errs != "" {
+		t.Errorf("mv of a non-page directory to an unconventional name: code=%d errs=%q", code, errs)
+	}
+	if code, _, _ := runCLI(t, cfg, "", "stat", ".assets new/logo.png", ".assets new/notes.txt"); code != ExitOK {
+		t.Error("the files were not moved")
+	}
+	// mv of a directory holding both a page and a file that is not a page
+	// checks each moved file's own destination path: the page inside still
+	// rejects a destination with whitespace, even though the file that is
+	// not a page in the same directory would have accepted it.
+	pushFiles(t, cfg, map[string]string{"extra/img.png": "png", "extra/x.md": "---\nsummary: x\n---\n# x\n"})
+	if code, _, errs := runCLI(t, cfg, "", "mv", "extra", "new dir"); code != ExitInvalid || !strings.Contains(errs, "bad_path") {
+		t.Errorf("mv of a mixed directory to a name the page inside rejects: code=%d errs=%q", code, errs)
+	}
+	if code, _, _ := runCLI(t, cfg, "", "stat", "extra/img.png", "extra/x.md"); code != ExitOK {
+		t.Error("a rejected mv moved files out of the source directory")
+	}
+}
+
 func TestMvArguments(t *testing.T) {
 	cfg := setup(t)
 	for p, c := range map[string]string{
@@ -227,7 +284,6 @@ func TestMvArguments(t *testing.T) {
 		{[]string{"mv", "global/push.md", "global/new/"}, ExitError, "global/new/: not a directory"},
 		{[]string{"mv", "global/push.md", "global/index.md/x.md"}, ExitError, "global/index.md/x.md: not a directory"},
 		{[]string{"mv", "-T", "global", "."}, ExitInvalid, "the root of the wiki cannot be replaced"},
-		{[]string{"mv", "global/index.md", ".hidden.md"}, ExitInvalid, "bad_path"},
 		{[]string{"mv", "global/index.md"}, ExitUsage, "missing destination"},
 		{[]string{"mv", "-t", "global", "-T", "projects/x.md"}, ExitUsage, "-t and -T cannot be combined"},
 		{[]string{"mv", "-T", "global/index.md", "global/push.md", "projects"}, ExitUsage, "-T takes one source"},
@@ -235,6 +291,16 @@ func TestMvArguments(t *testing.T) {
 		if code, _, errs := runCLI(t, cfg, "", c.args...); code != c.code || !strings.Contains(errs, c.errs) {
 			t.Errorf("%v: code=%d errs=%q", c.args, code, errs)
 		}
+	}
+
+	// A destination starting with a dot is not a page even with a .md suffix,
+	// so mv accepts it as any other file; it is moved back for the rest of
+	// this test.
+	if code, _, errs := runCLI(t, cfg, "", "mv", "global/index.md", ".hidden.md"); code != ExitOK || errs != "" {
+		t.Errorf("mv to a dot name: code=%d errs=%q", code, errs)
+	}
+	if code, _, errs := runCLI(t, cfg, "", "mv", ".hidden.md", "global/index.md"); code != ExitOK || errs != "" {
+		t.Errorf("mv back from a dot name: code=%d errs=%q", code, errs)
 	}
 
 	// A source already moved with an earlier source is reported as missing.
@@ -306,12 +372,14 @@ func TestWriteOverDirectoryOrFile(t *testing.T) {
 			t.Errorf("%v: code=%d errs=%q", c.args, code, errs)
 		}
 	}
-	// A file that is not a page follows the name rules of pages.
+	// A file that is not a page allows a leading dot and whitespace in its
+	// name, unlike a page.
 	for _, p := range []string{"global/a b.txt", "global/.hidden"} {
-		if code, _, errs := runCLI(t, cfg, "x", "put", p); code != ExitInvalid || !strings.Contains(errs, "bad_path: ") {
+		if code, _, errs := runCLI(t, cfg, "x", "put", p); code != ExitOK || errs != "" {
 			t.Errorf("put %s: code=%d errs=%q", p, code, errs)
 		}
 	}
+	head = gitOut(t, "--git-dir", remote, "rev-parse", "main")
 	// Content that put rejects keeps the rejection of the path.
 	if code, _, errs := runCLI(t, cfg, "---\n: [\n---\n# x\n", "put", "global/a b.md"); code != ExitInvalid || !strings.Contains(errs, "bad_path: ") {
 		t.Errorf("put a bad path with invalid frontmatter: code=%d errs=%q", code, errs)
@@ -538,8 +606,10 @@ func TestMvDotDirMarkdown(t *testing.T) {
 		t.Errorf("page linking to the moved file: %q", got)
 	}
 
-	// A directory starting with a dot moves with every file below it.
-	if code, _, errs := runCLI(t, cfg, "", "mv", ".github", "global/github"); code != 0 || errs != "" {
+	// A directory starting with a dot moves with every file below it; a page
+	// among them, unlike the .yml file, is warned for its own name_style.
+	code, _, errs = runCLI(t, cfg, "", "mv", ".github", "global/github")
+	if code != 0 || !strings.Contains(errs, `global/github/ISSUE_TEMPLATE/bug.md:0: name_style: name "ISSUE_TEMPLATE"`) {
 		t.Fatalf("mv of a dot directory: code=%d errs=%q", code, errs)
 	}
 	files = strings.Split(gitOut(t, "--git-dir", remote, "ls-tree", "-r", "-z", "--name-only", "main"), "\x00")
@@ -552,9 +622,13 @@ func TestMvDotDirMarkdown(t *testing.T) {
 		t.Errorf("files left below .github: %q", files)
 	}
 
-	// A destination starting with a dot is still rejected.
-	if code, _, errs := runCLI(t, cfg, "", "mv", "global/pr.md", ".github/pr.md"); code != ExitInvalid || !strings.Contains(errs, "bad_path") {
+	// A destination starting with a dot is not a page either, so it is
+	// accepted like any other file, unlike a page name with the same prefix.
+	if code, _, errs := runCLI(t, cfg, "", "mv", "global/pr.md", ".github/pr.md"); code != ExitOK || errs != "" {
 		t.Errorf("mv to a dot directory: code=%d errs=%q", code, errs)
+	}
+	if got := gitOut(t, "--git-dir", remote, "cat-file", "-p", "main:.github/pr.md"); got != strings.TrimSuffix(tmpl, "\n") {
+		t.Errorf("moved file below a dot directory: %q", got)
 	}
 }
 

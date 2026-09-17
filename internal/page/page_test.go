@@ -36,6 +36,30 @@ func TestCheckPath(t *testing.T) {
 	}
 }
 
+// TestCheckFilePath checks the looser name rule of a file that is not a page:
+// a leading dot, "<", whitespace and the characters CheckName rejects as
+// breaking are allowed, and only the empty name, ".", "..", a control
+// character and a name over MaxNameLen bytes are rejected.
+func TestCheckFilePath(t *testing.T) {
+	for _, p := range []string{
+		"x.txt", ".gitattributes", ".github/workflows/test.yml", "docs/My File.png",
+		"a<b.txt", `a"b.txt`, "a#b.txt", "a?b.txt", "a:b.txt", "a(b).txt", "a`b.txt",
+		"docs/.hidden", ".hidden.md",
+	} {
+		if err := CheckFilePath(p); err != nil {
+			t.Errorf("%q should be accepted: %v", p, err)
+		}
+	}
+	for _, p := range []string{"", ".", "..", "docs/.", "docs/..", "a\x00b.txt", "a\tb.txt"} {
+		if err := CheckFilePath(p); err == nil {
+			t.Errorf("%q should be rejected", p)
+		}
+	}
+	if err := CheckFilePath("docs/" + strings.Repeat("a", MaxNameLen+1) + ".txt"); err == nil {
+		t.Error("a name over 255 bytes should be rejected even for a file that is not a page")
+	}
+}
+
 // TestIsPagePath checks the one definition of a page that every command
 // applies: a name ending in .md with no component starting with a dot, at the
 // wiki root or in a directory.
