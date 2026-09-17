@@ -227,6 +227,33 @@ func TestNonPageNameRules(t *testing.T) {
 	}
 }
 
+// TestMvDirectoryNameStyle checks that mv of a directory to a name outside
+// the recommended form warns name_style once, not once per page moved with
+// it, and warns nothing when every moved file is not a page.
+func TestMvDirectoryNameStyle(t *testing.T) {
+	cfg := setup(t)
+	pushFiles(t, cfg, map[string]string{
+		"src/a.md": "---\nsummary: a\n---\n# a\n",
+		"src/b.md": "---\nsummary: b\n---\n# b\n",
+		"src/c.md": "---\nsummary: c\n---\n# c\n",
+		"src/d.md": "---\nsummary: d\n---\n# d\n",
+	})
+	code, _, errs := runCLI(t, cfg, "", "mv", "src", "Dest")
+	if code != ExitOK {
+		t.Fatalf("mv: code=%d errs=%q", code, errs)
+	}
+	if n := strings.Count(errs, "name_style"); n != 1 {
+		t.Errorf("mv of 4 pages to an unconventional name: %d name_style warnings, want 1: %q", n, errs)
+	}
+
+	// A directory holding only files that are not pages warns nothing, even
+	// with a destination name outside the recommended form.
+	pushFiles(t, cfg, map[string]string{"assets/a.png": "a", "assets/b.png": "b"})
+	if code, _, errs := runCLI(t, cfg, "", "mv", "assets", "Assets2"); code != ExitOK || errs != "" {
+		t.Errorf("mv of files that are not pages to an unconventional name: code=%d errs=%q", code, errs)
+	}
+}
+
 func TestMvArguments(t *testing.T) {
 	cfg := setup(t)
 	for p, c := range map[string]string{

@@ -446,13 +446,18 @@ func (a *app) cmdMv(c *command, args []string) error {
 		// file's own destination path decides whether it is a page, so
 		// name_style is warned only for the pages among them. The single-file
 		// case above already warned its own target, hence the sub[0] != src
-		// guard, which is true only when sub holds the files under src.
+		// guard, which is true only when sub holds the files under src. Every
+		// page below a renamed directory shares the same offending segment,
+		// so warned keeps the message of an issue already reported, to print
+		// it once instead of once per page.
 		if sub[0] != src {
+			warned := map[string]bool{}
 			for _, f := range sub {
 				np := target + strings.TrimPrefix(f, src)
 				if page.IsPagePath(np) {
 					for _, is := range page.PathIssues(np) {
-						if is.Code == "name_style" {
+						if is.Code == "name_style" && !warned[is.Message] {
+							warned[is.Message] = true
 							a.warn(is)
 						}
 					}
