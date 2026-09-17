@@ -150,7 +150,7 @@ func (a *app) commitMessage(cmd string, args []string) string {
 // ignores its code. The issues are printed by flushWarnings once the commit
 // succeeded, so that a write which fails reports only what stopped it.
 func (a *app) warn(is page.Issue) {
-	if a.cfg != nil && a.cfg.LintIgnore[is.Code] {
+	if a.cfg.LintIgnore[is.Code] {
 		return
 	}
 	a.warnings = append(a.warnings, is)
