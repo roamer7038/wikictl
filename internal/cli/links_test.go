@@ -102,6 +102,12 @@ func TestLinksPathColumn(t *testing.T) {
 		{[]string{"links", "-o", "global/push.md"}, 3},
 		{[]string{"links", "-o", "-h", "global/push.md"}, 3},
 		{[]string{"links", "-o", "-H", "global/push.md"}, 4},
+		// Of -H and -h, the one written last wins, apart or combined.
+		{[]string{"links", "-o", "-h", "-H", "global/push.md"}, 4},
+		{[]string{"links", "-o", "-H", "-h", "global/push.md"}, 3},
+		{[]string{"links", "-o", "-hH", "global/push.md"}, 4},
+		{[]string{"links", "-o", "-Hh", "global/push.md"}, 3},
+		{[]string{"links", "-o", "-H", "-h", "global"}, 3},
 		{[]string{"links", "-o", "global/push.md", "global/urls.md"}, 4},
 		{[]string{"links", "-o", "-h", "global/push.md", "global/urls.md"}, 3},
 		{[]string{"links", "-o", "global"}, 4},
@@ -199,27 +205,66 @@ func greps(t *testing.T, log string) int {
 	return strings.Count(string(b), "\n")
 }
 
-// TestLinksOneGrep checks that the backlinks of several pages cost one search,
-// not one per page, and that reading every page of the wiki costs none at all,
-// since every page is then already a candidate.
+// TestLinksOneGrep checks the two ways the backlink candidates are found and
+// that they agree: several pages cost one search rather than one per page,
+// reading every page costs no search at all, since every page is then already
+// a candidate, and a path that does not exist does not let the number of
+// paths pass for the whole wiki. Whichever way is taken, the items must be
+// the same, so that leaving the search out never changes the answer.
 func TestLinksOneGrep(t *testing.T) {
 	cfg := setupLinks(t)
+	// The pages of the wiki, in the order links reads them.
+	pages := []string{"global/index.md", "global/push.md", "global/urls.md", "machines/h1/y.md", "projects/app/x.md"}
 	if code, _, errs := runCLI(t, cfg, "", "links", "-o", "global/push.md"); code != ExitOK {
 		t.Fatalf("filling the mirror: code=%d errs=%q", code, errs)
 	}
 	log := recordGrep(t)
-	args := []string{"--no-fetch", "links", "-i", "global/index.md", "global/push.md", "global/urls.md"}
-	if code, _, errs := runCLI(t, cfg, "", args...); code != ExitOK {
-		t.Fatalf("links -i of three pages: code=%d errs=%q", code, errs)
+	items := func(t *testing.T, want int, args ...string) []linkItem {
+		t.Helper()
+		var res struct{ Items []linkItem }
+		code, out, errs := runCLI(t, cfg, "", append([]string{"--no-fetch", "links", "--json", "-i"}, args...)...)
+		if code != want {
+			t.Fatalf("links -i %v: code=%d, want %d: errs=%q", args, code, want, errs)
+		}
+		mustUnmarshal(t, out, &res)
+		return res.Items
 	}
+	whole := items(t, ExitOK)
+	if n := greps(t, log); n != 0 {
+		t.Errorf("git grep ran %d times for the whole wiki, want 0", n)
+	}
+	if len(whole) == 0 {
+		t.Fatal("the wiki must have backlinks for the comparisons below")
+	}
+	items(t, ExitOK, pages[:3]...)
 	if n := greps(t, log); n != 1 {
 		t.Errorf("git grep ran %d times for three pages, want 1", n)
 	}
-	if code, _, errs := runCLI(t, cfg, "", "--no-fetch", "links"); code != ExitOK {
-		t.Fatalf("links: code=%d errs=%q", code, errs)
+	// Reading the pages one by one, each with its own search, gives the same
+	// items in the same order as reading the whole wiki without a search.
+	var one []linkItem
+	for _, p := range pages {
+		one = append(one, items(t, ExitOK, p)...)
 	}
-	if n := greps(t, log); n != 0 {
-		t.Errorf("git grep ran %d times for the whole wiki, want 0", n)
+	if !slices.Equal(one, whole) {
+		t.Errorf("one page at a time = %+v, the whole wiki = %+v", one, whole)
+	}
+	greps(t, log)
+	// As many paths as the wiki has pages is not the whole wiki when one of
+	// them does not exist: the search must still run, and the items must be
+	// those of the pages that do exist.
+	got := items(t, ExitError, append(slices.Clone(pages[:4]), "nope.md")...)
+	if n := greps(t, log); n != 1 {
+		t.Errorf("git grep ran %d times for as many paths as the wiki has pages, want 1", n)
+	}
+	var want []linkItem
+	for _, it := range whole {
+		if it.Path != pages[4] {
+			want = append(want, it)
+		}
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("with a path that does not exist = %+v, want %+v", got, want)
 	}
 }
 

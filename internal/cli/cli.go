@@ -105,11 +105,13 @@ link, or "mentions". With -o only the links in the pages are listed, with -i
 only the links to them.
 
 A path that is a directory stands for the pages under it, and without a path
-every page of the wiki is read. The path is printed before each link, as
-"<path><TAB><direction>...", when more than one path is given, when none is,
-or when a path is a directory; -H prints it always and -h never. For a graph
-of the whole wiki use -o, since listing both directions gives every link
-twice, once for each of the two pages it joins.
+every page of the wiki is read, the pages with status: deprecated and the .md
+files at the root included, as lint reads them. The path is printed before
+each link, as "<path><TAB><direction>...", when more than one path is given,
+when none is, or when a path is a directory; -H prints it always and -h
+never, and of the two the one written last wins. For a graph of the whole
+wiki use -o, since listing both directions gives every link twice, once for
+each of the two pages it joins.
 
 The pages that link to the pages read are found with one search, however many
 they are. A path that does not exist, is a submodule or is not a page ("is not
@@ -445,19 +447,19 @@ type app struct {
 	stderr  io.Writer
 
 	// Command flags, registered by the flags function of the command.
-	linksIn      bool
-	linksOut     bool
-	withFilename bool
-	long         bool
-	recursive    bool
-	byTime       bool
-	dirsOnly     bool
-	level        positiveInt
-	all          bool
-	base         string
-	msg          string
-	verbose      bool
-	force        bool
+	linksIn   bool
+	linksOut  bool
+	filename  filenameMode
+	long      bool
+	recursive bool
+	byTime    bool
+	dirsOnly  bool
+	level     positiveInt
+	all       bool
+	base      string
+	msg       string
+	verbose   bool
+	force     bool
 
 	noTargetDir bool
 	targetDir   string

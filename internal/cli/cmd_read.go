@@ -257,11 +257,44 @@ type linkItem struct {
 	URL       bool   `json:"url"`
 }
 
+// filenameMode is what -H and -h choose: whether the path is printed before
+// each link. set is false when neither was given, and the paths decide instead.
+type filenameMode struct {
+	set bool
+	on  bool
+}
+
+// filenameFlag is one of -H and -h. Both write to the same filenameMode, so
+// that the one written last wins, as it does in GNU grep; on is what this flag
+// chooses.
+type filenameFlag struct {
+	mode *filenameMode
+	on   bool
+}
+
+func (f filenameFlag) String() string { return "false" }
+
+func (f filenameFlag) Type() string { return "bool" }
+
+// Set records the choice of this flag over the choice of an earlier -H or -h.
+// Negating the flag, as in --no-filename=false, chooses the opposite.
+func (f filenameFlag) Set(s string) error {
+	b, err := strconv.ParseBool(s)
+	if err != nil {
+		return errors.New("parse error")
+	}
+	*f.mode = filenameMode{set: true, on: f.on == b}
+	return nil
+}
+
 func linksFlags(a *app, fs *pflag.FlagSet) {
 	fs.BoolVarP(&a.linksIn, "in", "i", false, "list only the links from other pages to the pages")
 	fs.BoolVarP(&a.linksOut, "out", "o", false, "list only the links in the pages")
-	fs.BoolVarP(&a.withFilename, "with-filename", "H", false, "print the path before every link")
-	fs.BoolVarP(&a.noFilename, "no-filename", "h", false, "print the links without the path")
+	fs.VarP(filenameFlag{&a.filename, true}, "with-filename", "H", "print the path before every link")
+	fs.VarP(filenameFlag{&a.filename, false}, "no-filename", "h", "print the links without the path")
+	for _, n := range []string{"with-filename", "no-filename"} {
+		fs.Lookup(n).NoOptDefVal = "true"
+	}
 }
 
 // cmdLinks lists the links in each page ("out") and the links to it from other
@@ -277,7 +310,6 @@ func (a *app) cmdLinks(c *command, args []string) error {
 		return err
 	}
 	all := slices.DeleteFunc(slices.Clone(t.files), func(p string) bool { return !page.IsPagePath(p) })
-	slices.Sort(all)
 	paths, files := slices.Clone(all), []string(nil)
 	if len(args) > 0 {
 		var dirs []string
@@ -298,10 +330,13 @@ func (a *app) cmdLinks(c *command, args []string) error {
 		paths = slices.Compact(paths)
 	}
 	both := a.linksIn == a.linksOut
+	// Every page is a candidate when every page is read, so the search would
+	// only find again what the tree already gives. Both lists are sorted and
+	// hold no path twice, so equality is the test for reading every page.
 	var cands []string
 	if both || a.linksIn {
 		cands = all
-		if len(paths) != len(all) {
+		if !slices.Equal(paths, all) {
 			if cands, err = wiki.BacklinkCandidates(a.repo, notEmpty(paths)); err != nil {
 				return &gitError{err}
 			}
@@ -320,8 +355,12 @@ func (a *app) cmdLinks(c *command, args []string) error {
 		back = wiki.Backlinks(read, cands, paths)
 	}
 	// The path is printed where grep prints it: for more than one path, for
-	// none, and for a directory, which stands for the pages under it.
-	header := a.withFilename || !a.noFilename && (len(args) != 1 || t.isDir(args[0]))
+	// none, and for a directory, which stands for the pages under it. -H and
+	// -h say so instead, whichever of the two was written last.
+	header := a.filename.on
+	if !a.filename.set {
+		header = len(args) != 1 || t.isDir(args[0])
+	}
 	items := []linkItem{}
 	for _, p := range paths {
 		if both || a.linksOut {
