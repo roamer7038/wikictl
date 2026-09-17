@@ -64,7 +64,9 @@ quotation marks or spaces intact and runs nothing when nothing matched. A name
 holding a newline cannot be passed this way, and neither can one holding a
 control character, which text output escapes as \xNN; --json prints the exact
 names, but wikictl rejects a path holding a control character as bad_path with
-exit code 4.
+exit code 4. A name holding a colon, allowed for a file that is not a page
+(see "help lint"), makes "<path>:<text>", or "<path>:<line>:<text>" with -n,
+ambiguous, as it does in GNU grep; use --json for such names.
 
 Output: items[] {path, line, text}; with -l or -L, items[] {path}; with -c,
 items[] {path, count}; with -q, nothing.`,
@@ -219,8 +221,13 @@ directory ("not a directory"), and a directory moved into itself are reported
 too; the other sources are still moved, and the command exits with code 1. The
 root of the wiki itself, or a destination that breaks the file name rules (see
 "help lint") or that git refuses to store (see "help put"), is rejected with
-exit code 4, and nothing is moved. A file added under a directory after mv
-read it is not moved.
+exit code 4, and nothing is moved. A directory moved with files of both kinds
+applies each file's rule by its own destination path, not the directory's,
+and warns name_style, on standard error, only for a page among them whose
+name is outside the recommended form. A directory holding a file whose name
+was accepted only because it was not a page can fail to move this way, if the
+destination makes that file a page instead; rm can still delete such a file.
+A file added under a directory after mv read it is not moved.
 
 Links in other pages to a moved .md file, whether a page or not, and relative
 links inside a moved page whose destination changes with the move, are
@@ -231,7 +238,9 @@ leading "./", angle brackets, a query, a fragment and a title are kept. When
 the name of a page changes, the old name (without .md) is added to aliases if
 the frontmatter is empty or a block-style mapping and aliases is absent, a
 sequence (block or flow style), or null; otherwise no alias is added and no
-warning is printed.
+warning is printed. Moving a page below a directory starting with a dot
+leaves it not a page afterwards (see "help lint"), so lint and links -i no
+longer cover it, though links to it are still rewritten as above.
 
 Only links of the form [text](path) are rewritten. A bare path in a Links line,
 such as "- see_also: other.md" or "- other.md", is left unchanged and becomes
@@ -293,15 +302,19 @@ page_too_large. Frontmatter over 64 KiB, or with collections nested more than
 treat such a page as having no frontmatter.
 
 File name rules: a page is a file whose name ends in .md and whose path has no
-component starting with a dot, at the wiki root or in a directory. A file or
-directory name must not be empty, start with a dot or <, or contain
+component starting with a dot, at the wiki root or in a directory. A page's
+file or directory name must not be empty, start with a dot or <, or contain
 whitespace, control characters or any of the characters " \ # ? : ( ) ` + "`" + `
-(bad_path). A name over 255 bytes is bad_path too, since a clone cannot check
-it out. put, edit and the destination of mv reject a path that breaks these
-rules, while rm and moving such a file away still work, except for a name
-holding a control character, which every command rejects. Lowercase
-ASCII letters, digits and hyphens are recommended; other names are reported as
-name_style.
+(bad_path). A file that is not a page follows a looser rule instead: only an
+empty name, ".", ".." and a control character are bad_path, so a leading dot,
+<, whitespace and the characters above are allowed. A name over 255 bytes is
+bad_path either way, since a clone cannot check it out, and so is a path that
+git itself refuses to store regardless of these rules (see "help put"). put,
+edit and the destination of mv reject a path that breaks its rule, while rm
+and moving such a file away still work, except for a name holding a control
+character, which every command rejects. Lowercase ASCII letters, digits and
+hyphens are recommended for a page's name; other names are reported as
+name_style, never for a file that is not a page.
 Names in one directory that differ only by case collide on case-insensitive
 file systems and are reported as case_collision, against the whole wiki. Names
 that differ only by Unicode normalisation, such as one written in NFC and one
