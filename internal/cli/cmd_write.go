@@ -498,8 +498,9 @@ func checkFilePath(p string) error {
 }
 
 // badPath returns the error for p, a path that the path check rejected with
-// err. A directory at the wiki root is reported as a directory, as a deeper
-// one is; any other path is bad_path.
+// err. A name at the wiki root that CheckName accepts, so that only the length
+// limit rejected it, is reported as a directory or a submodule when it is one,
+// as a deeper path is; any other path is bad_path.
 func (a *app) badPath(p string, err error) error {
 	if !strings.Contains(p, "/") && page.CheckName(p) == nil {
 		msg, ferr := a.fileMessage([]string{p})
@@ -537,7 +538,9 @@ func (a *app) moveChanges(entries []repo.Entry, mapping, modes map[string]string
 		}
 	}
 	// wiki.Relocate is given the whole mapping, so that links to a moved .md
-	// file that is not a page are rewritten too; it moves only the pages.
+	// file that is not a page are rewritten too; it moves only the pages. The
+	// test below is the .md name, not page.IsPagePath, for that reason: a link
+	// to any .md file is a link mv keeps correct.
 	var changes []repo.Change
 	if slices.ContainsFunc(sources, func(f string) bool { return strings.HasSuffix(f, ".md") }) {
 		if changes, err = wiki.Relocate(a.repo, entries, mapping); err != nil {

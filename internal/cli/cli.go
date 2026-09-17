@@ -84,10 +84,10 @@ Output: items[] {path, sha, content}.`,
 		summary: "Show the sha, last update and attributes of files",
 		detail: `Show, for each page, its blob sha, the time of the last commit that changed
 it, and the attributes read from it: title (the first heading, else the file
-name), summary (or description), type, tags, status and aliases. Only a page,
-as "help lint" defines it, has these attributes. A path that does not exist,
-is a directory, is a submodule or is a file that is not a page ("is not a
-page") is reported as cat reports it.
+name), summary (or description), type, tags, status and aliases. A file that
+is not a page, as "help lint" defines one, is shown too, with its sha and
+update time and with the attributes empty. A path that does not exist, is a
+directory or is a submodule is reported as cat reports it.
 
 Output: items[] {path, sha, updated, title, summary, type, tags, status,
 aliases}.`,
