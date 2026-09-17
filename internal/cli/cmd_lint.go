@@ -82,6 +82,9 @@ func (a *app) cmdLint(c *command, args []string) error {
 		return &gitError{err}
 	}
 	items = append(items, broken...)
+	// lint.ignore removes items before they are counted, sorted or printed, so
+	// that an ignored rule affects neither the exit code nor --json.
+	items = slices.DeleteFunc(items, func(is page.Issue) bool { return a.cfg.LintIgnore[is.Code] })
 	sort.SliceStable(items, func(i, j int) bool {
 		if items[i].Path != items[j].Path {
 			return items[i].Path < items[j].Path

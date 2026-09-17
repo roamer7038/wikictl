@@ -146,10 +146,15 @@ func (a *app) commitMessage(cmd string, args []string) string {
 	return msg
 }
 
-// warn records a non-blocking issue of a write. The issues are printed by
-// flushWarnings once the commit succeeded, so that a write which fails
-// reports only what stopped it.
-func (a *app) warn(is page.Issue) { a.warnings = append(a.warnings, is) }
+// warn records a non-blocking issue of a write, unless config.Config.LintIgnore
+// ignores its code. The issues are printed by flushWarnings once the commit
+// succeeded, so that a write which fails reports only what stopped it.
+func (a *app) warn(is page.Issue) {
+	if a.cfg.LintIgnore[is.Code] {
+		return
+	}
+	a.warnings = append(a.warnings, is)
+}
 
 // flushWarnings prints the recorded issues on stderr.
 func (a *app) flushWarnings() {

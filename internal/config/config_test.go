@@ -208,6 +208,85 @@ func TestProfileErrors(t *testing.T) {
 	}
 }
 
+// TestLintIgnore checks that lint.ignore selects only name_style and
+// missing_summary, warns and ignores a rule that cannot be ignored or is
+// not a rule name, and that a profile's lint replaces, not merges, the
+// top-level list.
+func TestLintIgnore(t *testing.T) {
+	t.Setenv("WIKICTL_PROFILE", "")
+	d := t.TempDir()
+	p := filepath.Join(d, "c.yaml")
+
+	// No lint at all: LintIgnore is empty and nothing is warned about it.
+	os.WriteFile(p, []byte("repo: r\n"), 0o600)
+	c, err := Load(p, Selector{})
+	if err != nil || len(c.LintIgnore) != 0 {
+		t.Fatalf("default: %+v %v", c, err)
+	}
+
+	// The two rules lint.ignore may list.
+	os.WriteFile(p, []byte("repo: r\nlint:\n  ignore: [name_style, missing_summary]\n"), 0o600)
+	c, err = Load(p, Selector{})
+	if err != nil || !c.LintIgnore["name_style"] || !c.LintIgnore["missing_summary"] || len(c.LintIgnore) != 2 || len(c.Warnings) != 0 {
+		t.Errorf("ignorable rules: %+v %v", c, err)
+	}
+
+	// A known rule that cannot be ignored is warned about and ignored, and the
+	// warning is told apart from an unknown rule name.
+	os.WriteFile(p, []byte("repo: r\nlint:\n  ignore: [broken_link, name_style]\n"), 0o600)
+	c, err = Load(p, Selector{})
+	if err != nil || len(c.LintIgnore) != 1 || !c.LintIgnore["name_style"] || len(c.Warnings) != 1 ||
+		!strings.Contains(c.Warnings[0], `"broken_link" cannot be ignored`) {
+		t.Errorf("rule that cannot be ignored: %+v %v", c, err)
+	}
+
+	// A misspelled rule name is warned about, with a different message, and ignored.
+	os.WriteFile(p, []byte("repo: r\nlint:\n  ignore: [nmae_style]\n"), 0o600)
+	c, err = Load(p, Selector{})
+	if err != nil || len(c.LintIgnore) != 0 || len(c.Warnings) != 1 || !strings.Contains(c.Warnings[0], `"nmae_style" is not a rule name`) {
+		t.Errorf("unknown rule name: %+v %v", c, err)
+	}
+
+	// A profile's lint.ignore replaces the top-level list, rather than merging
+	// into it: an empty list, or an empty lint, means "ignore nothing", not
+	// inherit.
+	yml := `repo: r
+lint:
+  ignore: [name_style, missing_summary]
+profiles:
+  none:
+    lint:
+      ignore: []
+  empty:
+    lint: {}
+  own:
+    lint:
+      ignore: [missing_summary]
+  unset: {}
+`
+	os.WriteFile(p, []byte(yml), 0o600)
+	for profile, want := range map[string][]string{
+		"none":  nil,
+		"empty": nil,
+		"own":   {"missing_summary"},
+		"unset": {"name_style", "missing_summary"},
+	} {
+		c, err := Load(p, Selector{Profile: profile})
+		if err != nil {
+			t.Fatalf("%s: %v", profile, err)
+		}
+		if len(c.LintIgnore) != len(want) {
+			t.Errorf("%s: LintIgnore=%v, want %v", profile, c.LintIgnore, want)
+			continue
+		}
+		for _, w := range want {
+			if !c.LintIgnore[w] {
+				t.Errorf("%s: LintIgnore=%v missing %s", profile, c.LintIgnore, w)
+			}
+		}
+	}
+}
+
 func TestMatchPaths(t *testing.T) {
 	d := t.TempDir()
 	real := filepath.Join(d, "real")
