@@ -382,7 +382,6 @@ func TestWriteOverDirectoryOrFile(t *testing.T) {
 			t.Fatalf("put %s: %s", p, errs)
 		}
 	}
-	head := gitOut(t, "--git-dir", remote, "rev-parse", "main")
 	for _, c := range []struct {
 		args []string
 		errs string
@@ -406,7 +405,7 @@ func TestWriteOverDirectoryOrFile(t *testing.T) {
 			t.Errorf("put %s: code=%d errs=%q", p, code, errs)
 		}
 	}
-	head = gitOut(t, "--git-dir", remote, "rev-parse", "main")
+	head := gitOut(t, "--git-dir", remote, "rev-parse", "main")
 	// Content that put rejects keeps the rejection of the path.
 	if code, _, errs := runCLI(t, cfg, "---\n: [\n---\n# x\n", "put", "global/a b.md"); code != ExitInvalid || !strings.Contains(errs, "bad_path: ") {
 		t.Errorf("put a bad path with invalid frontmatter: code=%d errs=%q", code, errs)
