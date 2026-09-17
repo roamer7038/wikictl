@@ -39,7 +39,7 @@ func grepPages(s Store, flags []string, pattern string) ([]string, error) {
 	records, err := s.GrepRecords(append(flags, "-l"), []string{pattern}, nil)
 	var out []string
 	for _, rec := range records {
-		if repo.IsPagePath(rec[0]) {
+		if page.IsPagePath(rec[0]) {
 			out = append(out, rec[0])
 		}
 	}
@@ -214,7 +214,7 @@ func BrokenLinks(s Store, pages []*page.Page) ([]page.Issue, error) {
 func Relocate(s Store, entries []repo.Entry, mapping map[string]string) ([]repo.Change, error) {
 	var all []string
 	for _, e := range entries {
-		if e.Type == "blob" && repo.IsPagePath(e.Path) {
+		if e.Type == "blob" && page.IsPagePath(e.Path) {
 			all = append(all, e.Path)
 		}
 	}

@@ -107,7 +107,6 @@ func TestGitFailure(t *testing.T) {
 		{"rm/files", gitFault{match: " ls-tree -r -z "}, "", []string{"rm", "global/push.md"}, ExitGit},
 		{"mv/cat", gitFault{match: " cat-file --batch "}, "", []string{"mv", "global/push.md", "global/push2.md"}, ExitGit},
 		{"mv/files", gitFault{match: " ls-tree -r -z "}, "", []string{"mv", "projects/app", "projects/app2"}, ExitGit},
-		{"put/directory at the root", gitFault{match: " ls-tree -r -z "}, "x", []string{"put", "global"}, ExitGit},
 		{"edit/directory at the root", gitFault{match: " ls-tree -r -z "}, "", []string{"edit", "global"}, ExitGit},
 		{"put/link targets", gitFault{match: " cat-file --batch-check "}, newPage, []string{"put", "global/new.md"}, ExitGit},
 		{"put/head", gitFault{match: head}, newPage, []string{"put", "global/new.md"}, ExitGit},

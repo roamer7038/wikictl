@@ -38,6 +38,9 @@ var (
 // and title. URLs are returned unchanged with isURL set. A query and a
 // fragment are dropped. ok is false for destinations that cannot refer to a
 // page: absolute paths, paths outside the wiki root, and files other than .md.
+// Every .md destination resolves, whether IsPagePath holds for it or not, so
+// that a link to a .md file below a directory starting with a dot is a link
+// that mv keeps correct.
 func resolveDest(pagePath, dest string) (target string, isURL, ok bool) {
 	if reScheme.MatchString(dest) {
 		return dest, true, true

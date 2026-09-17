@@ -192,8 +192,8 @@ printf -- '---\nsummary: edited\n---\n# push\n' > "$1"
 	if code, _, errs := runCLI(t, cfg, "", "edit", "global"); code != ExitError || errs != "wikictl: global: is a directory\n" {
 		t.Errorf("edit of a directory at the root: code=%d errs=%q", code, errs)
 	}
-	if code, _, errs := runCLI(t, cfg, "", "edit", "newtop"); code != ExitInvalid || !strings.Contains(errs, "bad_path: ") {
-		t.Errorf("edit of a file at the root: code=%d errs=%q", code, errs)
+	if code, _, errs := runCLI(t, cfg, "", "edit", ".newtop"); code != ExitInvalid || !strings.Contains(errs, "bad_path: ") {
+		t.Errorf("edit of a dot name at the root: code=%d errs=%q", code, errs)
 	}
 	if code, _, errs := runCLI(t, cfg, "---\nsummary: a\n---\n# a\n", "put", "x.md/a.md"); code != 0 {
 		t.Fatalf("put x.md/a.md: %s", errs)

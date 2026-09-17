@@ -84,10 +84,10 @@ Output: items[] {path, sha, content}.`,
 		summary: "Show the sha, last update and attributes of files",
 		detail: `Show, for each page, its blob sha, the time of the last commit that changed
 it, and the attributes read from it: title (the first heading, else the file
-name), summary (or description), type, tags, status and aliases. Only a path
-ending in .md is a page. A path that does not exist, is a directory, is a
-submodule or is a file that is not a page ("is not a page") is reported as cat
-reports it.
+name), summary (or description), type, tags, status and aliases. A file that
+is not a page, as "help lint" defines one, is shown too, with its sha and
+update time and with the attributes empty. A path that does not exist, is a
+directory or is a submodule is reported as cat reports it.
 
 Output: items[] {path, sha, updated, title, summary, type, tags, status,
 aliases}.`,
@@ -163,23 +163,23 @@ Output: items[] {path, kind}; kind is "file" or "dir".`,
 		check: (*app).checkFind, run: (*app).cmdFind},
 	{name: "put", args: "<path> < content", minArgs: 1, maxArgs: 1, paths: true,
 		summary: "Create or replace a file from standard input",
-		detail: `Read the content of a file from standard input and commit it as <path>, which
-must be inside a directory. Omit --base for a new file. For an existing file
+		detail: `Read the content of a file from standard input and commit it as <path>, at the
+wiki root or in a directory. Omit --base for a new file. For an existing file
 pass --base with the blob sha from stat; without it, or if the file changed in
 the meantime, the command exits with code 3 and prints the current content and
 sha (see "wikictl help"). A path that breaks the file name rules (see "help
 lint"), or that git refuses to store, such as one with a component git~1,
 which names .git on NTFS, is rejected with exit code 4 and a message starting
-with "bad_path:", and nothing is committed. A path ending in .md is a page: a
-page whose frontmatter is invalid or that is over the size limits is rejected
-with exit code 4, and a missing summary, Links lines that do not parse, links
-to files missing from the wiki and names outside the recommended form only
-produce warnings on standard error; "description" in the frontmatter is read
-as a synonym of "summary", and "summary" wins when it is not blank. When the
-content equals the current file, no commit is created and commit is the
-current commit. A path that is a directory, a symbolic link or a submodule,
-or that is below a file, is rejected with exit code 1; a file replaced keeps
-its mode.
+with "bad_path:", and nothing is committed. A path that names a page (see
+"help lint") is checked as one: a page whose frontmatter is invalid or that is
+over the size limits is rejected with exit code 4, and a missing summary,
+Links lines that do not parse, links to files missing from the wiki and names
+outside the recommended form only produce warnings on standard error;
+"description" in the frontmatter is read as a synonym of "summary", and
+"summary" wins when it is not blank. When the content equals the current
+file, no commit is created and commit is the current commit. A path that is a
+directory, a symbolic link or a submodule, or that is below a file, is
+rejected with exit code 1; a file replaced keeps its mode.
 
 Output: {path, sha, commit}; with -v, text output is
 "<path><TAB><sha><TAB><commit>".`,
@@ -216,11 +216,11 @@ submodule is reported and not moved. A destination that exists is never
 replaced: it is reported on standard error as "not replacing". A source that
 does not exist, a destination below a file or ending with "/" that is not a
 directory ("not a directory"), and a directory moved into itself are reported
-too; the other sources are still moved, and the command exits with code 1. A
-file at the root of the wiki, the root itself, or a destination that breaks the
-file name rules (see "help lint") or that git refuses to store (see "help put")
-is rejected with exit code 4, and nothing is moved. A file added under a
-directory after mv read it is not moved.
+too; the other sources are still moved, and the command exits with code 1. The
+root of the wiki itself, or a destination that breaks the file name rules (see
+"help lint") or that git refuses to store (see "help put"), is rejected with
+exit code 4, and nothing is moved. A file added under a directory after mv
+read it is not moved.
 
 Links in other pages to a moved .md file, whether a page or not, and relative
 links inside a moved page whose destination changes with the move, are
@@ -255,15 +255,14 @@ the command exits with code 1; with -f a path that does not exist is ignored,
 and -f without any path deletes nothing and exits with code 0; -f does not
 suppress the report of a submodule. With -r, a submodule under a deleted
 directory is reported and left undeleted the same way, while the other files
-under the directory are still deleted. A file at the root of the wiki, the
-root itself, or an empty path without -f is rejected with exit code 4 and
-nothing is deleted. The file name rules (see "help lint") are not
-applied, so a file whose name breaks them can be deleted, except a name
-holding a control character, which is rejected as every path is. A file added
-under a directory after rm read it is not deleted. Pages that link to a
-deleted page are left unchanged; lint reports them as broken_link. If a file
-changed since rm read it, the command exits with code 3 and deletes nothing
-(see "wikictl help"); run it again.
+under the directory are still deleted. The root of the wiki itself, or an
+empty path without -f, is rejected with exit code 4 and nothing is deleted.
+The file name rules (see "help lint") are not applied, so a file whose name
+breaks them can be deleted, except a name holding a control character, which
+is rejected as every path is. A file added under a directory after rm read it
+is not deleted. Pages that link to a deleted page are left unchanged; lint
+reports them as broken_link. If a file changed since rm read it, the command
+exits with code 3 and deletes nothing (see "wikictl help"); run it again.
 
 Output: {paths, commit}; paths lists the deleted files, and commit is empty
 when nothing was deleted. With -v, text output is "<path><TAB><commit>" for
@@ -293,7 +292,8 @@ page_too_large. Frontmatter over 64 KiB, or with collections nested more than
 100 levels deep, is reported as frontmatter_invalid. Commands that read pages
 treat such a page as having no frontmatter.
 
-File name rules: a page is <dir>/<name>.md, never at the wiki root. A file or
+File name rules: a page is a file whose name ends in .md and whose path has no
+component starting with a dot, at the wiki root or in a directory. A file or
 directory name must not be empty, start with a dot or <, or contain
 whitespace, control characters or any of the characters " \ # ? : ( ) ` + "`" + `
 (bad_path). A name over 255 bytes is bad_path too, since a clone cannot check
