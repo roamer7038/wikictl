@@ -178,6 +178,9 @@ func TestFindFrontmatter(t *testing.T) {
 		"fm/plain.md --frontmatter=missing":      "",
 		"fm/none.md --frontmatter":               "",
 		"fm/empty.md --frontmatter":              "",
+		// The --frontmatter written last wins, in either order.
+		"fm/plain.md --frontmatter=type --frontmatter": "fm/plain.md\t2\t\"summary\"\t\"s\"\nfm/plain.md\t3\t\"type\"\t\"adr\"\nfm/plain.md\t4\t\"tags\"\t[\"a\",\"b\"]\n",
+		"fm/plain.md --frontmatter --frontmatter=type": "fm/plain.md\t3\t\"type\"\t\"adr\"\n",
 		// Every key of a flow mapping is written on the same line.
 		"fm/flow.md --frontmatter": "fm/flow.md\t2\t\"a\"\t1\nfm/flow.md\t2\t\"b\"\t2\n",
 		// A key that the merge key brought in has the line of the "<<", the
@@ -216,8 +219,6 @@ func TestFindFrontmatter(t *testing.T) {
 			argv = append(argv, "--frontmatter")
 		}
 		code, out, errs := runCLI(t, cfg, "", argv...)
-		var res struct{ Items []any }
-		mustUnmarshal(t, out, &res)
 		if code != ExitOK || out != want+"\n" {
 			t.Errorf("%v: code=%d out=%q, want %q, errs=%q", argv, code, out, want, errs)
 		}

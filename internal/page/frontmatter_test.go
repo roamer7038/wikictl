@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/goccy/go-yaml/ast"
+	"github.com/goccy/go-yaml/parser"
 )
 
 func TestSplitFrontmatter(t *testing.T) {
@@ -96,7 +99,8 @@ func TestFrontmatter(t *testing.T) {
 		{"invalid", "---\nsummary: [\n---\n", 0, false, true},
 		{"sequence", "---\n- a\n---\n", 0, false, true},
 		{"duplicate", "---\na: 1\na: 2\n---\n", 0, false, true},
-		// An alias that refers to itself must not loop.
+		// An alias that refers to itself is rejected while the values are
+		// decoded, before the keys are read.
 		{"cycle", "---\na: &a\n  <<: *a\n---\n", 0, false, true},
 	} {
 		keys, ok, err := Frontmatter([]byte(c.in))
@@ -106,6 +110,19 @@ func TestFrontmatter(t *testing.T) {
 		if c.ok && c.keys == 0 && keys == nil {
 			t.Errorf("%s: an empty frontmatter must give an empty list, not nil", c.name)
 		}
+	}
+
+	// mergedKeys stops when an alias leads back to the anchor it came from.
+	// Decoding rejects such a frontmatter before Frontmatter reads the syntax
+	// tree, so the guard is checked on the tree itself.
+	f, err := parser.ParseBytes([]byte("a: &a\n  <<: *a\n"), 0)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	anchors := map[string]ast.Node{}
+	ast.Walk(anchorCollector(anchors), f.Docs[0].Body)
+	if got := mergedKeys(anchors["a"], anchors, map[string]bool{}); len(got) != 0 {
+		t.Errorf("cyclic merge: %v", got)
 	}
 }
 

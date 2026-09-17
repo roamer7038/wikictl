@@ -79,17 +79,22 @@ func (f *frontmatterKeys) String() string { return strings.Join(f.keys, ",") }
 
 func (f *frontmatterKeys) Type() string { return "keys" }
 
+// Set replaces the keys of an earlier --frontmatter, so that the last one
+// written wins, as it does for a flag that is not a list.
 func (f *frontmatterKeys) Set(s string) error {
 	f.on = true
 	if s == allFrontmatterKeys {
+		f.keys = nil
 		return nil
 	}
+	var keys []string
 	for _, k := range strings.Split(s, ",") {
 		if k == "" {
 			return errors.New("a key must not be empty")
 		}
-		f.keys = append(f.keys, k)
+		keys = append(keys, k)
 	}
+	f.keys = keys
 	return nil
 }
 

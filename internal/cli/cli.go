@@ -175,8 +175,8 @@ a submodule") is reported on standard error, the other paths are still
 searched, and the command exits with code 1.
 
 Output: items[] {path, kind}; kind is "file" or "dir". With --frontmatter,
-each item also has frontmatter[] {key, line, value}, empty when the
-frontmatter holds no key and absent when the file has none, or
+each item also has frontmatter[] {key, line, value}, empty when no key is
+printed and absent when the file has no frontmatter at all, or
 frontmatter_error {code, message}, whose code is frontmatter_invalid or
 page_too_large.`,
 		flags: findFlags, check: (*app).checkFind, run: (*app).cmdFind},
