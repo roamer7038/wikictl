@@ -25,14 +25,72 @@ func TestPutFiles(t *testing.T) {
 	}
 }
 
+// TestTopLevelWrites checks that put, edit, mv and rm write files at the wiki
+// root, while the root itself is still rejected, and that the name rules apply
+// to a top-level name as they do to any other.
+func TestTopLevelWrites(t *testing.T) {
+	cfg := setup(t)
+	if code, _, errs := runCLI(t, cfg, "---\nsummary: the wiki\n---\n# wiki\n", "put", "readme.md"); code != ExitOK || errs != "" {
+		t.Fatalf("put readme.md: code=%d errs=%q", code, errs)
+	}
+	if code, _, errs := runCLI(t, cfg, "png", "put", "logo.png"); code != ExitOK || errs != "" {
+		t.Fatalf("put logo.png: code=%d errs=%q", code, errs)
+	}
+	// The file is a page: stat reads its attributes.
+	if code, out, _ := runCLI(t, cfg, "", "stat", "--json", "readme.md"); code != ExitOK || !strings.Contains(out, `"summary":"the wiki"`) {
+		t.Errorf("stat readme.md: code=%d out=%q", code, out)
+	}
+	// edit replaces a file at the root and creates one.
+	editWith(t, "cat > \"$1\" <<'EOF'\n---\nsummary: edited\n---\n# wiki\nEOF\n")
+	for _, p := range []string{"readme.md", "changelog.md"} {
+		if code, _, errs := runCLI(t, cfg, "", "edit", p); code != ExitOK || errs != "" {
+			t.Errorf("edit %s: code=%d errs=%q", p, code, errs)
+		}
+	}
+	// mv moves a file from the root into a directory, back to the root, and
+	// renames it there; a name outside the recommended form only warns.
+	for _, args := range [][]string{{"mv", "readme.md", "global"}, {"mv", "global/readme.md", "."}} {
+		if code, _, errs := runCLI(t, cfg, "", args...); code != ExitOK || errs != "" {
+			t.Errorf("%v: code=%d errs=%q", args, code, errs)
+		}
+	}
+	if code, _, errs := runCLI(t, cfg, "", "mv", "readme.md", "README.md"); code != ExitOK || !strings.Contains(errs, "name_style") {
+		t.Errorf("mv readme.md README.md: code=%d errs=%q", code, errs)
+	}
+	// rm deletes files at the root.
+	if code, _, errs := runCLI(t, cfg, "", "rm", "README.md", "logo.png", "changelog.md"); code != ExitOK || errs != "" {
+		t.Errorf("rm at the root: code=%d errs=%q", code, errs)
+	}
+	if code, _, _ := runCLI(t, cfg, "", "cat", "README.md"); code != ExitError {
+		t.Error("README.md was not deleted")
+	}
+	// The root itself is still rejected, and so is a name starting with a dot.
+	for _, c := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"put", "."}, "bad_path"},
+		{[]string{"edit", "."}, "bad_path"},
+		{[]string{"rm", "."}, "the root of the wiki cannot be deleted"},
+		{[]string{"mv", ".", "global"}, "the root of the wiki cannot be moved"},
+		{[]string{"mv", "-T", "global", "."}, "the root of the wiki cannot be replaced"},
+		{[]string{"put", ".hidden"}, "bad_path"},
+		{[]string{"put", ".hidden.md"}, "bad_path"},
+	} {
+		if code, _, errs := runCLI(t, cfg, "x", c.args...); code != ExitInvalid || !strings.Contains(errs, c.want) {
+			t.Errorf("%v: code=%d errs=%q, want %q", c.args, code, errs, c.want)
+		}
+	}
+}
+
 func TestRm(t *testing.T) {
 	cfg := setup(t)
 	pushFiles(t, cfg, map[string]string{"README.md": "# wiki\n"})
 	if code, _, errs := runCLI(t, cfg, "x", "put", "global/img/logo.png"); code != 0 {
 		t.Fatalf("put: %s", errs)
 	}
-	// A file at the root is rejected; a name at the root that does not exist is only missing.
-	if code, _, errs := runCLI(t, cfg, "", "rm", "README.md"); code != ExitInvalid || !strings.Contains(errs, "bad_path") {
+	// A file at the root is deleted; a name at the root that does not exist is only missing.
+	if code, _, errs := runCLI(t, cfg, "", "rm", "README.md"); code != ExitOK || errs != "" {
 		t.Errorf("rm of a root file: code=%d errs=%q", code, errs)
 	}
 	if code, _, errs := runCLI(t, cfg, "", "rm", "projcts"); code != ExitError || errs != "wikictl: projcts: no such file or directory\n" {
@@ -65,7 +123,7 @@ func TestRm(t *testing.T) {
 	if got := lastCommitMessage(t, cfg); got != "wikictl: rm global global/push.md none/x.md" {
 		t.Errorf("commit message: %q", got)
 	}
-	if _, out, _ := runCLI(t, cfg, "", "ls"); out != "README.md\nmachines/\n" {
+	if _, out, _ := runCLI(t, cfg, "", "ls"); out != "machines/\n" {
 		t.Errorf("ls after rm -r: %q", out)
 	}
 
@@ -169,7 +227,7 @@ func TestMvArguments(t *testing.T) {
 		{[]string{"mv", "global/push.md", "global/new/"}, ExitError, "global/new/: not a directory"},
 		{[]string{"mv", "global/push.md", "global/index.md/x.md"}, ExitError, "global/index.md/x.md: not a directory"},
 		{[]string{"mv", "-T", "global", "."}, ExitInvalid, "the root of the wiki cannot be replaced"},
-		{[]string{"mv", "global/index.md", "index.md"}, ExitInvalid, "bad_path"},
+		{[]string{"mv", "global/index.md", ".hidden.md"}, ExitInvalid, "bad_path"},
 		{[]string{"mv", "global/index.md"}, ExitUsage, "missing destination"},
 		{[]string{"mv", "-t", "global", "-T", "projects/x.md"}, ExitUsage, "-t and -T cannot be combined"},
 		{[]string{"mv", "-T", "global/index.md", "global/push.md", "projects"}, ExitUsage, "-T takes one source"},
@@ -248,16 +306,15 @@ func TestWriteOverDirectoryOrFile(t *testing.T) {
 			t.Errorf("%v: code=%d errs=%q", c.args, code, errs)
 		}
 	}
-	// A path at the root that is not a directory is still a file at the root,
-	// and a file that is not a page follows the name rules of pages.
-	for _, p := range []string{"README.md", "newtop", "global/a b.txt", "global/.hidden"} {
+	// A file that is not a page follows the name rules of pages.
+	for _, p := range []string{"global/a b.txt", "global/.hidden"} {
 		if code, _, errs := runCLI(t, cfg, "x", "put", p); code != ExitInvalid || !strings.Contains(errs, "bad_path: ") {
 			t.Errorf("put %s: code=%d errs=%q", p, code, errs)
 		}
 	}
 	// Content that put rejects keeps the rejection of the path.
-	if code, _, errs := runCLI(t, cfg, "---\n: [\n---\n# x\n", "put", "x.md"); code != ExitInvalid || !strings.Contains(errs, "bad_path: ") {
-		t.Errorf("put x.md with invalid frontmatter: code=%d errs=%q", code, errs)
+	if code, _, errs := runCLI(t, cfg, "---\n: [\n---\n# x\n", "put", "global/a b.md"); code != ExitInvalid || !strings.Contains(errs, "bad_path: ") {
+		t.Errorf("put a bad path with invalid frontmatter: code=%d errs=%q", code, errs)
 	}
 	if got := gitOut(t, "--git-dir", remote, "rev-parse", "main"); got != head {
 		t.Errorf("a rejected write moved the remote branch: %s -> %s", head, got)

@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/pflag"
 
+	"github.com/roamer7038/wikictl/internal/page"
 	"github.com/roamer7038/wikictl/internal/wiki"
 )
 
@@ -214,7 +215,7 @@ func (a *app) lsDetails(t *fileTree, roots []string, sections []lsSection) error
 	var paths []string
 	for _, s := range sections {
 		for _, it := range s.items {
-			if it.Kind == "file" && isPage(it.Path) {
+			if it.Kind == "file" && page.IsPagePath(it.Path) {
 				paths = append(paths, it.Path)
 			}
 		}
@@ -226,7 +227,7 @@ func (a *app) lsDetails(t *fileTree, roots []string, sections []lsSection) error
 		}
 		for _, s := range sections {
 			for i, it := range s.items {
-				if it.Kind == "file" && isPage(it.Path) {
+				if it.Kind == "file" && page.IsPagePath(it.Path) {
 					pg := pages.Parse(it.Path)
 					s.items[i].Type, _ = pg.Frontmatter["type"].(string)
 					s.items[i].Summary, s.items[i].Title = pg.Summary, pg.Title

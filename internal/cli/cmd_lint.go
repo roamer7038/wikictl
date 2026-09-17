@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/roamer7038/wikictl/internal/page"
-	"github.com/roamer7038/wikictl/internal/repo"
 	"github.com/roamer7038/wikictl/internal/wiki"
 )
 
@@ -17,13 +16,13 @@ func (a *app) cmdLint(c *command, args []string) error {
 	if err != nil {
 		return err
 	}
-	all := slices.DeleteFunc(slices.Clone(t.files), func(p string) bool { return !repo.IsPagePath(p) })
+	all := slices.DeleteFunc(slices.Clone(t.files), func(p string) bool { return !page.IsPagePath(p) })
 	// Names are the paths collisions are found against: the pages, and the
 	// submodules named like one, whose name breaks a clone on a
 	// case-insensitive file system as any other colliding name does.
 	names := slices.Clone(all)
 	for p := range t.subs {
-		if repo.IsPagePath(p) {
+		if page.IsPagePath(p) {
 			names = append(names, p)
 		}
 	}
@@ -53,11 +52,10 @@ func (a *app) cmdLint(c *command, args []string) error {
 		return &gitError{err}
 	}
 	// An argument that is a file but not a page is reported, not checked: the
-	// rules lint applies are the rules of a page. isPage asks only what the
-	// name claims to be, so that a .md file the scan of the tree leaves out,
-	// such as one at the wiki root, is still checked and reported as bad_path;
-	// repo.IsPagePath above selects the pages to check when no path is given.
-	missing := slices.DeleteFunc(slices.Clone(files), func(p string) bool { return read.Exists(p) && isPage(p) })
+	// rules lint applies are the rules of a page. page.IsPagePath decides what
+	// a page is here as it does above, where it selects the pages to check
+	// when no path is given.
+	missing := slices.DeleteFunc(slices.Clone(files), func(p string) bool { return read.Exists(p) && page.IsPagePath(p) })
 	paths = slices.DeleteFunc(paths, func(p string) bool { return slices.Contains(missing, p) })
 	checked := map[string]bool{}
 	for _, p := range paths {

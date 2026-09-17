@@ -266,9 +266,14 @@ func yamlScalar(s, prefix, suffix string) string {
 	return strconv.Quote(s)
 }
 
-// relDest returns the relative link destination from fromPage to toPath.
+// relDest returns the relative link destination from fromPage to toPath. A
+// page at the wiki root has no directory above it, so nothing of toPath is
+// dropped and no "../" is added.
 func relDest(fromPage, toPath string) string {
-	from := strings.Split(path.Dir(fromPage), "/")
+	var from []string
+	if d := path.Dir(fromPage); d != "." {
+		from = strings.Split(d, "/")
+	}
 	to := strings.Split(toPath, "/")
 	i := 0
 	for i < len(from) && i < len(to)-1 && from[i] == to[i] {

@@ -15,20 +15,6 @@ import (
 	"unicode/utf8"
 )
 
-// IsPagePath reports whether p can be a page: a .md file below the root,
-// with no component starting with a dot.
-func IsPagePath(p string) bool {
-	if !strings.HasSuffix(p, ".md") || !strings.Contains(p, "/") {
-		return false
-	}
-	for _, seg := range strings.Split(p, "/") {
-		if strings.HasPrefix(seg, ".") {
-			return false
-		}
-	}
-	return true
-}
-
 // pathspec turns dirs into a git pathspec argument list, or nil for the whole tree.
 func pathspec(dirs []string) []string {
 	if len(dirs) == 0 {

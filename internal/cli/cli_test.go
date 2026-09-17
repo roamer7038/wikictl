@@ -386,13 +386,12 @@ func TestSubmoduleReads(t *testing.T) {
 		out != "global/push.md\nmachines/h1/y.md\nprojects/app/x.md\n" {
 		t.Errorf("grep -l: code=%d out=%q", code, out)
 	}
-	// The write side matches the read side: rm refuses a submodule at the
-	// wiki root as it refuses any entry there, reports one given directly as
-	// "is a submodule" instead of deleting it, and leaves one under a
-	// directory removed with -r in place. This runs last, as it changes the
-	// tree.
-	if code, _, errs := runCLI(t, cfg, "", "rm", "topsub"); code != ExitInvalid ||
-		errs != "wikictl: bad_path: topsub: a file at the wiki root cannot be deleted\n" {
+	// The write side matches the read side: rm reports a submodule as "is a
+	// submodule" instead of deleting it, at the wiki root as under a
+	// directory, and leaves one under a directory removed with -r in place.
+	// This runs last, as it changes the tree.
+	if code, _, errs := runCLI(t, cfg, "", "rm", "topsub"); code != ExitError ||
+		errs != "wikictl: topsub: is a submodule\n" {
 		t.Errorf("rm topsub: code=%d errs=%q", code, errs)
 	}
 	if code, _, errs := runCLI(t, cfg, "", "rm", "projects/subm"); code != ExitError ||
@@ -496,6 +495,66 @@ func TestNonPageFiles(t *testing.T) {
 	}
 	if code, out, errs := runCLI(t, cfg, "", "lint", "global"); code != ExitOK || out != "" {
 		t.Errorf("lint of the directory: code=%d out=%q errs=%q", code, out, errs)
+	}
+}
+
+// TestTopLevelPages checks that a .md file at the wiki root is a page like
+// any other: links to it are found, mv rewrites the links it holds, ls and
+// tree hide it when it is deprecated, and lint checks it without arguments and
+// reports no bad_path when it is named.
+func TestTopLevelPages(t *testing.T) {
+	cfg := setup(t)
+	pushFiles(t, cfg, map[string]string{
+		"README.md":  "---\nsummary: the wiki\n---\n# wiki\n[i](global/index.md)\n",
+		"old-top.md": "---\nsummary: old\nstatus: deprecated\n---\n# old\n",
+		"notes.md":   "# notes\n",
+	})
+	// links -i lists the link from the top-level page.
+	if code, out, errs := runCLI(t, cfg, "", "links", "-i", "global/index.md"); code != ExitOK || !strings.Contains(out, "in\tmentions\tREADME.md\n") {
+		t.Errorf("links -i: code=%d out=%q errs=%q", code, out, errs)
+	}
+	// ls and tree hide a deprecated top-level page unless -a is given.
+	for _, c := range []struct {
+		args   []string
+		hidden bool
+	}{
+		{[]string{"ls"}, true},
+		{[]string{"ls", "-a"}, false},
+		{[]string{"tree"}, true},
+		{[]string{"tree", "-a"}, false},
+	} {
+		code, out, errs := runCLI(t, cfg, "", c.args...)
+		if code != ExitOK || strings.Contains(out, "old-top.md") != !c.hidden || !strings.Contains(out, "README.md") {
+			t.Errorf("%v: code=%d out=%q errs=%q", c.args, code, out, errs)
+		}
+	}
+	// lint checks the top-level pages without arguments: a page without
+	// frontmatter is missing_summary, and a name outside the recommended form
+	// is name_style.
+	code, out, _ := runCLI(t, cfg, "", "lint")
+	for _, w := range []string{"README.md:0: name_style:", "notes.md:1: missing_summary:"} {
+		if !strings.Contains(out, w) {
+			t.Errorf("lint: missing %q in %q", w, out)
+		}
+	}
+	if code != ExitInvalid {
+		t.Errorf("lint: code=%d out=%q", code, out)
+	}
+	// A top-level page given to lint is no longer a bad_path.
+	if code, out, _ := runCLI(t, cfg, "", "lint", "README.md"); code != ExitInvalid || strings.Contains(out, "bad_path") ||
+		!strings.Contains(out, "README.md:0: name_style:") {
+		t.Errorf("lint README.md: code=%d out=%q", code, out)
+	}
+	// mv rewrites the links of the top-level page too.
+	var res struct {
+		Rewritten int `json:"rewritten"`
+	}
+	code, out, errs := runCLI(t, cfg, "", "mv", "--json", "global/index.md", "global/start.md")
+	if mustUnmarshal(t, out, &res); code != ExitOK || res.Rewritten != 2 {
+		t.Errorf("mv: code=%d out=%q errs=%q", code, out, errs)
+	}
+	if _, out, _ := runCLI(t, cfg, "", "cat", "README.md"); !strings.Contains(out, "[i](global/start.md)") {
+		t.Errorf("README.md after mv: %q", out)
 	}
 }
 
@@ -1741,8 +1800,8 @@ func TestWriteWithoutChange(t *testing.T) {
 	pushFiles(t, cfg, map[string]string{"README.md": "# wiki\n"})
 	head := gitOut(t, "--git-dir", remote, "rev-parse", "main")
 
-	if code, out, errs := runCLI(t, cfg, "", "mv", "README.md", "global/readme.md"); code != 4 || !strings.Contains(errs, "bad_path") {
-		t.Errorf("mv of a non-page file: code=%d out=%q errs=%q", code, out, errs)
+	if code, out, errs := runCLI(t, cfg, "", "mv", "README.md", "global/read me.md"); code != 4 || !strings.Contains(errs, "bad_path") {
+		t.Errorf("mv to a name that breaks the rules: code=%d out=%q errs=%q", code, out, errs)
 	}
 	if got := gitOut(t, "--git-dir", remote, "rev-parse", "main"); got != head {
 		t.Fatalf("rejected mv moved the remote branch: %s -> %s", head, got)

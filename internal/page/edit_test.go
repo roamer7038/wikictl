@@ -120,6 +120,17 @@ func TestRelDest(t *testing.T) {
 	if relDest("global/x.md", "projects/a/y.md") != "../projects/a/y.md" {
 		t.Error(relDest("global/x.md", "projects/a/y.md"))
 	}
+	// A page at the wiki root links to a page below it without "../", and a
+	// page below it links back to the root with one "../" per directory.
+	if relDest("README.md", "global/y.md") != "global/y.md" {
+		t.Error(relDest("README.md", "global/y.md"))
+	}
+	if relDest("README.md", "INDEX.md") != "INDEX.md" {
+		t.Error(relDest("README.md", "INDEX.md"))
+	}
+	if relDest("projects/a/x.md", "README.md") != "../../README.md" {
+		t.Error(relDest("projects/a/x.md", "README.md"))
+	}
 }
 
 func TestRelocateKeepsLineEndingsAndBOM(t *testing.T) {

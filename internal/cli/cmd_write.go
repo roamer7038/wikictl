@@ -85,7 +85,7 @@ func (a *app) cmdPut(c *command, args []string) error {
 // whose blob sha is base, or creating the file when base is empty. cmd names
 // the command in the default commit message.
 func (a *app) writeFile(p string, content []byte, base, cmd string) error {
-	if strings.HasSuffix(p, ".md") {
+	if page.IsPagePath(p) {
 		pg := page.Parse(p, content)
 		var blocking []page.Issue
 		for _, is := range pg.Issues {
@@ -207,11 +207,6 @@ func (a *app) cmdRm(c *command, args []string) error {
 		}
 	}
 	slices.Sort(files)
-	for _, p := range args {
-		if !strings.Contains(p, "/") && shas[p] != "" {
-			return &invalidError{"bad_path: " + p + ": a file at the wiki root cannot be deleted"}
-		}
-	}
 	var targets []string
 	failed := false
 	for _, p := range args {
@@ -420,9 +415,6 @@ func (a *app) cmdMv(c *command, args []string) error {
 				fail(srcs[i], "no such file or directory")
 				continue
 			}
-			if !strings.Contains(src, "/") {
-				return &invalidError{"bad_path: " + src + ": a file at the wiki root cannot be moved"}
-			}
 			if isSubmodule(src) {
 				fail(srcs[i], "cannot move a submodule")
 				continue
@@ -435,7 +427,7 @@ func (a *app) cmdMv(c *command, args []string) error {
 				fail(dst, "not a directory")
 				continue
 			}
-			if strings.HasSuffix(target, ".md") {
+			if page.IsPagePath(target) {
 				for _, is := range page.PathIssues(target) {
 					if is.Code == "bad_path" {
 						return &invalidError{is.Code + ": " + is.Message}
@@ -499,7 +491,7 @@ func (a *app) cmdMv(c *command, args []string) error {
 // checkFilePath checks the path of a file that is written or moved to:
 // CheckPath for a page, CheckFilePath for any other file.
 func checkFilePath(p string) error {
-	if strings.HasSuffix(p, ".md") {
+	if page.IsPagePath(p) {
 		return page.CheckPath(p)
 	}
 	return page.CheckFilePath(p)
@@ -522,7 +514,7 @@ func (a *app) badPath(p string, err error) error {
 }
 
 // moveChanges builds the changes that move the files of mapping (old path ->
-// new path), each keeping its mode from modes. Pages (repo.IsPagePath) move
+// new path), each keeping its mode from modes. Pages (page.IsPagePath) move
 // through wiki.Relocate over entries, the files of the whole tree, with the
 // old name added to aliases when it changes; other files move unchanged. Links
 // in pages to any moved .md file are rewritten. It also returns the number of
@@ -538,7 +530,7 @@ func (a *app) moveChanges(entries []repo.Entry, mapping, modes map[string]string
 	}
 	pages, others := map[string]string{}, []string{}
 	for f, np := range mapping {
-		if repo.IsPagePath(f) {
+		if page.IsPagePath(f) {
 			pages[f] = np
 		} else {
 			others = append(others, f)

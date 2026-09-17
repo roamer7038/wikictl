@@ -67,6 +67,22 @@ func CheckLength(p string) error {
 	return nil
 }
 
+// IsPagePath reports whether p names a page, the only kind of file whose
+// content is interpreted: a name ending in .md with no component starting with
+// a dot, at the wiki root or in a directory. Every command applies this
+// definition; whether such a path may be written is decided by CheckPath.
+func IsPagePath(p string) bool {
+	if !strings.HasSuffix(p, ".md") {
+		return false
+	}
+	for _, x := range strings.Split(p, "/") {
+		if strings.HasPrefix(x, ".") {
+			return false
+		}
+	}
+	return true
+}
+
 // CheckPath returns nil when p can be a page path: a .md suffix and, without
 // it, a path that CheckFilePath accepts. The length of a name is checked with
 // the suffix, which is part of the file name.
@@ -80,15 +96,12 @@ func CheckPath(p string) error {
 	return CheckLength(p)
 }
 
-// CheckFilePath returns nil when p can be the path of a file: at least one
-// directory, every component passing CheckName, and no component over
-// MaxNameLen bytes.
+// CheckFilePath returns nil when p can be the path of a file: every component
+// passing CheckName and no component over MaxNameLen bytes. A file at the wiki
+// root is such a path of one component; the root itself is not, since CheckName
+// rejects both "." and the empty name.
 func CheckFilePath(p string) error {
-	parts := strings.Split(p, "/")
-	if len(parts) < 2 {
-		return errors.New("file must be in a directory, not at the wiki root")
-	}
-	for _, x := range parts {
+	for _, x := range strings.Split(p, "/") {
 		if err := CheckName(x); err != nil {
 			return err
 		}

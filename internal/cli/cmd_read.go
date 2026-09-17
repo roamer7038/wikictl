@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/pflag"
 
+	"github.com/roamer7038/wikictl/internal/page"
 	"github.com/roamer7038/wikictl/internal/repo"
 	"github.com/roamer7038/wikictl/internal/wiki"
 )
@@ -113,7 +114,7 @@ func (a *app) cmdStat(c *command, args []string) error {
 	items := []statItem{}
 	for _, p := range found {
 		it := statItem{Path: p, SHA: pages.Objects[p].SHA, Updated: fmtTime(updated[p]), Tags: []string{}, Aliases: []string{}}
-		if isPage(p) {
+		if page.IsPagePath(p) {
 			pg := pages.Parse(p)
 			it.Title, it.Summary = pg.Title, pg.Summary
 			it.Type, _ = pg.Frontmatter["type"].(string)
@@ -161,10 +162,6 @@ const (
 	isSubmodule = "is a submodule"
 	notAPage    = "is not a page"
 )
-
-// isPage reports whether p names a page, the only kind of file whose content
-// is interpreted: a path ending in .md, as put reads it.
-func isPage(p string) bool { return strings.HasSuffix(p, ".md") }
 
 // notEmpty returns the paths that are not empty. An empty path names no file
 // and git rejects it as a pathspec, so it never reaches git; the commands
@@ -271,7 +268,7 @@ func (a *app) cmdLinks(c *command, args []string) error {
 	if err != nil {
 		return &gitError{err}
 	}
-	if !pages.Exists(p) || !isPage(p) {
+	if !pages.Exists(p) || !page.IsPagePath(p) {
 		msg, err := a.pageMessage(args)
 		if err != nil {
 			return err

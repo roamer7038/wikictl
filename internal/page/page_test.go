@@ -6,12 +6,12 @@ import (
 )
 
 func TestCheckPath(t *testing.T) {
-	for _, p := range []string{"global/x.md", "projects/my-app/x.md", "global/Foo_bar.md", "global/日本語.md", "global/-x.md", "global/a[b].md", "global/a<b.md", "global/a|b.md"} {
+	for _, p := range []string{"x.md", "README.md", "global/x.md", "projects/my-app/x.md", "global/Foo_bar.md", "global/日本語.md", "global/-x.md", "global/a[b].md", "global/a<b.md", "global/a|b.md"} {
 		if err := CheckPath(p); err != nil {
 			t.Errorf("%q should be accepted: %v", p, err)
 		}
 	}
-	for _, p := range []string{"", "x.md", "global/x", "global/x.md/", "/global/x.md", "global//x.md", "global/.md", ".hidden/x.md", "global/../x.md", "./global/x.md", "global/my page.md", "global/a\tb.md", "global/a\x00b.md", "global/a#b.md", "global/a)b.md", "global/a\"b.md", "global/a\\b.md", "global/a:b.md", "global/a?b.md", "global/a(b.md", "global/<x.md", "a:b/x.md", "global/a`b.md"} {
+	for _, p := range []string{"", ".", ".md", "global/x", "global/x.md/", "/global/x.md", "global//x.md", "global/.md", ".hidden/x.md", "global/../x.md", "./global/x.md", "global/my page.md", "global/a\tb.md", "global/a\x00b.md", "global/a#b.md", "global/a)b.md", "global/a\"b.md", "global/a\\b.md", "global/a:b.md", "global/a?b.md", "global/a(b.md", "global/<x.md", "a:b/x.md", "global/a`b.md"} {
 		if err := CheckPath(p); err == nil {
 			t.Errorf("%q should be rejected", p)
 		}
@@ -33,6 +33,22 @@ func TestCheckPath(t *testing.T) {
 	}
 	if err := CheckName(long + "b"); err != nil {
 		t.Errorf("CheckName must not apply the length limit: %v", err)
+	}
+}
+
+// TestIsPagePath checks the one definition of a page that every command
+// applies: a name ending in .md with no component starting with a dot, at the
+// wiki root or in a directory.
+func TestIsPagePath(t *testing.T) {
+	for _, p := range []string{"README.md", "global/x.md", "projects/app/x.md", "global/日本語.md", "global/A b.md"} {
+		if !IsPagePath(p) {
+			t.Errorf("%q should be a page", p)
+		}
+	}
+	for _, p := range []string{"", ".", ".md", "x", "logo.png", "global/x.txt", ".github/x.md", "global/.x.md", "global/x.md/y.txt"} {
+		if IsPagePath(p) {
+			t.Errorf("%q should not be a page", p)
+		}
 	}
 }
 
