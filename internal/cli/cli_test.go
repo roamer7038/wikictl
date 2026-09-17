@@ -402,17 +402,23 @@ func TestSubmoduleReads(t *testing.T) {
 	if out := gitOut(t, "--git-dir", remote, "ls-tree", "main", "--", "projects/subm", "topsub"); !strings.Contains(out, "projects/subm") {
 		t.Errorf("tree after rm projects/subm: %q", out)
 	}
-	// rm -r deletes the other files of a directory but leaves a submodule
-	// under it, and .gitmodules-equivalent, untouched.
-	if code, _, errs := runCLI(t, cfg, "", "rm", "-r", "projects"); code != ExitOK || errs != "" {
+	// rm -r deletes the other files of a directory but reports a submodule
+	// under it as "is a submodule" and leaves it, and .gitmodules-equivalent,
+	// untouched, exiting with code 1 as it does for any path it could not
+	// delete.
+	if code, _, errs := runCLI(t, cfg, "", "rm", "-r", "projects"); code != ExitError ||
+		errs != "wikictl: projects/subm: is a submodule\n" {
 		t.Errorf("rm -r projects: code=%d errs=%q", code, errs)
 	}
 	if out := gitOut(t, "--git-dir", remote, "ls-tree", "-r", "main", "--", "projects"); !strings.Contains(out, "projects/subm") || strings.Contains(out, "projects/app") {
 		t.Errorf("tree after rm -r projects: %q", out)
 	}
-	// A directory that holds only a submodule has nothing to delete, so rm -r
-	// succeeds without deleting anything.
-	if code, out, errs := runCLI(t, cfg, "", "rm", "-r", "--json", "mods/lib"); code != ExitOK || errs != "" || out != `{"commit":"","paths":[]}`+"\n" {
+	// A directory that holds only a submodule has nothing else to delete, so
+	// rm -r deletes nothing but still reports the submodule and exits with
+	// code 1, as #188 requires for a command that would otherwise report
+	// success without doing anything.
+	if code, out, errs := runCLI(t, cfg, "", "rm", "-r", "--json", "mods/lib"); code != ExitError ||
+		errs != "wikictl: mods/lib/sub: is a submodule\n" || out != `{"commit":"","paths":[]}`+"\n" {
 		t.Errorf("rm -r mods/lib: code=%d out=%q errs=%q", code, out, errs)
 	}
 	if out := gitOut(t, "--git-dir", remote, "ls-tree", "-r", "main", "--", "mods/lib"); !strings.Contains(out, "mods/lib/sub") {

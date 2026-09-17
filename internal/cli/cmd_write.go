@@ -221,9 +221,13 @@ func (a *app) cmdRm(c *command, args []string) error {
 			failed = true
 		case len(sub) > 0:
 			// A submodule under a directory removed with -r is left in
-			// place, as mv and the read commands leave one (#150, #169).
+			// place and reported, as one given directly is; the other files
+			// under the directory are still deleted.
 			for _, f := range sub {
-				if !subs[f] {
+				if subs[f] {
+					fmt.Fprintf(a.stderr, "wikictl: %s: %s\n", escapeControl(f), isSubmodule)
+					failed = true
+				} else {
 					targets = append(targets, f)
 				}
 			}
