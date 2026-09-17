@@ -42,9 +42,9 @@ func TestUsageErrorsNeedNoConfig(t *testing.T) {
 			t.Errorf("%v: code=%d errs=%q", args, code, errs)
 		}
 	}
-	code, _, errs := runNoConfig(t, "links")
-	if code != ExitUsage || !strings.Contains(errs, "Usage: wikictl links [flags] <path>") {
-		t.Errorf("links: code=%d errs=%q", code, errs)
+	code, _, errs := runNoConfig(t, "stat")
+	if code != ExitUsage || !strings.Contains(errs, "Usage: wikictl stat <path>...") {
+		t.Errorf("stat: code=%d errs=%q", code, errs)
 	}
 	code, _, errs = runNoConfig(t, "put", "--bogus", "global/x.md")
 	if code != ExitUsage || !strings.Contains(errs, "-bogus") {
@@ -98,8 +98,12 @@ func TestEveryCommandHasHelp(t *testing.T) {
 	if code, out, _ := runNoConfig(t, "put", "-h"); code != ExitOK || !strings.Contains(out, "--base <sha>") || !strings.Contains(out, "-m, --message <message>") {
 		t.Errorf("put -h must list flags: code=%d out=%q", code, out)
 	}
-	if code, out, _ := runNoConfig(t, "links", "-h"); code != ExitOK || !strings.Contains(out, "Usage: wikictl links [flags] <path>") {
-		t.Errorf("links -h: code=%d out=%q", code, out)
+	// -h of links is --no-filename, as it is in grep, so its help needs --help.
+	if code, out, _ := runNoConfig(t, "links", "--help"); code != ExitOK || !strings.Contains(out, "Usage: wikictl links [flags] [<path>...]") {
+		t.Errorf("links --help: code=%d out=%q", code, out)
+	}
+	if code, out, _ := runNoConfig(t, "links", "-h"); code == ExitOK {
+		t.Errorf("links -h must not print the help: code=%d out=%q", code, out)
 	}
 	// Every issue code that lint reports is described in its help.
 	_, out, _ := runNoConfig(t, "help", "lint")

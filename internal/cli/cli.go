@@ -94,18 +94,34 @@ directory or is a submodule is reported as cat reports it.
 Output: items[] {path, sha, updated, title, summary, type, tags, status,
 aliases}.`,
 		run: (*app).cmdStat},
-	{name: "links", args: "<path>", minArgs: 1, maxArgs: 1, paths: true,
-		summary: "List the links in a page and to it",
-		detail: `List the links of a page, one per line as "<direction><TAB><type><TAB><target>".
-Direction "out" is a link in the page: a typed link from its Links section, or
-"mentions" for a link in its body to a page that the Links section does not
-link to. Direction "in" is a link to the page from another page: that page's
-typed link, or "mentions". With -o only the links in the page are listed,
-with -i only the links to it. A path that does not exist, is a directory, is a
-submodule or is not a page ("is not a page") is reported as cat reports it,
-also with --json, where items is empty, and the command exits with code 1.
+	{name: "links", args: "[<path>...]", maxArgs: -1, paths: true,
+		summary: "List the links in pages and to them",
+		detail: `List the links of each page, one per line as
+"<direction><TAB><type><TAB><target>". Direction "out" is a link in the page:
+a typed link from its Links section, or "mentions" for a link in its body to a
+page or to an http or https URL that the Links section does not link to.
+Direction "in" is a link to the page from another page: that page's typed
+link, or "mentions". With -o only the links in the pages are listed, with -i
+only the links to them.
 
-Output: items[] {direction, type, target, note}.`,
+A path that is a directory stands for the pages under it, and without a path
+every page of the wiki is read, the pages with status: deprecated and the .md
+files at the root included, as lint reads them. The path is printed before
+each link, as "<path><TAB><direction>...", when more than one path is given,
+when none is, or when a path is a directory; -H prints it always and -h
+never, and of the two the one written last wins. For a graph of the whole
+wiki use -o, since listing both directions gives every link twice, once for
+each of the two pages it joins.
+
+The pages that link to the pages read are found with one search, however many
+they are. A path that does not exist, is a submodule or is not a page ("is not
+a page") is reported as cat reports it, also with --json, and the command
+exits with code 1.
+
+Output: items[] {path, direction, type, target, note, line, url}. line is the
+line the link is on in the page that holds it: the page of path for "out",
+and the page of target for "in". url tells whether target is a URL instead of
+a page.`,
 		flags: linksFlags, run: (*app).cmdLinks},
 	{name: "ls", args: "[<path>...]", maxArgs: -1, paths: true,
 		summary: "List the entries of directories",
@@ -433,6 +449,7 @@ type app struct {
 	// Command flags, registered by the flags function of the command.
 	linksIn   bool
 	linksOut  bool
+	filename  filenameMode
 	long      bool
 	recursive bool
 	byTime    bool

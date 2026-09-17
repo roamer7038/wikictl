@@ -33,10 +33,12 @@ type Store interface {
 	CheckMissing(paths []string) error
 }
 
-// grepPages returns the pages that have a line matching pattern, given to
-// "git grep -l" with flags.
-func grepPages(s Store, flags []string, pattern string) ([]string, error) {
-	records, err := s.GrepRecords(append(flags, "-l"), []string{pattern}, nil)
+// grepPages returns the pages that have a line matching one of patterns,
+// given to "git grep -l" with flags. Every pattern is searched for in the one
+// git grep that "-e" allows, so the number of patterns does not change the
+// number of commands run.
+func grepPages(s Store, flags []string, patterns ...string) ([]string, error) {
+	records, err := s.GrepRecords(append(flags, "-l"), patterns, nil)
 	var out []string
 	for _, rec := range records {
 		if page.IsPagePath(rec[0]) {
@@ -131,50 +133,62 @@ func Clean(p string) (string, error) {
 	return c, nil
 }
 
-// Backlink is a page that links to another page, with the type of the link:
-// the type from its Links section, or "mentions" for a link in its body.
+// Backlink is a page that links to another page, with the type of the link,
+// the type from its Links section or "mentions" for a link in its body, and
+// the line the link is on in that page.
 type Backlink struct {
 	Path string `json:"path"`
 	Type string `json:"type"`
+	Line int    `json:"line"`
 }
 
-// Backlinks greps the wiki for the file name of target, ignoring case as
-// repo.FoldPattern does, to find candidate pages, then parses each candidate
-// and keeps those whose links resolve to target. Typed links win over body
-// mentions.
-func Backlinks(s Store, target string) ([]Backlink, error) {
-	cands, err := grepPages(s, []string{"-E"}, repo.FoldPattern(path.Base(target)))
-	if err != nil {
-		return nil, err
+// BacklinkCandidates greps the wiki for the file names of targets, ignoring
+// case as repo.FoldPattern does, and returns the pages that may link to one
+// of them. One git grep covers every target, so finding the pages that link
+// to many pages costs one search, not one search per page.
+func BacklinkCandidates(s Store, targets []string) ([]string, error) {
+	var pats []string
+	seen := map[string]bool{}
+	for _, t := range targets {
+		if b := path.Base(t); b != "" && !seen[b] {
+			seen[b] = true
+			pats = append(pats, repo.FoldPattern(b))
+		}
 	}
-	pages, err := ReadPages(s, cands)
-	if err != nil {
-		return nil, err
+	if len(pats) == 0 {
+		return nil, nil
 	}
-	out := []Backlink{}
+	return grepPages(s, []string{"-E"}, pats...)
+}
+
+// Backlinks returns, for each page of targets that has one, the pages among
+// cands whose links resolve to it. cands are the pages searched, from
+// BacklinkCandidates or, when the targets are every page of the wiki, that
+// list itself; pages must hold them, so that the candidates are read once
+// however many targets there are. Typed links win over body mentions, and a
+// page is not a backlink of itself.
+func Backlinks(pages Pages, cands, targets []string) map[string][]Backlink {
+	want := map[string]bool{}
+	for _, t := range targets {
+		want[t] = true
+	}
+	out := map[string][]Backlink{}
 	for _, cp := range cands {
-		if cp == target {
-			continue
-		}
 		pg := pages.Parse(cp)
-		typed := false
+		typed := map[string]bool{}
 		for _, l := range pg.Links {
-			if !l.IsURL && l.Target == target {
-				out = append(out, Backlink{cp, l.Type})
-				typed = true
+			if !l.IsURL && l.Target != cp && want[l.Target] {
+				out[l.Target] = append(out[l.Target], Backlink{cp, l.Type, l.Line})
+				typed[l.Target] = true
 			}
-		}
-		if typed {
-			continue
 		}
 		for _, m := range pg.Mentions {
-			if m.Target == target {
-				out = append(out, Backlink{cp, "mentions"})
-				break
+			if m.Target != cp && want[m.Target] && !typed[m.Target] {
+				out[m.Target] = append(out[m.Target], Backlink{cp, "mentions", m.Line})
 			}
 		}
 	}
-	return out, nil
+	return out
 }
 
 // BrokenLinks returns a broken_link issue for every link and mention of pages

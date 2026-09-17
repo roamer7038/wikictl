@@ -117,24 +117,40 @@ func parseLinks(lines []Line, pagePath string) ([]Link, []Issue) {
 	return links, issues
 }
 
-// bodyLinks returns the page references in the body (outside code fences and
-// code spans) as links of type "mentions", one per distinct target. The line
-// of a link is the line where its destination starts.
-func bodyLinks(lines []Line, pagePath string) []Link {
-	var out []Link
+// bodyLinks returns the links in the body (outside code fences and code
+// spans), all of type "mentions": mentions holds the page references, one per
+// distinct target, and urls the destinations that are URLs of the http or
+// https scheme, one per distinct URL and with IsURL set. An image is a
+// reference to a page but not a link to a URL, and a URL of another scheme,
+// an autolink and a bare URL are no link to a URL either. The line of a link
+// is the line where its destination starts.
+func bodyLinks(lines []Line, pagePath string) (mentions, urls []Link) {
 	seen := map[string]bool{}
 	eachParagraph(lines, -1, func(from, _ int, text string, offsets []int) {
 		for _, m := range findLinks(text) {
-			got, isURL, ok := resolveDest(pagePath, text[m.destStart:m.destEnd])
-			if !ok || isURL || seen[got] {
+			dest := text[m.destStart:m.destEnd]
+			got, isURL, ok := resolveDest(pagePath, dest)
+			if !ok || seen[got] || isURL && (m.image || !webURL(dest)) {
 				continue
 			}
 			seen[got] = true
 			n := lines[from+sort.SearchInts(offsets, m.destStart+1)-1].N
-			out = append(out, Link{Type: "mentions", Target: got, Line: n})
+			l := Link{Type: "mentions", Target: got, Line: n, IsURL: isURL}
+			if isURL {
+				urls = append(urls, l)
+			} else {
+				mentions = append(mentions, l)
+			}
 		}
 	})
-	return out
+	return mentions, urls
+}
+
+// webURL reports whether dest is a URL of the http or https scheme, the only
+// URLs that bodyLinks lists: a link to another scheme, such as mailto: or
+// data:, is not a reference a reader can follow to a page of the web.
+func webURL(dest string) bool {
+	return strings.HasPrefix(dest, "http://") || strings.HasPrefix(dest, "https://")
 }
 
 // indent returns the index of the first byte of t after up to three spaces, or
@@ -275,8 +291,9 @@ func eachParagraph(lines []Line, linksStart int, fn func(from, to int, text stri
 
 // inlineLink is the position of an inline link or image in a paragraph.
 type inlineLink struct {
-	start, end         int // from "[" or "![" to the closing ")"
-	destStart, destEnd int // the destination without angle brackets and title
+	start, end         int  // from "[" or "![" to the closing ")"
+	destStart, destEnd int  // the destination without angle brackets and title
+	image              bool // the link is an image, written "![text](dest)"
 }
 
 // findLinks returns the inline links and images of a paragraph, whose lines
@@ -344,7 +361,7 @@ func findLinks(s string) []inlineLink {
 			inactive = min(inactive, k)
 			if active && i+1 < len(s) && s[i+1] == '(' {
 				if start, end, next, ok := parseDest(s, i+2); ok && next < len(s) && s[next] == ')' {
-					out = append(out, inlineLink{start: o.pos, end: next + 1, destStart: start, destEnd: end})
+					out = append(out, inlineLink{start: o.pos, end: next + 1, destStart: start, destEnd: end, image: o.image})
 					if !o.image {
 						inactive = k
 					}

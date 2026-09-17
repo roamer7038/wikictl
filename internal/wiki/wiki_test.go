@@ -60,6 +60,17 @@ func (s *recordingStore) CheckMissing(paths []string) error {
 	return s.fakeStore.CheckMissing(paths)
 }
 
+// countingStore is a fakeStore that counts the searches it runs.
+type countingStore struct {
+	fakeStore
+	greps int
+}
+
+func (s *countingStore) GrepRecords(flags, patterns, dirs []string) ([][]string, error) {
+	s.greps++
+	return s.fakeStore.GrepRecords(flags, patterns, dirs)
+}
+
 // GrepRecords returns the path of every file that contains one of patterns,
 // as fixed strings with -F and as regular expressions otherwise.
 func (f fakeStore) GrepRecords(flags, patterns, dirs []string) ([][]string, error) {
@@ -169,6 +180,21 @@ func TestClean(t *testing.T) {
 	}
 }
 
+// backlinksOf runs the three steps the links command runs: one search for the
+// candidates, one read of them, and the matching of their links.
+func backlinksOf(t *testing.T, s Store, targets ...string) map[string][]Backlink {
+	t.Helper()
+	cands, err := BacklinkCandidates(s, targets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages, err := ReadPages(s, cands)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return Backlinks(pages, cands, targets)
+}
+
 func TestBacklinks(t *testing.T) {
 	s := fakeStore{
 		"global/index.md": "# i\n",
@@ -177,12 +203,32 @@ func TestBacklinks(t *testing.T) {
 		"projects/p/b.md": "# b\nsee [i](../../global/index.md)\n",
 		"projects/p/x.md": "# x\n[i](index.md)\n",
 	}
-	got, err := Backlinks(s, "global/index.md")
-	if err != nil {
-		t.Fatal(err)
+	// The line of a backlink is the line of the link in the linking page: the
+	// Links line of a.md, not the body link it wins over.
+	want := []Backlink{{"global/a.md", "part_of", 5}, {"projects/p/b.md", "mentions", 2}}
+	if got := backlinksOf(t, s, "global/index.md"); !slices.Equal(got["global/index.md"], want) {
+		t.Errorf("Backlinks = %v, want %v", got["global/index.md"], want)
 	}
-	want := []Backlink{{"global/a.md", "part_of"}, {"projects/p/b.md", "mentions"}}
-	if !slices.Equal(got, want) {
+}
+
+// TestBacklinksManyTargets checks that the pages linking to several pages are
+// found with one search, and that each target keeps its own backlinks.
+func TestBacklinksManyTargets(t *testing.T) {
+	s := &countingStore{fakeStore: fakeStore{
+		"global/index.md": "# i\n",
+		"global/push.md":  "# p\n\n## Links\n- part_of: [i](index.md)\n",
+		"global/a.md":     "# a\nsee [p](push.md) and [i](index.md)\n",
+		"global/none.md":  "# n\n",
+	}}
+	got := backlinksOf(t, s, "global/index.md", "global/push.md")
+	if s.greps != 1 {
+		t.Errorf("git grep ran %d times for two targets, want 1", s.greps)
+	}
+	want := map[string][]Backlink{
+		"global/index.md": {{"global/a.md", "mentions", 2}, {"global/push.md", "part_of", 4}},
+		"global/push.md":  {{"global/a.md", "mentions", 2}},
+	}
+	if !maps.EqualFunc(got, want, slices.Equal[[]Backlink]) {
 		t.Errorf("Backlinks = %v, want %v", got, want)
 	}
 }
@@ -192,8 +238,8 @@ func TestBacklinksOfLargePage(t *testing.T) {
 		"global/index.md": "# i\n",
 		"global/big.md":   "# big\n[i](index.md)\n" + strings.Repeat("x", page.MaxPageSize),
 	}
-	if got, err := Backlinks(s, "global/index.md"); err != nil || len(got) != 0 {
-		t.Errorf("a page over the size limit is not parsed: %v %v", got, err)
+	if got := backlinksOf(t, s, "global/index.md"); len(got) != 0 {
+		t.Errorf("a page over the size limit is not parsed: %v", got)
 	}
 }
 

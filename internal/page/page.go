@@ -18,6 +18,7 @@ type Page struct {
 	Frontmatter map[string]any
 	Links       []Link  // typed links from the Links section
 	Mentions    []Link  // page references from the body
+	URLs        []Link  // http and https URLs linked from the body
 	Issues      []Issue // format violations found while parsing
 }
 
@@ -67,7 +68,7 @@ func Parse(p string, content []byte) *Page {
 		pg.Links, iss = parseLinks(lines[ls:], p)
 		pg.Issues = append(pg.Issues, iss...)
 	}
-	pg.Mentions = bodyLinks(bodyLines, p)
+	pg.Mentions, pg.URLs = bodyLinks(bodyLines, p)
 	var sb strings.Builder
 	for _, l := range bodyLines {
 		sb.WriteString(l.Text)

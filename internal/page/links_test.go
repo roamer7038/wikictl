@@ -33,9 +33,37 @@ func TestBodyLinks(t *testing.T) {
 	body := "# t\nsee [a](a.md) and [b](../../global/b.md#x) and [img](i.png) and [u](https://e/)\n```\n[c](c.md)\n```\n`[d](d.md)` text\n## Links\n- see_also: [a](a.md)\n"
 	ls := scanLines([]byte(body), 1)
 	start, _, _ := headings(ls)
-	got := bodyLinks(ls[:start], "projects/a/x.md")
+	got, urls := bodyLinks(ls[:start], "projects/a/x.md")
 	if len(got) != 2 || got[0].Target != "projects/a/a.md" || got[1].Target != "global/b.md" || got[0].Type != "mentions" {
 		t.Errorf("%+v", got)
+	}
+	// The URL of the body is listed apart from the pages it refers to.
+	if len(urls) != 1 || urls[0].Target != "https://e/" || urls[0].Type != "mentions" || !urls[0].IsURL {
+		t.Errorf("%+v", urls)
+	}
+}
+
+// TestBodyURLs checks which destinations of the body are listed as URLs: the
+// inline links of the http and https schemes, one per distinct URL and on the
+// line where it first appears. An image, another scheme, an autolink and a
+// bare URL are not listed, and a URL is no reference to a page.
+func TestBodyURLs(t *testing.T) {
+	body := "# t\n" +
+		"see [a](https://e/a) and [b](http://e/b)\n" +
+		"![i](https://e/i.png)\n" +
+		"[m](mailto:x@e) and [d](data:text/plain,x)\n" +
+		"<https://e/auto> and https://e/bare\n" +
+		"[a again](https://e/a) and [p](p.md)\n"
+	mentions, urls := bodyLinks(scanLines([]byte(body), 1), "d/x.md")
+	want := []Link{
+		{Type: "mentions", Target: "https://e/a", Line: 2, IsURL: true},
+		{Type: "mentions", Target: "http://e/b", Line: 2, IsURL: true},
+	}
+	if !slices.Equal(urls, want) {
+		t.Errorf("bodyLinks urls = %+v, want %+v", urls, want)
+	}
+	if len(mentions) != 1 || mentions[0].Target != "d/p.md" || mentions[0].IsURL {
+		t.Errorf("bodyLinks mentions = %+v", mentions)
 	}
 }
 
@@ -112,7 +140,7 @@ func TestBodyLinkSyntax(t *testing.T) {
 			if ls, _, _ := headings(lines); ls >= 0 {
 				lines = lines[:ls]
 			}
-			got := bodyLinks(lines, "d/p.md")
+			got, _ := bodyLinks(lines, "d/p.md")
 			if tc.target == "" && len(got) != 0 || tc.target != "" && (len(got) != 1 || got[0].Target != tc.target) {
 				t.Errorf("bodyLinks = %+v, want target %q", got, tc.target)
 			}

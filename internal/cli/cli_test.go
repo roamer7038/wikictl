@@ -1457,7 +1457,6 @@ func TestMissingPaths(t *testing.T) {
 		{[]string{"stat", "none"}, ExitError, "none: no such file or directory", `{"items":[]}`},
 		{[]string{"stat", "global"}, ExitError, "global: is a directory", `{"items":[]}`},
 		{[]string{"links", "none"}, ExitError, "none: no such file or directory", `{"items":[]}`},
-		{[]string{"links", "global"}, ExitError, "global: is a directory", `{"items":[]}`},
 		{[]string{"ls", "none"}, ExitError, "none: no such file or directory", `{"items":[]}`},
 		{[]string{"find", "none"}, ExitError, "none: no such file or directory", `{"items":[]}`},
 		{[]string{"tree", "none"}, ExitError, "none: no such file or directory", `{"directories":0,"files":0,"items":[]}`},
