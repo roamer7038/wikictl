@@ -398,8 +398,9 @@ func TestSubmoduleReads(t *testing.T) {
 		errs != "wikictl: projects/subm: is a submodule\n" {
 		t.Errorf("rm projects/subm: code=%d errs=%q", code, errs)
 	}
-	if out := gitOut(t, "--git-dir", remote, "ls-tree", "main", "--", "projects/subm", "topsub"); !strings.Contains(out, "projects/subm") {
-		t.Errorf("tree after rm projects/subm: %q", out)
+	if out := gitOut(t, "--git-dir", remote, "ls-tree", "main", "--", "projects/subm", "topsub"); !strings.Contains(out, "projects/subm") ||
+		!strings.Contains(out, "topsub") {
+		t.Errorf("tree after rm of the submodules: %q", out)
 	}
 	// rm -r deletes the other files of a directory but reports a submodule
 	// under it as "is a submodule" and leaves it, and .gitmodules-equivalent,
@@ -1792,8 +1793,8 @@ func gitOut(t *testing.T, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// TestWriteWithoutChange checks that writes whose source is not a page, or
-// that leave the tree unchanged, create no commit on the remote.
+// TestWriteWithoutChange checks that a write the path rules reject, or one
+// that leaves the tree unchanged, creates no commit on the remote.
 func TestWriteWithoutChange(t *testing.T) {
 	cfg := setup(t)
 	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
