@@ -2163,3 +2163,129 @@ func TestGrepOnEmptyWiki(t *testing.T) {
 		t.Errorf("grep -l --json: code=%d out=%q errs=%q", code, out, errs)
 	}
 }
+
+// TestLintIgnore checks that lint.ignore removes name_style and
+// missing_summary from lint's report, exit code and --json, and silences the
+// same warnings that put and mv print, while a rule that cannot be ignored,
+// or a name that is not a rule at all, is warned about on standard error and
+// left in full effect, with the default (no lint.ignore) unchanged.
+func TestLintIgnore(t *testing.T) {
+	cfg := setupEmpty(t)
+	base, err := os.ReadFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pushFiles(t, cfg, map[string]string{
+		"README.md":     "# wiki\n[gone](gone.md)\n",
+		"global/x.md":   "---\nsummary: x\n---\n# x\n",
+		"global/Bad.md": "---\nsummary: bad name\n---\n# bad\n",
+	})
+
+	// Default: no lint.ignore, so every rule is reported and the exit code is 4.
+	code, out, _ := runCLI(t, cfg, "", "lint")
+	for _, w := range []string{"name_style", "missing_summary", "broken_link"} {
+		if !strings.Contains(out, w) {
+			t.Errorf("default lint must report %s: %q", w, out)
+		}
+	}
+	if code != ExitInvalid {
+		t.Errorf("default lint: code=%d out=%q", code, out)
+	}
+
+	withLint := func(t *testing.T, ignore string) {
+		t.Helper()
+		yml := append(slices.Clone(base), []byte("lint:\n  ignore: "+ignore+"\n")...)
+		if err := os.WriteFile(cfg, yml, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// lint.ignore removes name_style and missing_summary from the text report,
+	// the exit code and --json, but leaves broken_link, which it may not list.
+	withLint(t, "[name_style, missing_summary]")
+	code, out, errs := runCLI(t, cfg, "", "lint")
+	if code != ExitInvalid || strings.Contains(out, "name_style") || strings.Contains(out, "missing_summary") ||
+		!strings.Contains(out, "broken_link") || errs != "" {
+		t.Errorf("lint with ignore: code=%d out=%q errs=%q", code, out, errs)
+	}
+	var li struct {
+		Items []struct{ Code string }
+	}
+	_, out, _ = runCLI(t, cfg, "", "--json", "lint")
+	mustUnmarshal(t, out, &li)
+	for _, it := range li.Items {
+		if it.Code == "name_style" || it.Code == "missing_summary" {
+			t.Errorf("--json lint must not list %s: %s", it.Code, out)
+		}
+	}
+	// A page whose only issue is ignored now passes lint outright.
+	if code, out, errs := runCLI(t, cfg, "", "lint", "global/Bad.md"); code != ExitOK || out != "" {
+		t.Errorf("lint of a page with only an ignored issue: code=%d out=%q errs=%q", code, out, errs)
+	}
+
+	// The same ignore silences the write-side warnings of put and mv.
+	if code, _, errs := runCLI(t, cfg, "# no fm\n", "put", "global/nofm.md"); code != ExitOK || errs != "" {
+		t.Errorf("put with ignore: code=%d errs=%q", code, errs)
+	}
+	if code, _, errs := runCLI(t, cfg, "", "mv", "global/x.md", "global/Renamed.md"); code != ExitOK || strings.Contains(errs, "name_style") {
+		t.Errorf("mv with ignore: code=%d errs=%q", code, errs)
+	}
+	runCLI(t, cfg, "", "mv", "global/Renamed.md", "global/x.md")
+
+	// A rule that cannot be ignored is warned about, distinctly, and left in
+	// full effect; lint still reports it and put still warns about it.
+	withLint(t, "[broken_link]")
+	code, out, errs = runCLI(t, cfg, "", "lint")
+	if code != ExitInvalid || !strings.Contains(out, "broken_link") ||
+		!strings.Contains(errs, `lint.ignore: rule "broken_link" cannot be ignored`) {
+		t.Errorf("rule that cannot be ignored: code=%d out=%q errs=%q", code, out, errs)
+	}
+	if code, _, errs := runCLI(t, cfg, "---\nsummary: w\n---\n# w\n[g](gone.md)\n", "put", "global/warn.md"); code != ExitOK ||
+		!strings.Contains(errs, "broken_link") {
+		t.Errorf("put still warns about broken_link: code=%d errs=%q", code, errs)
+	}
+
+	// A name that is not a rule at all is warned about with a different
+	// message and is likewise left in full effect.
+	withLint(t, "[nmae_style]")
+	code, out, errs = runCLI(t, cfg, "", "lint")
+	if code != ExitInvalid || !strings.Contains(out, "name_style") ||
+		!strings.Contains(errs, `lint.ignore: "nmae_style" is not a rule name`) {
+		t.Errorf("name that is not a rule: code=%d out=%q errs=%q", code, out, errs)
+	}
+}
+
+// TestLintIgnoreProfile checks that a profile's lint.ignore replaces, rather
+// than merges into, the top-level list: an empty list or an empty lint means
+// "ignore nothing", not "inherit the top-level list".
+func TestLintIgnoreProfile(t *testing.T) {
+	cfg := setupEmpty(t)
+	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
+	yml := `repo: ` + remote + `
+author: {name: agent, email: a@a}
+lint:
+  ignore: [name_style, missing_summary]
+profiles:
+  none:
+    lint:
+      ignore: []
+  empty:
+    lint: {}
+  unset: {}
+`
+	os.WriteFile(cfg, []byte(yml), 0o600)
+	pushFiles(t, cfg, map[string]string{"README.md": "# wiki\n"})
+	for profile, ignored := range map[string]bool{"none": false, "empty": false, "unset": true} {
+		code, out, _ := runCLI(t, cfg, "", "--profile", profile, "lint")
+		if strings.Contains(out, "name_style") != !ignored {
+			t.Errorf("profile %s: out=%q, ignored=%v", profile, out, ignored)
+		}
+		wantCode := ExitInvalid
+		if ignored {
+			wantCode = ExitOK
+		}
+		if code != wantCode {
+			t.Errorf("profile %s: code=%d, want %d", profile, code, wantCode)
+		}
+	}
+}

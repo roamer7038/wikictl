@@ -23,14 +23,16 @@ type Config struct {
 	Repo   string `yaml:"repo"`   // URL or path of the wiki repository; a relative local path is resolved against the directory of the config file
 	Branch string `yaml:"branch"` // branch to use; detected from the remote when empty
 	Author Author `yaml:"author"` // commit author; falls back to git config user.*
+	Lint   *Lint  `yaml:"lint"`   // rules that lint, put, edit and mv do not report; nil when not set, as opposed to an empty list
 
 	DefaultProfile string              `yaml:"default_profile"` // profile used when no other rule selects one
 	Profiles       map[string]*Profile `yaml:"profiles"`        // named overrides of the top-level keys
 
-	Path          string   `yaml:"-"` // file the configuration was read from
-	Warnings      []string `yaml:"-"` // one line for each unknown key, which is ignored
-	Profile       string   `yaml:"-"` // name of the selected profile; empty when none is selected
-	ProfileSource string   `yaml:"-"` // how the profile was selected: flag, env, match, default or none
+	Path          string          `yaml:"-"` // file the configuration was read from
+	Warnings      []string        `yaml:"-"` // one line for each unknown key, or lint.ignore rule name, which is ignored
+	Profile       string          `yaml:"-"` // name of the selected profile; empty when none is selected
+	ProfileSource string          `yaml:"-"` // how the profile was selected: flag, env, match, default or none
+	LintIgnore    map[string]bool `yaml:"-"` // the rule names of Lint.Ignore that ignorableLintRules accepts
 }
 
 // Author is the commit author.
@@ -39,12 +41,18 @@ type Author struct {
 	Email string `yaml:"email"`
 }
 
+// Lint holds the lint settings of Config and Profile.
+type Lint struct {
+	Ignore []string `yaml:"ignore"` // rule names; only ignorableLintRules may appear
+}
+
 // Profile overrides the top-level keys of Config. Empty keys inherit the
 // top-level value.
 type Profile struct {
 	Repo   string `yaml:"repo"`
 	Branch string `yaml:"branch"` // not inherited when the profile sets repo
 	Author Author `yaml:"author"`
+	Lint   *Lint  `yaml:"lint"` // replaces, not merges, the top-level Lint when set
 	Match  Match  `yaml:"match"`
 }
 
@@ -52,6 +60,27 @@ type Profile struct {
 type Match struct {
 	Remotes []string `yaml:"remotes"` // globs over the origin remote in host/path form, such as github.com/org/*; a trailing /* matches any depth
 	Paths   []string `yaml:"paths"`   // directories; the current directory or any directory below them matches
+}
+
+// ignorableLintRules are the rule names that lint.ignore may list: the rules
+// that flag a wiki convention rather than a correctness problem.
+var ignorableLintRules = map[string]bool{
+	"name_style":      true,
+	"missing_summary": true,
+}
+
+// knownLintRules are every rule name that lint or a write command reports,
+// including the rules that lint.ignore may not list. It is used only to tell
+// such a rule name apart from one that is not a rule at all.
+var knownLintRules = map[string]bool{
+	"missing_summary":     true,
+	"frontmatter_invalid": true,
+	"links_syntax":        true,
+	"broken_link":         true,
+	"bad_path":            true,
+	"page_too_large":      true,
+	"case_collision":      true,
+	"unicode_collision":   true,
 }
 
 // Values of Config.ProfileSource.
@@ -126,6 +155,7 @@ func Load(explicit string, sel Selector) (*Config, error) {
 	if err := c.selectProfile(sel); err != nil {
 		return c, fmt.Errorf("config file %s: %w", p, err)
 	}
+	c.resolveLint()
 	if c.Repo == "" {
 		switch {
 		case c.Profile != "":
@@ -292,7 +322,10 @@ func (c *Config) selectProfile(sel Selector) error {
 	return nil
 }
 
-// apply overrides the top-level keys with the non-empty keys of pr.
+// apply overrides the top-level keys with the non-empty keys of pr. Lint
+// replaces the top-level Lint, rather than merging into it, when pr sets it,
+// so that a profile can write "lint: {}" or "lint: {ignore: []}" to ignore
+// nothing rather than inherit the top-level list.
 func (c *Config) apply(pr *Profile) {
 	if pr.Repo != "" {
 		c.Repo, c.Branch = pr.Repo, pr.Branch
@@ -304,6 +337,32 @@ func (c *Config) apply(pr *Profile) {
 	}
 	if pr.Author.Email != "" {
 		c.Author.Email = pr.Author.Email
+	}
+	if pr.Lint != nil {
+		c.Lint = pr.Lint
+	}
+}
+
+// resolveLint validates the rule names of c.Lint.Ignore, once the profile is
+// applied, and fills LintIgnore with the ones that ignorableLintRules accepts. A
+// name that lint or a write command never reports is warned about as unknown,
+// like an unknown key; a name that names a rule which cannot be ignored is
+// warned about too, with a message that says so, so that the two are told
+// apart. Neither warning changes what lint or a write command reports.
+func (c *Config) resolveLint() {
+	c.LintIgnore = map[string]bool{}
+	if c.Lint == nil {
+		return
+	}
+	for _, name := range c.Lint.Ignore {
+		switch {
+		case ignorableLintRules[name]:
+			c.LintIgnore[name] = true
+		case knownLintRules[name]:
+			c.Warnings = append(c.Warnings, fmt.Sprintf("config file %s: lint.ignore: rule %q cannot be ignored", c.Path, name))
+		default:
+			c.Warnings = append(c.Warnings, fmt.Sprintf("config file %s: lint.ignore: %q is not a rule name", c.Path, name))
+		}
 	}
 }
 

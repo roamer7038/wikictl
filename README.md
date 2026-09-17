@@ -136,6 +136,7 @@ wikictl reads the configuration from `--config <path>`, else `$WIKICTL_CONFIG`, 
 | `repo` | yes | URL or path of the wiki repository; a local path may be relative to the directory of the configuration file; may be set in a profile instead |
 | `branch` | no | Branch to use; defaults to the branch saved in the mirror, else the remote HEAD, else `main`, and the saved branch is kept (see `wikictl help context`) |
 | `author.name`, `author.email` | no | Commit author; each falls back to `git config user.name` or `user.email` |
+| `lint.ignore` | no | Rule names left out of `lint`'s report and the same warnings from `put`, `edit` and `mv`; only `name_style` and `missing_summary` may be listed (see `wikictl help lint`) |
 | `profiles` | no | Named profiles that override the keys above |
 | `default_profile` | no | Profile to use when no other rule selects one |
 
@@ -146,6 +147,8 @@ Profiles keep several wikis, such as a personal one and a work one, in one file.
 ```yaml
 author:
   name: claude-code@laptop
+lint:
+  ignore: [name_style, missing_summary]
 default_profile: personal
 profiles:
   personal:
@@ -156,12 +159,14 @@ profiles:
     repo: git@github.example.com:team/wiki.git
     author:
       email: you@company.example
+    lint:
+      ignore: []
     match:
       remotes: ["github.example.com/team/*"]
       paths: ["~/work"]
 ```
 
-The profile is chosen by `--profile`, else `$WIKICTL_PROFILE`, else `match` (the `origin` remote or the current directory), else `default_profile`. In a profile, `author.name` and `author.email` override separately, and `branch` is not inherited when the profile sets `repo`. `wikictl help context` describes the selection in detail.
+The profile is chosen by `--profile`, else `$WIKICTL_PROFILE`, else `match` (the `origin` remote or the current directory), else `default_profile`. In a profile, `author.name` and `author.email` override separately, `branch` is not inherited when the profile sets `repo`, and `lint` replaces the top-level value rather than merging into it, so a profile can set `lint: {}` or `lint: {ignore: []}` to ignore nothing. `wikictl help context` describes the selection in detail.
 
 ## Exit codes
 

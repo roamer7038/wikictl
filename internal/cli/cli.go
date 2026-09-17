@@ -309,6 +309,15 @@ in NFD, or by normalisation and case at once, are one name on a file system
 that normalises them, as macOS does, and are reported as unicode_collision,
 also against the whole wiki.
 
+lint.ignore in the configuration lists rule names left out of the report, the
+exit code and --json: only name_style and missing_summary may be listed, and
+the same names are left out of the warnings that put, edit and mv print too.
+A profile's lint.ignore replaces the top-level list rather than adding to it.
+A name it may not list, such as broken_link, is warned about as a rule that
+cannot be ignored; a misspelled name is warned about as not a rule at all.
+Either warning goes to standard error and changes nothing about what is
+reported.
+
 A Links line is "- <type>: <target> | <note>", or "- <target>" for an untyped
 see_also relation (an untyped URL must be "<scheme>://..."); the bullet may
 be "-", "*" or "+" and may be indented. The "## Links" heading must be the last

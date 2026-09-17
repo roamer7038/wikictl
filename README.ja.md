@@ -136,6 +136,7 @@ wikictl は、`--config <path>`、`$WIKICTL_CONFIG`、`$XDG_CONFIG_HOME/wikictl/
 | `repo` | 必須 | wiki リポジトリの URL またはパス。ローカルのパスは設定ファイルのあるディレクトリからの相対パスでもよい。プロファイル側で設定してもよい |
 | `branch` | 任意 | 使うブランチ。省略時はミラーに保存したブランチ、なければリモートの HEAD、なければ `main` で、保存したブランチに固定される（`wikictl help context` を参照） |
 | `author.name`, `author.email` | 任意 | コミットの author。それぞれ `git config user.name`、`user.email` にフォールバックする |
+| `lint.ignore` | 任意 | `lint` の報告と、`put`・`edit`・`mv` の同名の警告から外す規則名。`name_style` と `missing_summary` の 2 つだけ指定できる（`wikictl help lint` を参照） |
 | `profiles` | 任意 | 上記のキーを上書きする名前付きプロファイル |
 | `default_profile` | 任意 | 他の規則でプロファイルが決まらないときに使うプロファイル |
 
@@ -146,6 +147,8 @@ wikictl は、`--config <path>`、`$WIKICTL_CONFIG`、`$XDG_CONFIG_HOME/wikictl/
 ```yaml
 author:
   name: claude-code@laptop
+lint:
+  ignore: [name_style, missing_summary]
 default_profile: personal
 profiles:
   personal:
@@ -156,12 +159,14 @@ profiles:
     repo: git@github.example.com:team/wiki.git
     author:
       email: you@company.example
+    lint:
+      ignore: []
     match:
       remotes: ["github.example.com/team/*"]
       paths: ["~/work"]
 ```
 
-プロファイルは、`--profile`、`$WIKICTL_PROFILE`、`match`（`origin` リモートまたはカレントディレクトリ）、`default_profile` の順に最初に当てはまるもので決まります。プロファイル内の `author.name` と `author.email` は個別に上書きされます。プロファイルが `repo` を設定した場合、`branch` は継承されません。選択の詳細は `wikictl help context` で確認できます。
+プロファイルは、`--profile`、`$WIKICTL_PROFILE`、`match`（`origin` リモートまたはカレントディレクトリ）、`default_profile` の順に最初に当てはまるもので決まります。プロファイル内の `author.name` と `author.email` は個別に上書きされます。プロファイルが `repo` を設定した場合、`branch` は継承されません。`lint` は最上位の値をマージせず置き換えるので、プロファイルで `lint: {}` や `lint: {ignore: []}` と書けば何も無視しない状態にできます。選択の詳細は `wikictl help context` で確認できます。
 
 ## 終了コード
 
