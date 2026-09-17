@@ -79,7 +79,7 @@ For a new wiki, one layout is to make each top-level directory a scope that answ
 
 In this layout, `personal/` holds facts that an agent looks up when they become relevant; rules for every conversation belong in the agent's standing instructions, such as `CLAUDE.md`. In a wiki shared by several people, everyone reads the same `personal/`, so do not use it there.
 
-A page is a Markdown file inside a directory. Its frontmatter should have a one-line `summary`, and relations to other pages go in a `## Links` section at the end:
+A page is a Markdown file, at the wiki root or in a directory, whose path has no component starting with a dot. Its frontmatter should have a one-line `summary`, and relations to other pages go in a `## Links` section at the end:
 
 ```markdown
 ---
