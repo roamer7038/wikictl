@@ -116,7 +116,8 @@ for a past version is not.
 Output: items[] {path, sha, updated, title, summary, type, tags, status,
 aliases}. A path that is not valid UTF-8 is path_base64 instead; the
 attributes are printed as the page holds them, so one of them can hold
-U+FFFD (see "wikictl help").`,
+U+FFFD, and title is the file name for a page without a heading, so a name
+that is not valid UTF-8 becomes U+FFFD there (see "wikictl help").`,
 		run: (*app).cmdStat},
 	{name: "log", args: "[<path>...]", maxArgs: -1, paths: true,
 		summary: "Show the commits that changed files",
@@ -204,7 +205,8 @@ Output: items[] {path, direction, type, target, note, line, url}. line is the
 line the link is on in the page that holds it: the page of path for "out",
 and the page of target for "in". url tells whether target is a URL instead of
 a page. A path or target that is not valid UTF-8 is path_base64 or
-target_base64 instead (see "wikictl help").`,
+target_base64 instead; note is prose rather than a value to pass back, so it
+keeps its key and can hold U+FFFD (see "wikictl help").`,
 		flags: linksFlags, run: (*app).cmdLinks},
 	{name: "ls", args: "[<path>...]", maxArgs: -1, paths: true,
 		summary: "List the entries of directories",
@@ -226,7 +228,8 @@ command exits with code 1.
 Output: items[] {path, kind, type, summary, title, updated}; kind is "file"
 or "dir". A path that is not valid UTF-8 is path_base64 instead; the type,
 summary and title are printed as the page holds them, so one of them can
-hold U+FFFD (see "wikictl help").`,
+hold U+FFFD, and title is the file name for a page without a heading, so a
+name that is not valid UTF-8 becomes U+FFFD there (see "wikictl help").`,
 		flags: lsFlags, run: (*app).cmdLs},
 	{name: "find", args: "[<path>...] [<expression>]", maxArgs: -1, expr: true,
 		summary: "Find files and directories by name, type, update time or frontmatter",

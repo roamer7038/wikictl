@@ -64,8 +64,8 @@ const outputHelp = `Output:
   left out and its bytes are printed in base64 under another key named after
   it, "path_base64" for "path", so read "path" when it is there and
   "path_base64" otherwise; "wikictl help <command>" names the keys it prints.
-  The frontmatter of a page and the messages of lint are not printed that way
-  and can hold U+FFFD; see "wikictl help lint".
+  The frontmatter of a page, the note of a link and the messages of lint are
+  not printed that way and can hold U+FFFD; see "wikictl help lint".
 `
 
 const writesHelp = `Writes:
