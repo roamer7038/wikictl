@@ -23,7 +23,11 @@ type Repo struct {
 // Open prepares the mirror at mirrorDir, creating it with create when it does
 // not exist. When branch is empty, the branch saved in the mirror's git config
 // (wikictl.branch) is used; when that is empty too, the remote HEAD is queried
-// with "ls-remote --symref" and the result saved.
+// with "ls-remote --symref" and the result saved. A branch given here, which
+// comes from the configuration, is used as it is and never saved: one mirror
+// is shared by every profile and configuration file naming the same
+// repository, so saving it would make the ones that name no branch read and
+// write it too.
 func Open(mirrorDir, remote, branch string) (*Repo, error) {
 	r := &Repo{Dir: mirrorDir, Remote: remote}
 	if err := privateDir(filepath.Dir(mirrorDir)); err != nil {
@@ -52,7 +56,8 @@ func Open(mirrorDir, remote, branch string) (*Repo, error) {
 	out, _ := r.Git("config", "--get", "wikictl.branch")
 	saved := strings.TrimSpace(out)
 	branch = cmp.Or(branch, saved)
-	if branch == "" {
+	detected := branch == ""
+	if detected {
 		// The remote is named, not spelled out, so that a URL holding
 		// credentials is not passed as a command argument.
 		out, err := r.Git("ls-remote", "--symref", "origin", "HEAD")
@@ -70,9 +75,12 @@ func Open(mirrorDir, remote, branch string) (*Repo, error) {
 			branch = "main"
 		}
 	}
-	// Save the branch only when it changed, under the mirror lock: concurrent
-	// processes writing the same config file would fail to lock it.
-	if saved != branch {
+	// Only a branch detected from the remote is saved, so that the query is
+	// made once per mirror. A branch given by the caller is left out, so that
+	// it does not reach the profiles and configuration files that share the
+	// mirror without naming a branch. The write is made under the mirror lock:
+	// concurrent processes writing the same config file would fail to lock it.
+	if detected {
 		unlock, err := r.lock()
 		if err != nil {
 			return nil, err

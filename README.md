@@ -154,7 +154,7 @@ wikictl reads the configuration from `--config <path>`, else `$WIKICTL_CONFIG`, 
 | Key | Required | Meaning |
 |---|---|---|
 | `repo` | yes | URL or path of the wiki repository; a local path may be relative to the directory of the configuration file; may be set in a profile instead |
-| `branch` | no | Branch to use; defaults to the branch saved in the mirror, else the remote HEAD, else `main`, and the saved branch is kept (see `wikictl help context`) |
+| `branch` | no | Branch to use; when unset, the branch saved in the mirror, else the remote HEAD, which is then saved, else `main`, and the saved branch is kept. Only a branch detected from the remote is saved: a branch set here is used as it is and is not saved for the other profiles and configuration files sharing the mirror (see `wikictl help context`) |
 | `author.name`, `author.email` | no | Commit author; each falls back to `git config user.name` or `user.email` |
 | `lint.ignore` | no | Rule names left out of `lint`'s report and the same warnings from `put`, `edit` and `mv`; only `name_style` and `missing_summary` may be listed (see `wikictl help lint`) |
 | `fetch_ttl` | no | Seconds within which a read skips fetching, if the mirror was already fetched that recently; 0, the default, never skips. Ignored by `put`, `edit`, `mv` and `rm`, which always fetch (see the Mirror section) |
