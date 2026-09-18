@@ -84,12 +84,13 @@ the page.
 
 With --at, every file is read as of that commit instead of the current
 version, and what a path is at that commit decides the report: a file added
-later is "no such file or directory" there. <rev> must be a commit sha (or
-its abbreviation) or a tag that "wikictl log" printed; a ref name such as
-HEAD or a branch name does not resolve, because the mirror keeps only the
-tracking refs and the tags, and neither does a sha the mirror does not hold
-or one that names a tree or a blob. Such a rev is a usage error with exit
-code 2. To read the current version, omit --at.
+later is "no such file or directory" there. <rev> may be a commit sha (or an
+abbreviation of one) that "wikictl log" printed, a tag, or a tracking ref
+such as origin/main or origin/main~1, which are the refs the mirror keeps.
+HEAD and a local branch name such as main do not resolve, because the mirror
+keeps neither, and neither does a sha the mirror does not hold or one that
+names a tree or a blob. Such a rev, and an --at without a value, are usage
+errors with exit code 2. To read the current version, omit --at.
 
 The sha of a past version cannot be passed to "put --base", which takes the
 sha of the file as it is now. To restore an old version, read its content
@@ -105,8 +106,10 @@ name), summary (or description), type, tags, status and aliases. A file that
 is not a page, as "help lint" defines one, is shown too, with its sha and
 update time and with the attributes empty. A path that does not exist, is a
 directory or is a submodule is reported as cat reports it. The commits behind
-updated are listed by log; the sha shown here is the one to pass to "put
---base", while the sha "cat --at" prints for a past version is not.
+updated are listed by log; its newest commit for a file can be a merge, which
+lists no file of its own, and then updated shows the commit before it. The sha
+shown here is the one to pass to "put --base", while the sha "cat --at" prints
+for a past version is not.
 
 Output: items[] {path, sha, updated, title, summary, type, tags, status,
 aliases}.`,
@@ -141,13 +144,13 @@ limit.
 which is how the history of a value is found without reading every version;
 a commit that changed the file without changing that count is left out.
 
---follow follows one file across renames and takes exactly one path, which
-is all git allows; any other number of paths, none included, is a usage
-error. With it every item also has paths[], the paths the commit changed
-inside the path given, so that a commit from before a rename can be read
-with "cat --at" under the name it had then; in text output those paths
-follow the five fields. Without --follow the key is absent, and the path
-given is the path of every commit.
+--follow takes exactly one path, which is all git allows, and follows it
+across renames; any other number of paths, none included, is a usage error.
+A directory is a path like any other. With it every item also has paths[],
+the paths the commit changed inside the path given, so that a commit from
+before a rename can be read with "cat --at" under the name it had then; in
+text output those paths follow the five fields. Without --follow the key is
+absent, and the path given is the path of every commit.
 
 A path may be a directory, which stands for the files under it. git tells a
 path with no history from one that does not exist in no way, both being no
@@ -577,7 +580,7 @@ type app struct {
 	verbose   bool
 	force     bool
 
-	at         string
+	at         optString
 	logMax     int
 	logFollow  bool
 	logSince   optString

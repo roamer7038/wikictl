@@ -62,7 +62,7 @@ func (a *app) checkLog(c *command, args []string) error {
 	// well as for several, and log is a command whose paths may be left out,
 	// so "wikictl log --follow" is the error most easily made.
 	if a.logFollow && len(args) != 1 {
-		return &usageError{c, "--follow takes exactly one path, since git follows one file at a time"}
+		return &usageError{c, "--follow takes exactly one path, since that is all git allows"}
 	}
 	if a.logChanged.set && a.logChanged.value == "" {
 		return &usageError{c, "-S needs a string to look for"}

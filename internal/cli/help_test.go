@@ -265,7 +265,7 @@ func TestHelpLogAndCatDescribeHistory(t *testing.T) {
 		`as git's --full-history does it`,
 		`A merge commit lists no file of its own`,
 		`-n 0 shows every one of them`,
-		`--follow follows one file across renames and takes exactly one path`,
+		`--follow takes exactly one path, which is all git allows, and follows it across renames`,
 		`take a date (YYYY-MM-DD), read as a whole day in UTC`,
 		`-S <string> keeps the commits that changed how often the string occurs`,
 		`A tab inside a field is printed as \x09`,
@@ -280,13 +280,21 @@ func TestHelpLogAndCatDescribeHistory(t *testing.T) {
 	flat = strings.Join(strings.Fields(out), " ")
 	for _, want := range []string{
 		`With --at, every file is read as of that commit`,
-		`a ref name such as HEAD or a branch name does not resolve`,
+		`a tracking ref such as origin/main or origin/main~1`,
+		`HEAD and a local branch name such as main do not resolve`,
+		`an --at without a value, are usage errors with exit code 2`,
 		`To read the current version, omit --at.`,
 		`The sha of a past version cannot be passed to "put --base"`,
 	} {
 		if !strings.Contains(flat, want) {
 			t.Errorf("help cat must say %s", want)
 		}
+	}
+	// stat points at log for the commits, so it says where the two differ.
+	_, out, _ = runNoConfig(t, "help", "stat")
+	flat = strings.Join(strings.Fields(out), " ")
+	if want := `can be a merge, which lists no file of its own, and then updated shows the commit before it`; !strings.Contains(flat, want) {
+		t.Errorf("help stat must say %s", want)
 	}
 }
 

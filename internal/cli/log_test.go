@@ -483,6 +483,24 @@ func TestCatAt(t *testing.T) {
 			t.Errorf("cat --at %s: code=%d errs=%q, want the way on to the current version", rev, code, errs)
 		}
 	}
+	// A tracking ref does resolve, since the mirror keeps it, and names the
+	// version the wiki is at now.
+	for _, rev := range []string{"origin/main", "refs/remotes/origin/main"} {
+		if code, out, errs := runCLI(t, cfg, "", "cat", "--at", rev, "global/index.md"); code != ExitOK || !strings.Contains(out, "v3") {
+			t.Errorf("cat --at %s: code=%d out=%q errs=%q", rev, code, out, errs)
+		}
+	}
+	// An --at without a value is refused instead of read as the current
+	// version, which would pass for a past one when the rev meant for it is
+	// unset, as in: cat --at "$rev" <path>.
+	for _, args := range [][]string{
+		{"cat", "--at", "", "global/index.md"},
+		{"cat", "--at=", "global/index.md"},
+	} {
+		if code, out, errs := runCLI(t, cfg, "", args...); code != ExitUsage || out != "" || !strings.Contains(errs, "omit --at") {
+			t.Errorf("%v: code=%d out=%q errs=%q", args, code, out, errs)
+		}
+	}
 
 	// The version decides what a path is, so a file that does not exist yet at
 	// that commit is reported as missing, with code 1.
