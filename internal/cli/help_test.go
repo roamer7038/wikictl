@@ -197,6 +197,10 @@ func TestTopHelpKeepsCommonRulesAndPoints(t *testing.T) {
 		// Mirror keeps the path and points to where the rest is.
 		`(~/.cache/wikictl)`,
 		`"wikictl help context" for fetching, fetch_ttl`,
+		// Every code a command can exit with is in the list, 128+N included,
+		// so that a reader classifying an exit does not meet one that is
+		// missing from it.
+		`128+N ended by signal N while the editor of "edit" ran`,
 	} {
 		if !strings.Contains(flat, want) {
 			t.Errorf("wikictl help must say %s", want)
