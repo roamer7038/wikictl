@@ -177,6 +177,39 @@ func TestTopHelpKeepsCommonRulesAndPoints(t *testing.T) {
 	}
 }
 
+// TestTopHelpShowsHowToReadManyFiles checks that the top-level help tells how
+// to read many files with few commands, which is where readers of the help
+// are sent before they read one file per command.
+func TestTopHelpShowsHowToReadManyFiles(t *testing.T) {
+	_, out, _ := runNoConfig(t, "help")
+	flat := strings.Join(strings.Fields(out), " ")
+	for _, want := range []string{
+		`Reading many files:`,
+		// The cost of one command per file, and how to narrow first.
+		`one command per file takes minutes for hundreds of them`,
+		`grep -l, grep -c or find -meta KEY=VALUE`,
+		// The commands that take many paths, and how to pass them.
+		`cat, stat and ls -l take many paths at once`,
+		`wikictl find global -name '*.md' | tr '\n' '\0' | xargs -0 -r wikictl stat`,
+		// The commands that read many pages by themselves.
+		`find --frontmatter=KEY,... reads the frontmatter of every file that has one`,
+		`links takes several paths, a directory or none at all`,
+		`pick the values out of items[] with jq`,
+		// fetch_ttl for reading over time, --no-fetch for a single read.
+		`set fetch_ttl in the configuration; --no-fetch skips the fetch of a single read`,
+	} {
+		if !strings.Contains(flat, want) {
+			t.Errorf("wikictl help must say %s", want)
+		}
+	}
+	// The section follows the list of commands and comes before the rules on
+	// paths and arguments, so that it is read before one file is read per command.
+	list, reading, rules := strings.Index(out, "\nCommands:\n"), strings.Index(out, "\nReading many files:\n"), strings.Index(out, "Flags may come before or after the arguments.")
+	if list < 0 || reading < list || rules < reading {
+		t.Errorf("Reading many files must follow Commands and precede the rules on paths: %d %d %d", list, reading, rules)
+	}
+}
+
 // TestHelpContextDescribesMirror checks that the details of the mirror, which
 // the top-level help points to, are in "help context".
 func TestHelpContextDescribesMirror(t *testing.T) {
