@@ -62,7 +62,10 @@ const writesHelp = `Writes:
   exists, or "changed" when the file no longer has the expected sha; sha and
   content are empty when the file has been deleted. With --no-fetch, edit, mv
   and rm read the mirror as last fetched, so a file that changed since then is
-  reported as a conflict.
+  reported as a conflict. put, edit, mv and rm always fetch when --no-fetch is
+  not given, ignoring fetch_ttl (see "Mirror" in "wikictl help"): they decide
+  what they change from what they read, and a stale read could leave a file
+  added on the remote out of an rm -r or a mv.
   A write that another clone pushes over is retried; when every attempt is
   rejected because the branch moved in between, nothing is written either and
   the command exits with code 3 and reason "moved", with no path, sha or
@@ -81,6 +84,15 @@ const mirrorHelp = `Mirror:
   variables listed by "git rev-parse --local-env-vars", GIT_NAMESPACE and
   GIT_QUARANTINE_PATH, so settings given with "git -c" do not apply; put them
   in a git config file.
+
+  A read normally fetches before every command, like a write. fetch_ttl in
+  the config file (seconds) skips that fetch for a read, not a write, when
+  the mirror was fetched within that many seconds; unset or 0, its default,
+  never skips. It is for a read repeated over time, such as a shell session
+  or an agent's use of wikictl, and does not apply when the tracking ref does
+  not exist yet, such as right after the mirror was created. --no-fetch skips
+  a single read regardless of fetch_ttl. "wikictl context" shows fetch_ttl
+  and fetched, the last fetch time recorded in the mirror.
 `
 
 // printUsage writes the top-level help.

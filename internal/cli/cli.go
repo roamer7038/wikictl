@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/pflag"
 
@@ -33,6 +34,7 @@ type command struct {
 	flags   func(a *app, fs *pflag.FlagSet)               // registers command flags into fields of a; nil when there are none
 	paths   bool                                          // the positional arguments are paths in the wiki, cleaned by wiki.Clean
 	expr    bool                                          // the arguments are an expression for check to parse; only -h and arguments starting with "--" are flags
+	writes  bool                                          // the command changes the wiki; openRepo always fetches for it, ignoring fetch_ttl
 	check   func(a *app, c *command, args []string) error // validates the arguments before the configuration is read; nil when there is nothing to check
 	run     func(a *app, c *command, args []string) error
 }
@@ -196,7 +198,7 @@ printed and absent when the file has no frontmatter at all, or
 frontmatter_error {code, message}, whose code is frontmatter_invalid or
 page_too_large.`,
 		flags: findFlags, check: (*app).checkFind, run: (*app).cmdFind},
-	{name: "put", args: "<path> < content", minArgs: 1, maxArgs: 1, paths: true,
+	{name: "put", args: "<path> < content", minArgs: 1, maxArgs: 1, paths: true, writes: true,
 		summary: "Create or replace a file from standard input",
 		detail: `Read the content of a file from standard input and commit it as <path>, at the
 wiki root or in a directory. Omit --base for a new file. For an existing file
@@ -219,7 +221,7 @@ rejected with exit code 1; a file replaced keeps its mode.
 Output: {path, sha, commit}; with -v, text output is
 "<path><TAB><sha><TAB><commit>".`,
 		flags: putFlags, run: (*app).cmdPut},
-	{name: "edit", args: "<path>", minArgs: 1, maxArgs: 1, paths: true,
+	{name: "edit", args: "<path>", minArgs: 1, maxArgs: 1, paths: true, writes: true,
 		summary: "Edit a file in an editor and commit it",
 		detail: `Open the file in an editor and commit the result as put does, replacing the
 file only if it has not changed since it was opened; a file that does not exist
@@ -238,7 +240,7 @@ the command exits with code 2.
 
 Output: {path, sha, commit}, printed only when the file is committed.`,
 		flags: editFlags, check: (*app).checkEdit, run: (*app).cmdEdit},
-	{name: "mv", args: "<src>... <dst>", minArgs: 1, maxArgs: -1,
+	{name: "mv", args: "<src>... <dst>", minArgs: 1, maxArgs: -1, writes: true,
 		summary: "Move or rename files and directories, rewriting links",
 		detail: `Move files and directories as mv does. With one source and a destination that
 is not a directory of the wiki, rename the source to the destination; otherwise
@@ -288,7 +290,7 @@ rewritten counts the other pages whose links were rewritten, and commit is
 empty when nothing was moved. With -v, text output is
 "<from><TAB><to><TAB><commit>" for each moved file.`,
 		flags: mvFlags, check: (*app).checkMv, run: (*app).cmdMv},
-	{name: "rm", args: "<path>...", maxArgs: -1, paths: true,
+	{name: "rm", args: "<path>...", maxArgs: -1, paths: true, writes: true,
 		summary: "Delete files or directories",
 		detail: `Delete files, and with -r directories with every file under them, in one
 commit. A path that is a directory without -r, is a submodule, or does not
@@ -409,8 +411,9 @@ Output: {items[] {path, kind}, directories, files}; kind is "file" or "dir".`,
 	{name: "context", maxArgs: 0,
 		summary: "Show the resolved configuration",
 		detail: `Show the config file, the selected profile and how it was selected (flag,
-env, match, default or none), the wiki repository, mirror directory, branch,
-author, and the origin remote of the current directory.
+env, match, default or none), the wiki repository, fetch_ttl and the time of
+the last fetch recorded in the mirror, mirror directory, branch, author, and
+the origin remote of the current directory.
 
 The branch is branch in the config file, else the branch saved in the mirror,
 else the remote HEAD, else main. The saved branch is kept, so a change of the
@@ -429,7 +432,10 @@ The user information (user:token@) of an HTTPS or other URL in repo and
 remote is shown as ***@; an SSH user name without a password, such as git@, is
 shown as it is.
 
-Output: {config, profile, profile_source, repo, mirror, branch, author, remote}.`,
+Output: {config, profile, profile_source, repo, fetch_ttl, fetched, mirror,
+branch, author, remote}; fetched is the last fetch time recorded in the
+mirror (see "Mirror" in "wikictl help"), empty when the mirror has never been
+fetched.`,
 		run: (*app).cmdContext},
 }
 
@@ -589,7 +595,7 @@ func (a *app) run(args []string) error {
 			return err
 		}
 	}
-	if err := a.setup(); err != nil {
+	if err := a.setup(c.writes); err != nil {
 		return err
 	}
 	return c.run(a, c, pos)
@@ -631,7 +637,8 @@ func jsonRequested(fs *pflag.FlagSet, args []string) bool {
 }
 
 // setup loads the configuration with its profile and opens the mirror.
-func (a *app) setup() error {
+// writes is true for a command that changes the wiki, which always fetches.
+func (a *app) setup(writes bool) error {
 	a.remote = cwdRemote()
 	dir, _ := os.Getwd()
 	cfg, err := config.Load(a.cfgPath, config.Selector{Profile: a.profile, Dir: dir, Remote: a.remote})
@@ -644,7 +651,7 @@ func (a *app) setup() error {
 		return &usageError{msg: err.Error()}
 	}
 	a.cfg = cfg
-	if err := a.openRepo(); err != nil {
+	if err := a.openRepo(writes); err != nil {
 		// Preparing the mirror can fail without git failing, such as when the
 		// cache directory cannot be created. Such a failure comes from the
 		// environment, where running the command again would not help, so it
@@ -659,9 +666,12 @@ func (a *app) setup() error {
 }
 
 // openRepo opens the mirror under $XDG_CACHE_HOME/wikictl (or
-// ~/.cache/wikictl), named by mirrorName, fetches unless --no-fetch was
-// given, and fixes the commit that the command reads.
-func (a *app) openRepo() error {
+// ~/.cache/wikictl), named by mirrorName, and fixes the commit that the
+// command reads. Unless --no-fetch was given, it fetches: writes (put, edit,
+// mv, rm) always fetch, ignoring fetch_ttl, because they decide what they
+// change from what they read; a read fetches unless fetch_ttl says the
+// mirror was fetched recently enough.
+func (a *app) openRepo(writes bool) error {
 	cache := os.Getenv("XDG_CACHE_HOME")
 	if cache == "" {
 		h, _ := os.UserHomeDir()
@@ -673,7 +683,16 @@ func (a *app) openRepo() error {
 	}
 	a.repo = r
 	if !a.noFetch {
-		if err := r.Fetch(); err != nil {
+		if writes {
+			err = r.Fetch()
+		} else {
+			ttl := 0
+			if a.cfg.FetchTTL != nil {
+				ttl = *a.cfg.FetchTTL
+			}
+			err = r.FetchIfStale(time.Duration(ttl) * time.Second)
+		}
+		if err != nil {
 			return err
 		}
 	}

@@ -17,7 +17,7 @@ flowchart LR
 
 - Linux または macOS
 - `PATH` 上に `git` があること
-- 対話なしで wiki リポジトリから fetch し、push できること（credential helper、SSH エージェント、ローカルパスならファイルへのアクセス権）。すべてのコマンドは最初に fetch するため、読み取りだけでもこの条件が必要
+- 対話なしで wiki リポジトリから fetch し、push できること（credential helper、SSH エージェント、ローカルパスならファイルへのアクセス権）。すべてのコマンドは最初に fetch するため、読み取りだけでもこの条件が必要（`fetch_ttl` で省かれる場合を除く。ミラーの節を参照）
 - wiki のブランチへ直接 push できること。プルリクエストを必須にするブランチ保護があると、書き込みはすべて失敗する
 - インストールスクリプトを使う場合は `curl` と、`sha256sum` または `shasum`。ソースからビルドする場合は Go 1.26.5 以降
 
@@ -139,6 +139,7 @@ wikictl は、`--config <path>`、`$WIKICTL_CONFIG`、`$XDG_CONFIG_HOME/wikictl/
 | `branch` | 任意 | 使うブランチ。省略時はミラーに保存したブランチ、なければリモートの HEAD、なければ `main` で、保存したブランチに固定される（`wikictl help context` を参照） |
 | `author.name`, `author.email` | 任意 | コミットの author。それぞれ `git config user.name`、`user.email` にフォールバックする |
 | `lint.ignore` | 任意 | `lint` の報告と、`put`・`edit`・`mv` の同名の警告から外す規則名。`name_style` と `missing_summary` の 2 つだけ指定できる（`wikictl help lint` を参照） |
+| `fetch_ttl` | 任意 | 直前の fetch からこの秒数以内であれば、読み取りの前の fetch を省く。既定の 0 は省かない。`put`・`edit`・`mv`・`rm` には効かず、必ず fetch する（ミラーの節を参照） |
 | `profiles` | 任意 | 上記のキーを上書きする名前付きプロファイル |
 | `default_profile` | 任意 | 他の規則でプロファイルが決まらないときに使うプロファイル |
 
@@ -168,7 +169,7 @@ profiles:
       paths: ["~/work"]
 ```
 
-プロファイルは、`--profile`、`$WIKICTL_PROFILE`、`match`（`origin` リモートまたはカレントディレクトリ）、`default_profile` の順に最初に当てはまるもので決まります。プロファイル内の `author.name` と `author.email` は個別に上書きされます。プロファイルが `repo` を設定した場合、`branch` は継承されません。`lint` は最上位の値をマージせず置き換えるので、プロファイルで `lint: {}` や `lint: {ignore: []}` と書けば何も無視しない状態にできます。選択の詳細は `wikictl help context` で確認できます。
+プロファイルは、`--profile`、`$WIKICTL_PROFILE`、`match`（`origin` リモートまたはカレントディレクトリ）、`default_profile` の順に最初に当てはまるもので決まります。プロファイル内の `author.name` と `author.email` は個別に上書きされます。プロファイルが `repo` を設定した場合、`branch` は継承されません。`lint` は最上位の値をマージせず置き換えるので、プロファイルで `lint: {}` や `lint: {ignore: []}` と書けば何も無視しない状態にできます。プロファイルで `fetch_ttl: 0` と書けば最上位の `fetch_ttl` を無効に戻せます。省略したプロファイルは最上位の値をそのまま継承します。選択の詳細は `wikictl help context` で確認できます。
 
 ## 終了コード
 
@@ -188,6 +189,8 @@ profiles:
 ## ミラー
 
 wikictl は、wiki リポジトリごとの bare ミラーを `$XDG_CACHE_HOME/wikictl/`（`~/.cache/wikictl/`）に、所有者だけが読めるように置きます。パスは `wikictl context` で確認できます。wiki の内容はリモートにあるため、ミラーはいつ削除してもかまいません。次のコマンド実行時に作り直されます。
+
+読み取りは書き込みと同様に、毎回コマンドの前に fetch します。ただし（設定の節の）`fetch_ttl` がその秒数以内にすでに fetch 済みだと言えば省き、`--no-fetch` を付ければ `fetch_ttl` に関係なくその 1 回だけ省けます。`fetch_ttl` はシェルのセッションやエージェントの利用など、継続する読み取りのためのものです。`put`・`edit`・`mv`・`rm` には一切効きません。これらは読み取った内容そのものから変更対象を決めるため、古い状態のまま読むと、リモートで追加されたファイルが `rm -r` や `mv` から黙って漏れることがあるからです。ミラー作成直後など、tracking ref がまだ無いときも `fetch_ttl` は効きません。`wikictl context` は `fetch_ttl` と、ミラーに記録された最後の fetch 時刻である `fetched` を表示します。
 
 ## 開発
 
