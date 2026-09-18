@@ -84,7 +84,7 @@ func TestJSONContract(t *testing.T) {
 			[]string{"items", "items[].count", "items[].path_base64"}},
 		{"ls/invalid_path", badCfg, "", []string{"ls", "bad"}, ExitOK,
 			[]string{"items", "items[].kind", "items[].path", "items[].path_base64", "items[].summary",
-				"items[].title", "items[].type", "items[].updated"}},
+				"items[].title", "items[].title_base64", "items[].type", "items[].updated"}},
 		{"tree/invalid_path", badCfg, "", []string{"tree"}, ExitOK,
 			[]string{"directories", "files", "items", "items[].kind", "items[].path", "items[].path_base64"}},
 		{"find/invalid_path", badCfg, "", []string{"find"}, ExitOK,
@@ -92,6 +92,11 @@ func TestJSONContract(t *testing.T) {
 		{"stat/invalid_path", badCfg, "", []string{"stat", badName}, ExitOK,
 			[]string{"items", "items[].aliases", "items[].path_base64", "items[].sha", "items[].status",
 				"items[].summary", "items[].tags", "items[].title", "items[].type", "items[].updated"}},
+		// The page with no heading, whose title is the file name and is not
+		// valid UTF-8 either.
+		{"stat/invalid_title", badCfg, "", []string{"stat", badTitleName}, ExitOK,
+			[]string{"items", "items[].aliases", "items[].path_base64", "items[].sha", "items[].status",
+				"items[].summary", "items[].tags", "items[].title_base64", "items[].type", "items[].updated"}},
 		{"log/invalid", badCfg, "", []string{"log", "-n", "1", "bad"}, ExitOK,
 			[]string{"items", "items[].author_base64", "items[].author_date", "items[].commit",
 				"items[].commit_date", "items[].subject_base64"}},

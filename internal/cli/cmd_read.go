@@ -129,13 +129,15 @@ type statItem struct {
 	Aliases []string
 }
 
-// MarshalJSON writes every key of the item; a path that is not valid UTF-8
-// goes to path_base64; see jsonout.go. The attributes come from the page,
+// MarshalJSON writes every key of the item; a path or title that is not
+// valid UTF-8 goes to path_base64 or title_base64; see jsonout.go. The title
+// is the file name without .md for a page with no heading, so it comes from
+// the path and is kept like it. The other attributes come from the page,
 // which is not a value to pass back to another command, so they keep their
 // own keys.
 func (it statItem) MarshalJSON() ([]byte, error) {
 	return jsonObject(nil).text("path", it.Path).add("sha", it.SHA).add("updated", it.Updated).
-		add("title", it.Title).add("summary", it.Summary).add("type", it.Type).add("tags", it.Tags).
+		text("title", it.Title).add("summary", it.Summary).add("type", it.Type).add("tags", it.Tags).
 		add("status", it.Status).add("aliases", it.Aliases).MarshalJSON()
 }
 

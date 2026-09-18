@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"maps"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -21,8 +22,10 @@ const badByte = "\xff"
 // setupInvalidUTF8 creates a wiki whose file names, content, link target,
 // commit author and commit subject all hold badByte, so that every value
 // --json prints in base64 has a case here. The page bad/content.md has a
-// valid name and holds the byte in a line and in a link target; the other
-// page has the byte in its name and valid content.
+// valid name and holds the byte in a line and in a link target; badName has
+// the byte in its name and valid content with a heading, so its title is
+// valid; badTitleName has the byte in its name and no heading, so its title
+// is the file name and holds the byte too.
 //
 // Nothing of the wiki reaches the file system: a file system may refuse a
 // name that is not valid UTF-8, as APFS does with "illegal byte sequence",
@@ -37,6 +40,7 @@ func setupInvalidUTF8(t *testing.T) (cfgPath string) {
 	remote := filepath.Join(filepath.Dir(cfgPath), "remote.git")
 	tree := writeTree(t, remote, map[string]string{
 		badName:          badNameContent,
+		badTitleName:     badTitleContent,
 		"bad/content.md": badContent,
 	})
 	commit := gitObject(t, remote, "tree "+tree+"\n"+
@@ -96,11 +100,16 @@ func gitObject(t *testing.T, remote, stdin string, args ...string) string {
 
 // badName is the path of the page whose name is not valid UTF-8 and
 // badNameContent its content, which is valid; badContent is the content of
-// the page whose name is valid and whose content is not.
+// the page whose name is valid and whose content is not. badTitleName is the
+// path of the page whose name is not valid UTF-8 and which has no heading,
+// so that its title is the file name without .md and is not valid UTF-8
+// either.
 var (
-	badName        = "bad/" + badByte + "name.md"
-	badNameContent = "---\nsummary: bad name\n---\n# bad name\nzzname\n"
-	badContent     = "---\nsummary: bad content\n---\n# bad content\nzzmark " + badByte + " here\n" +
+	badName         = "bad/" + badByte + "name.md"
+	badNameContent  = "---\nsummary: bad name\n---\n# bad name\nzzname\n"
+	badTitleName    = "bad/" + badByte + "title.md"
+	badTitleContent = "---\nsummary: bad title\n---\nzztitle\n"
+	badContent      = "---\nsummary: bad content\n---\n# bad content\nzzmark " + badByte + " here\n" +
 		"\n## Links\n- see_also: [name](" + badByte + "name.md)\n"
 )
 
@@ -259,6 +268,45 @@ func TestInvalidUTF8Listings(t *testing.T) {
 		if !found {
 			t.Errorf("%v: no item has path_base64 of %q: %v", c.args, c.want, items)
 		}
+	}
+}
+
+// TestInvalidUTF8Title checks the title of stat and ls, which is the file
+// name without .md for a page with no heading and follows the path there: a
+// name that is not valid UTF-8 goes to title_base64, while a title read from
+// a heading keeps its own key.
+func TestInvalidUTF8Title(t *testing.T) {
+	cfg := setupInvalidUTF8(t)
+	items := jsonItems(t, jsonOut(t, cfg, "", ExitOK, "stat", badTitleName))
+	if len(items) != 1 {
+		t.Fatalf("stat %q: %d items, want 1", badTitleName, len(items))
+	}
+	wantBase64(t, items[0], "path", badTitleName)
+	wantBase64(t, items[0], "title", strings.TrimSuffix(path.Base(badTitleName), ".md"))
+
+	items = jsonItems(t, jsonOut(t, cfg, "", ExitOK, "stat", badName))
+	if len(items) != 1 {
+		t.Fatalf("stat %q: %d items, want 1", badName, len(items))
+	}
+	wantBase64(t, items[0], "path", badName)
+	wantPlain(t, items[0], "title", "bad name")
+
+	found := false
+	for _, it := range jsonItems(t, jsonOut(t, cfg, "", ExitOK, "ls", "bad")) {
+		if s, ok := it["path_base64"].(string); ok {
+			b, err := base64.StdEncoding.DecodeString(s)
+			if err != nil {
+				t.Fatalf("path_base64 %q: %v", s, err)
+			}
+			if string(b) != badTitleName {
+				continue
+			}
+			found = true
+			wantBase64(t, it, "title", strings.TrimSuffix(path.Base(badTitleName), ".md"))
+		}
+	}
+	if !found {
+		t.Errorf("ls bad: no item has path_base64 of %q", badTitleName)
 	}
 }
 

@@ -114,11 +114,10 @@ shown here is the one to pass to "put --base", while the sha "cat --at" prints
 for a past version is not.
 
 Output: items[] {path, sha, updated, title, summary, type, tags, status,
-aliases}. A path that is not valid UTF-8 is path_base64 instead; the
-attributes are printed as the page holds them, so one of them can hold
-U+FFFD, and title is the file name without .md for a page without a
-heading, so a name that is not valid UTF-8 becomes U+FFFD there (see
-"wikictl help").`,
+aliases}. title is the file name without .md for a page without a heading,
+so it follows the name: a path or title that is not valid UTF-8 is
+path_base64 or title_base64 instead. The other attributes are printed as the
+page holds them, so one of them can hold U+FFFD (see "wikictl help").`,
 		run: (*app).cmdStat},
 	{name: "log", args: "[<path>...]", maxArgs: -1, paths: true,
 		summary: "Show the commits that changed files",
@@ -227,11 +226,10 @@ on standard error, also with --json, the others are still listed, and the
 command exits with code 1.
 
 Output: items[] {path, kind, type, summary, title, updated}; kind is "file"
-or "dir". A path that is not valid UTF-8 is path_base64 instead; the type,
-summary and title are printed as the page holds them, so one of them can
-hold U+FFFD, and title is the file name without .md for a page without a
-heading, so a name that is not valid UTF-8 becomes U+FFFD there (see
-"wikictl help").`,
+or "dir". title is the file name without .md for a page without a heading,
+so it follows the name: a path or title that is not valid UTF-8 is
+path_base64 or title_base64 instead. The type and summary are printed as the
+page holds them, so one of them can hold U+FFFD (see "wikictl help").`,
 		flags: lsFlags, run: (*app).cmdLs},
 	{name: "find", args: "[<path>...] [<expression>]", maxArgs: -1, expr: true,
 		summary: "Find files and directories by name, type, update time or frontmatter",
