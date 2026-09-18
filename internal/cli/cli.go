@@ -204,19 +204,40 @@ page_too_large.`,
 wiki root or in a directory. Omit --base for a new file. For an existing file
 pass --base with the blob sha from stat; without it, or if the file changed in
 the meantime, the command exits with code 3 and prints the current content and
-sha (see "wikictl help"). A path that breaks the file name rules (see "help
-lint"), or that git refuses to store, such as one with a component git~1,
-which names .git on NTFS, is rejected with exit code 4 and a message starting
-with "bad_path:", and nothing is committed. A path that names a page (see
-"help lint") is checked as one: a page whose frontmatter is invalid or that is
-over the size limits is rejected with exit code 4, and a missing summary,
-Links lines that do not parse, links to files missing from the wiki and names
-outside the recommended form only produce warnings on standard error;
+sha, as the conflict output below describes. A path that breaks the file name
+rules (see "help lint"), or that git refuses to store, such as one with a
+component git~1, which names .git on NTFS, is rejected with exit code 4 and a
+message starting with "bad_path:", and nothing is committed. A path that names
+a page (see "help lint") is checked as one: a page whose frontmatter is invalid
+or that is over the size limits is rejected with exit code 4, and a missing
+summary, Links lines that do not parse, links to files missing from the wiki
+and names outside the recommended form only produce warnings on standard error;
 "description" in the frontmatter is read as a synonym of "summary", and
 "summary" wins when it is not blank. When the content equals the current
 file, no commit is created and commit is the current commit. A path that is a
 directory, a symbolic link or a submodule, or that is below a file, is
 rejected with exit code 1; a file replaced keeps its mode.
+
+The commit message is -m, else "wikictl: <command> " followed by the paths,
+the sources before the destination for mv, or "<first path> and <n> more"
+when they are long; edit, mv and rm name their own command the same way.
+
+A conflict writes nothing and exits with code 3. Text output prints
+"wikictl: conflict (<reason>): <path> sha=<sha>" on standard error and the
+current content of the file on standard output, and --json prints {error,
+reason, path, sha, content, message} with error "conflict". reason is
+"exists" when the path to create already exists, as with put without --base,
+or "changed" when a file to replace or delete no longer has the expected sha,
+because it changed since it was read or --base is not its current sha; sha
+and content are empty when the file has been deleted. A write that another
+clone pushes over is retried; when every attempt is rejected because the
+branch moved in between, nothing is written either and the command exits with
+code 3 and reason "moved", with no path, sha or content: text output prints
+"wikictl: conflict (moved): <message>" on standard error, followed by what
+git reported indented by two spaces, and --json prints {error, reason,
+message, detail}, where detail is that output of git. Nothing has to be
+re-read; run the command again. edit, mv and rm report a conflict the same
+way.
 
 Output: {path, sha, commit}; with -v, text output is
 "<path><TAB><sha><TAB><commit>".`,
@@ -229,14 +250,15 @@ starts empty. The editor is $VISUAL, else $EDITOR, else vi; one with spaces or
 shell characters is run by the shell, so it may include arguments. Nothing is
 committed when the content is unchanged, which includes a new file left empty.
 When the result cannot be committed, because the file changed in the meantime
-(exit code 3; see "wikictl help"), the path or the content breaks the rules
+(exit code 3; see "wikictl help put"), the path or the content breaks the rules
 that put applies (exit code 4), or the editor fails, or the editor leaves
 something that is not the regular file wikictl created, such as a symbolic
 link (exit code 1), the edited content is kept in a temporary file whose path
 is printed on standard error; SIGTERM and SIGHUP while the editor runs print
 it too and end wikictl with 128 plus the number of the signal, while an
 interrupt is left to the editor. Standard input must be a terminal; otherwise
-the command exits with code 2.
+the command exits with code 2. Without -m, the commit message is the default
+that "help put" describes.
 
 Output: {path, sha, commit}, printed only when the file is committed.`,
 		flags: editFlags, check: (*app).checkEdit, run: (*app).cmdEdit},
@@ -283,7 +305,8 @@ a broken link; write page targets as [text](path).
 
 If a file that mv changes or deletes changed since mv read it, or a new path
 was created, the command exits with code 3 and writes nothing (see "wikictl
-help"); run it again.
+help put"); run it again. Without -m, the commit message is the default that
+"help put" describes.
 
 Output: {moved[] {from, to}, rewritten, commit}; moved lists every moved file,
 rewritten counts the other pages whose links were rewritten, and commit is
@@ -306,7 +329,8 @@ breaks them can be deleted, except a name holding a control character, which
 is rejected as every path is. A file added under a directory after rm read it
 is not deleted. Pages that link to a deleted page are left unchanged; lint
 reports them as broken_link. If a file changed since rm read it, the command
-exits with code 3 and deletes nothing (see "wikictl help"); run it again.
+exits with code 3 and deletes nothing (see "wikictl help put"); run it again.
+Without -m, the commit message is the default that "help put" describes.
 
 Output: {paths, commit}; paths lists the deleted files, and commit is empty
 when nothing was deleted. With -v, text output is "<path><TAB><commit>" for
@@ -415,6 +439,22 @@ env, match, default or none), the wiki repository, fetch_ttl and the time of
 the last fetch recorded in the mirror, mirror directory, branch, author, and
 the origin remote of the current directory.
 
+The mirror is a bare clone under $XDG_CACHE_HOME/wikictl (~/.cache/wikictl).
+git in it runs without the variables listed by "git rev-parse
+--local-env-vars", GIT_NAMESPACE and GIT_QUARANTINE_PATH, so settings given
+with "git -c" do not apply; put them in a git config file.
+
+A read normally fetches before every command, like a write. fetch_ttl in the
+config file (seconds) skips that fetch for a read, not a write, when the
+mirror was fetched within that many seconds; unset or 0, its default, never
+skips. It is for a read repeated over time, such as a shell session or an
+agent's use of wikictl, and does not apply when the tracking ref does not
+exist yet, such as right after the mirror was created. --no-fetch skips a
+single read regardless of fetch_ttl. put, edit, mv and rm always fetch when
+--no-fetch is not given, ignoring fetch_ttl: they decide what they change
+from what they read, and a stale read could leave a file added on the remote
+out of an rm -r or a mv.
+
 The branch is branch in the config file, else the branch saved in the mirror,
 else the remote HEAD, else main. The saved branch is kept, so a change of the
 remote default branch is not followed until branch is set or the mirror is
@@ -434,8 +474,7 @@ shown as it is.
 
 Output: {config, profile, profile_source, repo, fetch_ttl, fetched, mirror,
 branch, author, remote}; fetched is the last fetch time recorded in the
-mirror (see "Mirror" in "wikictl help"), empty when the mirror has never been
-fetched.`,
+mirror, empty when the mirror has never been fetched.`,
 		run: (*app).cmdContext},
 }
 

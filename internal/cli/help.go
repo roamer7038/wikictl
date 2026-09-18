@@ -48,51 +48,17 @@ const outputHelp = `Output:
 `
 
 const writesHelp = `Writes:
-  put, edit, mv and rm write their changes as one commit. Its message is -m,
-  else "wikictl: <command> " followed by the paths, the sources before the
-  destination for mv, or "<first path> and <n> more" when they are long.
-  Nothing is printed on success unless -v is given. When a path to create
-  already exists, as with put without --base, or a file to replace or delete
-  no longer has the expected sha, because it changed since it was read or
-  --base is not its current sha, nothing is written and the command exits
-  with code 3: text output prints "wikictl: conflict (<reason>): <path>
-  sha=<sha>" on standard error and the current content of the file on
-  standard output, and --json prints {error, reason, path, sha, content,
-  message} with error "conflict". reason is "exists" when the path already
-  exists, or "changed" when the file no longer has the expected sha; sha and
-  content are empty when the file has been deleted. With --no-fetch, edit, mv
-  and rm read the mirror as last fetched, so a file that changed since then is
-  reported as a conflict. put, edit, mv and rm always fetch when --no-fetch is
-  not given, ignoring fetch_ttl (see "Mirror" in "wikictl help"): they decide
-  what they change from what they read, and a stale read could leave a file
-  added on the remote out of an rm -r or a mv.
-  A write that another clone pushes over is retried; when every attempt is
-  rejected because the branch moved in between, nothing is written either and
-  the command exits with code 3 and reason "moved", with no path, sha or
-  content: text output prints "wikictl: conflict (moved): <message>" on
-  standard error, followed by what git reported indented by two spaces, and
-  --json prints {error, reason, message, detail}, where detail is that output
-  of git. Nothing has to be re-read; run the command again. A push that fails
-  for another reason, such as a branch that cannot be locked or a hook that
-  rejects it, exits with 5, since running it again would not help.
+  put, edit, mv and rm write their changes as one commit and print nothing on
+  success unless -v is given. A conflict writes nothing and exits with code 3;
+  "wikictl help put" lists the reasons and the output. With --no-fetch, edit,
+  mv and rm read the mirror as last fetched, so a file that changed since then
+  is a conflict too.
 `
 
 const mirrorHelp = `Mirror:
   wikictl keeps a bare mirror of the wiki under $XDG_CACHE_HOME/wikictl
-  (~/.cache/wikictl), shown by "wikictl context". If a mirror breaks, delete
-  it; the next command creates it again. git in the mirror runs without the
-  variables listed by "git rev-parse --local-env-vars", GIT_NAMESPACE and
-  GIT_QUARANTINE_PATH, so settings given with "git -c" do not apply; put them
-  in a git config file.
-
-  A read normally fetches before every command, like a write. fetch_ttl in
-  the config file (seconds) skips that fetch for a read, not a write, when
-  the mirror was fetched within that many seconds; unset or 0, its default,
-  never skips. It is for a read repeated over time, such as a shell session
-  or an agent's use of wikictl, and does not apply when the tracking ref does
-  not exist yet, such as right after the mirror was created. --no-fetch skips
-  a single read regardless of fetch_ttl. "wikictl context" shows fetch_ttl
-  and fetched, the last fetch time recorded in the mirror.
+  (~/.cache/wikictl); delete a broken one and the next command creates it. See
+  "wikictl help context" for fetching, fetch_ttl and git's environment there.
 `
 
 // printUsage writes the top-level help.
@@ -138,7 +104,9 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  A write that lost the push race on every attempt also exits with 3, with")
 	fmt.Fprintln(w, "  reason \"moved\". A git failure while reading the wiki also exits with 5 and")
 	fmt.Fprintln(w, "  prints no partial result; so does a page that exists but cannot be read,")
-	fmt.Fprintln(w, "  instead of \"no such file or directory\". A mirror that cannot be prepared")
+	fmt.Fprintln(w, "  instead of \"no such file or directory\", and so does a push that fails for")
+	fmt.Fprintln(w, "  a reason running the command again would not fix, such as a branch that")
+	fmt.Fprintln(w, "  cannot be locked or a hook that rejects it. A mirror that cannot be prepared")
 	fmt.Fprintln(w, "  for a reason that is not a git failure, such as a cache directory that")
 	fmt.Fprintln(w, "  cannot be created, exits with 2: it comes from the environment, so running")
 	fmt.Fprintln(w, "  the command again would not help.")
