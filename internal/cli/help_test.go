@@ -41,6 +41,8 @@ func TestUnknownCommandHint(t *testing.T) {
 		"search":    "wikictl: unknown command: search\n  the nearest command is grep; run \"wikictl help grep\" for its usage\n",
 		"read":      "wikictl: unknown command: read\n  the nearest command is cat; run \"wikictl help cat\" for its usage\n",
 		"list":      "wikictl: unknown command: list\n  the nearest command is ls; run \"wikictl help ls\" for its usage\n",
+		"history":   "wikictl: unknown command: history\n  the nearest command is log; run \"wikictl help log\" for its usage\n",
+		"show":      "wikictl: unknown command: show\n  the nearest command is cat --at; run \"wikictl help cat\" for its usage\n",
 		"blame":     "wikictl: unknown command: blame\n  wikictl has no blame command yet; run \"wikictl help\" for the list of commands\n",
 		"diff":      "wikictl: unknown command: diff\n  wikictl has no diff command yet; run \"wikictl help\" for the list of commands\n",
 		"nosuchcmd": "wikictl: unknown command: nosuchcmd\n  run \"wikictl help\" for the list of commands\n",
@@ -248,6 +250,42 @@ func TestHelpContextDescribesMirror(t *testing.T) {
 	} {
 		if !strings.Contains(flat, want) {
 			t.Errorf("help context must describe %s", want)
+		}
+	}
+}
+
+// TestHelpLogAndCatDescribeHistory checks that the help holds what reading
+// the history needs: why the whole history is read, how to see every commit,
+// what --follow takes, which values --since and --until accept, the limits of
+// the mirror, and that the sha of a past version is not a --base.
+func TestHelpLogAndCatDescribeHistory(t *testing.T) {
+	_, out, _ := runNoConfig(t, "help", "log")
+	flat := strings.Join(strings.Fields(out), " ")
+	for _, want := range []string{
+		`as git's --full-history does it`,
+		`A merge commit lists no file of its own`,
+		`-n 0 shows every one of them`,
+		`--follow follows one file across renames and takes exactly one path`,
+		`take a date (YYYY-MM-DD), read as a whole day in UTC`,
+		`-S <string> keeps the commits that changed how often the string occurs`,
+		`A tab inside a field is printed as \x09`,
+		`A tag is neither updated nor deleted by a fetch`,
+		`automatic gc (two weeks by default)`,
+	} {
+		if !strings.Contains(flat, want) {
+			t.Errorf("help log must say %s", want)
+		}
+	}
+	_, out, _ = runNoConfig(t, "help", "cat")
+	flat = strings.Join(strings.Fields(out), " ")
+	for _, want := range []string{
+		`With --at, every file is read as of that commit`,
+		`a ref name such as HEAD or a branch name does not resolve`,
+		`To read the current version, omit --at.`,
+		`The sha of a past version cannot be passed to "put --base"`,
+	} {
+		if !strings.Contains(flat, want) {
+			t.Errorf("help cat must say %s", want)
 		}
 	}
 }

@@ -42,10 +42,42 @@ type catItem struct {
 	Content string `json:"content"`
 }
 
+func catFlags(a *app, fs *pflag.FlagSet) {
+	fs.StringVar(&a.at, "at", "", "read the files as of the commit `rev`, not the current version")
+}
+
+// snapshotAt points every read of the command at the version --at names, so
+// that the content, the sha and the report that tells a file from a directory
+// or a submodule all come from that one version; reading the content along
+// one path and the reports along another would describe two versions at once.
+// A rev that names no commit the mirror holds is a usage error: HEAD and
+// branch names do not resolve there, since the mirror keeps only the tracking
+// refs and the tags. The message also says that the current version needs no
+// --at, which is what a reader who reached for HEAD usually wanted.
+func (a *app) snapshotAt(c *command) error {
+	if a.at == "" {
+		return nil
+	}
+	ok, err := a.repo.SnapshotAt(a.at)
+	if err != nil {
+		return &gitError{err}
+	}
+	if !ok {
+		return &usageError{c, "--at " + a.at + " does not name a commit in the mirror\n" +
+			`pass a commit sha, an abbreviation of one or a tag that "wikictl log" printed; ` +
+			"HEAD and branch names are not kept in the mirror, and to read the current version omit --at"}
+	}
+	return nil
+}
+
 // cmdCat prints the files as stored, in the order given. As GNU cat does, a
 // path that is not a file is reported on standard error, the other files are
-// still printed, and the command exits with 1.
+// still printed, and the command exits with 1. With --at the files are read
+// as of a past commit.
 func (a *app) cmdCat(c *command, args []string) error {
+	if err := a.snapshotAt(c); err != nil {
+		return err
+	}
 	contents, shas, err := a.repo.CatSHA(notEmpty(args))
 	if err != nil {
 		return &gitError{err}
