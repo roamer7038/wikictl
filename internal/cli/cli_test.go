@@ -91,6 +91,10 @@ func runCLI(t *testing.T, cfg string, stdin string, args ...string) (int, string
 	return code, out.String(), errb.String()
 }
 
+// grepMissingHint is the line grep prints under the paths that do not exist,
+// without its newline.
+const grepMissingHint = `  list directories with "wikictl tree -d -L 2"`
+
 // mustUnmarshal decodes the JSON output of a command into v and stops the test
 // when out is not valid JSON.
 func mustUnmarshal(t *testing.T, out string, v any) {
@@ -152,7 +156,7 @@ func TestReadCommands(t *testing.T) {
 		t.Errorf("grep -q without a match: code=%d out=%q", code, out)
 	}
 	if code, out, errs := runCLI(t, cfg, "", "grep", "lease", "global/none", "projects"); code != ExitUsage ||
-		out != "projects/app/x.md:lease\n" || errs != "wikictl: global/none: no such file or directory\n" {
+		out != "projects/app/x.md:lease\n" || errs != "wikictl: global/none: no such file or directory\n"+grepMissingHint+"\n" {
 		t.Errorf("grep with a missing path: code=%d out=%q errs=%q", code, out, errs)
 	}
 	code, out, _ = runCLI(t, cfg, "", "stat", "--json", "global/push.md")
@@ -579,11 +583,16 @@ func TestEmptyPathArgument(t *testing.T) {
 		{[]string{"tree", ""}, ExitError, `{"directories":0,"files":0,"items":[]}`},
 		{[]string{"grep", "lease", ""}, ExitUsage, `{"items":[]}`},
 	} {
-		if code, _, errs := runCLI(t, cfg, "", c.args...); code != c.code || errs != want {
-			t.Errorf("%v: code=%d errs=%q, want %q", c.args, code, errs, want)
+		// grep adds the way to list the directories under its report.
+		w := want
+		if c.args[0] == "grep" {
+			w += grepMissingHint + "\n"
+		}
+		if code, _, errs := runCLI(t, cfg, "", c.args...); code != c.code || errs != w {
+			t.Errorf("%v: code=%d errs=%q, want %q", c.args, code, errs, w)
 		}
 		js := append([]string{"--json"}, c.args...)
-		if code, out, errs := runCLI(t, cfg, "", js...); code != c.code || out != c.json+"\n" || errs != want {
+		if code, out, errs := runCLI(t, cfg, "", js...); code != c.code || out != c.json+"\n" || errs != w {
 			t.Errorf("%v: code=%d out=%q errs=%q", js, code, out, errs)
 		}
 	}
@@ -1466,7 +1475,7 @@ func TestMissingPaths(t *testing.T) {
 			`{"items":[{"path":"global/sub/a.md","line":1,"code":"missing_summary","message":"frontmatter is missing"}]}`},
 		{[]string{"rm", "global/none.md"}, ExitError, "global/none.md: no such file or directory", `{"commit":"","paths":[]}`},
 		{[]string{"mv", "global/none.md", "global/new.md"}, ExitError, "global/none.md: no such file or directory", `{"commit":"","moved":[],"rewritten":0}`},
-		{[]string{"grep", "lease", "none"}, ExitUsage, "none: no such file or directory", `{"items":[]}`},
+		{[]string{"grep", "lease", "none"}, ExitUsage, "none: no such file or directory\n" + grepMissingHint, `{"items":[]}`},
 	} {
 		for _, js := range []bool{false, true} {
 			args := c.args

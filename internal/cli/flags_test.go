@@ -22,7 +22,7 @@ func TestBareWordsAreNotGlobalFlags(t *testing.T) {
 		}
 	}
 	// A word after the pattern is a path.
-	if code, _, errs := runCLI(t, cfg, "", "grep", "lease", "version"); code != ExitUsage || errs != "wikictl: version: no such file or directory\n" {
+	if code, _, errs := runCLI(t, cfg, "", "grep", "lease", "version"); code != ExitUsage || errs != "wikictl: version: no such file or directory\n"+grepMissingHint+"\n" {
 		t.Errorf("grep lease version: code=%d errs=%q", code, errs)
 	}
 	if code, _, errs := runCLI(t, cfg, "", "ls", "json"); code != ExitError || errs != "wikictl: json: no such file or directory\n" {

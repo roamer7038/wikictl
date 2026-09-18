@@ -594,7 +594,7 @@ func (a *app) run(args []string) error {
 	}
 	c := lookup(name)
 	if c == nil {
-		return &usageError{msg: "unknown command: " + name + `; run "wikictl help" for the list of commands`}
+		return unknownCommand(name)
 	}
 	if c.flags != nil {
 		c.flags(a, fs)
@@ -611,6 +611,9 @@ func (a *app) run(args []string) error {
 			return nil
 		}
 		a.json = a.json || jsonRequested(fs, args)
+		if c.expr {
+			return findUsage(c, err.Error())
+		}
 		return &usageError{c, err.Error()}
 	}
 	if a.version {

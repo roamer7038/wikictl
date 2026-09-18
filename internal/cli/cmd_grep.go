@@ -170,6 +170,9 @@ func (a *app) cmdGrep(c *command, args []string) error {
 	for _, p := range missing {
 		fmt.Fprintf(a.stderr, "wikictl: %s: no such file or directory\n", displayPath(p))
 	}
+	if len(missing) > 0 {
+		fmt.Fprintln(a.stderr, `  list directories with "wikictl tree -d -L 2"`)
+	}
 	// Every search but the -L one records the files with a selected line.
 	if matchFlags == nil {
 		selected = len(items) > 0
