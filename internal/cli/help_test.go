@@ -145,6 +145,8 @@ func TestHelpPutDescribesConflicts(t *testing.T) {
 		`reason "moved"`,
 		`"wikictl: conflict (moved): <message>"`,
 		`{error, reason, message, detail}`,
+		`sha and content are empty when the file has been deleted`,
+		`edit, mv and rm report a conflict the same way`,
 	} {
 		if !strings.Contains(flat, want) {
 			t.Errorf("help put must describe %s", want)

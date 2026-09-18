@@ -257,7 +257,8 @@ link (exit code 1), the edited content is kept in a temporary file whose path
 is printed on standard error; SIGTERM and SIGHUP while the editor runs print
 it too and end wikictl with 128 plus the number of the signal, while an
 interrupt is left to the editor. Standard input must be a terminal; otherwise
-the command exits with code 2.
+the command exits with code 2. Without -m, the commit message is the default
+that "help put" describes.
 
 Output: {path, sha, commit}, printed only when the file is committed.`,
 		flags: editFlags, check: (*app).checkEdit, run: (*app).cmdEdit},
@@ -304,7 +305,8 @@ a broken link; write page targets as [text](path).
 
 If a file that mv changes or deletes changed since mv read it, or a new path
 was created, the command exits with code 3 and writes nothing (see "wikictl
-help put"); run it again.
+help put"); run it again. Without -m, the commit message is the default that
+"help put" describes.
 
 Output: {moved[] {from, to}, rewritten, commit}; moved lists every moved file,
 rewritten counts the other pages whose links were rewritten, and commit is
@@ -328,6 +330,7 @@ is rejected as every path is. A file added under a directory after rm read it
 is not deleted. Pages that link to a deleted page are left unchanged; lint
 reports them as broken_link. If a file changed since rm read it, the command
 exits with code 3 and deletes nothing (see "wikictl help put"); run it again.
+Without -m, the commit message is the default that "help put" describes.
 
 Output: {paths, commit}; paths lists the deleted files, and commit is empty
 when nothing was deleted. With -v, text output is "<path><TAB><commit>" for
