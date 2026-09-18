@@ -65,7 +65,9 @@ func TestFind(t *testing.T) {
 
 // TestFindDashDash checks that "--" ends the flags of find, so a path that
 // starts with - is searched instead of being read as a primary, matching
-// cat and the top-level help.
+// cat and the top-level help, and that an argument spelled like a known
+// primary is still read as a primary after it, which is the one limit the
+// help names.
 func TestFindDashDash(t *testing.T) {
 	cfg := setup(t)
 	pushFiles(t, cfg, map[string]string{
@@ -85,6 +87,11 @@ func TestFindDashDash(t *testing.T) {
 	}
 	if code, out, errs := runCLI(t, cfg, "", "find", "--", "--json"); code != ExitError || out != "" || !strings.Contains(errs, "--json: no such file or directory") {
 		t.Errorf("find -- --json: code=%d out=%q errs=%q", code, out, errs)
+	}
+	// A path spelled like a known primary is still read as a primary after
+	// "--"; -name is what matches such a file by name.
+	if code, _, errs := runCLI(t, cfg, "", "find", "--", "-type"); code != ExitUsage || !strings.Contains(errs, "missing argument to -type") {
+		t.Errorf("find -- -type: code=%d errs=%q", code, errs)
 	}
 }
 

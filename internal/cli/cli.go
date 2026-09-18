@@ -33,7 +33,7 @@ type command struct {
 	detail  string                                        // description shown by "help <command>"
 	flags   func(a *app, fs *pflag.FlagSet)               // registers command flags into fields of a; nil when there are none
 	paths   bool                                          // the positional arguments are paths in the wiki, cleaned by wiki.Clean
-	expr    bool                                          // the arguments are an expression for check to parse; only -h and arguments starting with "--" are flags
+	expr    bool                                          // the arguments are an expression for check to parse; only -h and arguments starting with "--" are flags, and "--" itself ends them
 	writes  bool                                          // the command changes the wiki; openRepo always fetches for it, ignoring fetch_ttl
 	check   func(a *app, c *command, args []string) error // validates the arguments before the configuration is read; nil when there is nothing to check
 	run     func(a *app, c *command, args []string) error
@@ -278,10 +278,11 @@ does not change the exit code, or frontmatter_error with --json.
 
 Only -h and the arguments starting with "--", such as --json, are flags.
 "--" ends the flags, so a path that starts with - can follow, as it can
-for the other commands. A path that does not exist ("no such file or
-directory") or is a submodule ("is a submodule") is reported on standard
-error, the other paths are still searched, and the command exits with
-code 1.
+for the other commands; a path spelled like a primary, such as -type, is
+still read as a primary after it, and -name matches such a file instead.
+A path that does not exist ("no such file or directory") or is a
+submodule ("is a submodule") is reported on standard error, the other
+paths are still searched, and the command exits with code 1.
 
 Output: items[] {path, kind}; kind is "file" or "dir". With --frontmatter,
 each item also has frontmatter[] {key, line, value}, empty when no key is
