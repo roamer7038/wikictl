@@ -1793,6 +1793,70 @@ func TestPutIgnoresCallerGitDir(t *testing.T) {
 	}
 }
 
+// TestCatMissingPathWithSpaces checks that a path that does not exist and
+// holds spaces is reported as missing with code 1, and that the files read
+// with it keep their sha and their content, with and without --at. A name of
+// several words used to pass for a file: its sha was cut, the absent path
+// could come back with a content of its own, and the command could exit 0.
+func TestCatMissingPathWithSpaces(t *testing.T) {
+	cfg := setup(t)
+	pushFiles(t, cfg, map[string]string{"global/meeting notes.txt": "notes\n"})
+	remote := filepath.Join(filepath.Dir(cfg), "remote.git")
+	indexSHA := gitOut(t, "--git-dir", remote, "rev-parse", "main:global/index.md")
+	notesSHA := gitOut(t, "--git-dir", remote, "rev-parse", "main:global/meeting notes.txt")
+	head := gitOut(t, "--git-dir", remote, "rev-parse", "main")
+	const index = "---\nsummary: entry point\n---\n# global\n"
+
+	type catItems struct {
+		Items []struct{ Path, SHA, Content string }
+	}
+	for _, c := range []struct {
+		name string
+		args []string
+		errs string
+	}{
+		{"one missing", []string{"cat", "--json", "a b.md", "global/index.md"},
+			"wikictl: a b.md: no such file or directory\n"},
+		// "x blob 12" looks like the "<sha> <type> <size>" of a found object.
+		{"missing that looks like a header", []string{"cat", "--json", "x blob 12", "global/index.md"},
+			"wikictl: x blob 12: no such file or directory\n"},
+		{"several missing", []string{"cat", "--json", "a b.md", "x blob 12", "c d.md", "global/index.md"},
+			"wikictl: a b.md: no such file or directory\nwikictl: x blob 12: no such file or directory\nwikictl: c d.md: no such file or directory\n"},
+		{"missing with --at", []string{"cat", "--json", "--at", head, "a b.md", "x blob 12", "global/index.md"},
+			"wikictl: a b.md: no such file or directory\nwikictl: x blob 12: no such file or directory\n"},
+	} {
+		code, out, errs := runCLI(t, cfg, "", c.args...)
+		var got catItems
+		mustUnmarshal(t, out, &got)
+		if code != ExitError || errs != c.errs {
+			t.Errorf("%s: code=%d errs=%q, want %d and %q", c.name, code, errs, ExitError, c.errs)
+		}
+		if len(got.Items) != 1 {
+			t.Errorf("%s: %s, want only global/index.md", c.name, out)
+			continue
+		}
+		if it := got.Items[0]; it.Path != "global/index.md" || it.SHA != indexSHA || it.Content != index {
+			t.Errorf("%s: %s, want the sha %s and the content of index.md", c.name, out, indexSHA)
+		}
+	}
+
+	// A file whose name holds spaces and does exist is read as any other.
+	code, out, errs := runCLI(t, cfg, "", "cat", "--json", "a b.md", "global/meeting notes.txt", "global/index.md")
+	var got catItems
+	mustUnmarshal(t, out, &got)
+	if code != ExitError || errs != "wikictl: a b.md: no such file or directory\n" {
+		t.Errorf("cat with a file holding spaces: code=%d errs=%q", code, errs)
+	}
+	if len(got.Items) != 2 || got.Items[0].Path != "global/meeting notes.txt" ||
+		got.Items[0].SHA != notesSHA || got.Items[0].Content != "notes\n" ||
+		got.Items[1].SHA != indexSHA || got.Items[1].Content != index {
+		t.Errorf("cat with a file holding spaces: %s", out)
+	}
+	if code, out, errs := runCLI(t, cfg, "", "cat", "global/meeting notes.txt"); code != ExitOK || out != "notes\n" || errs != "" {
+		t.Errorf("cat of a file holding spaces: code=%d out=%q errs=%q", code, out, errs)
+	}
+}
+
 func gitOut(t *testing.T, args ...string) string {
 	t.Helper()
 	out, err := exec.Command("git", args...).Output()

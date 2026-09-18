@@ -307,11 +307,21 @@ func (r *Repo) catFile(names []string, withContent bool) ([]catEntry, error) {
 		if err != nil {
 			break
 		}
-		f := strings.Fields(hdr)
-		if len(f) < 3 {
-			continue // "<object> missing"
+		// A found object answers "<sha> <type> <size>", which holds no space
+		// but the two between the fields; an object that is not found answers
+		// "<name> missing", and a name may hold spaces, so counting fields
+		// takes "a b.md missing" for a found object. The answers are told
+		// apart by the end of the line and by the size instead: any other
+		// answer of cat-file, such as "<name> ambiguous", is left out too.
+		line := strings.TrimSuffix(hdr, "\n")
+		f := strings.Fields(line)
+		if strings.HasSuffix(line, " missing") || len(f) != 3 {
+			continue
 		}
-		n, _ := strconv.ParseInt(f[2], 10, 64)
+		n, err := strconv.ParseInt(f[2], 10, 64)
+		if err != nil {
+			continue
+		}
 		e := catEntry{Object: Object{SHA: f[0], Size: n}, typ: f[1]}
 		if withContent {
 			e.content = make([]byte, n)
