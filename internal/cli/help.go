@@ -107,7 +107,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "control character is rejected with exit code 4. An empty path names no file:")
 	fmt.Fprintln(w, `the commands that read report it as "no such file or directory" (grep with`)
 	fmt.Fprintln(w, "code 2), and the commands that write reject it as bad_path with exit code 4;")
-	fmt.Fprintln(w, "rm -f ignores it and exits 0.")
+	fmt.Fprintln(w, "rm -f ignores it.")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Global flags (before or after the command):")
 	fs := newFlagSet("wikictl")
