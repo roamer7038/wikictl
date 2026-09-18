@@ -2,6 +2,7 @@ package page
 
 import (
 	"math"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -283,6 +284,73 @@ func TestParseLinksTargets(t *testing.T) {
 				t.Errorf("%q: links=%+v issues=%+v, want %q", c.line, links, issues, c.want)
 			}
 		}
+	}
+}
+
+// TestParseLinksSchemeCase checks that the case of a scheme does not change
+// how a target is read, since URI schemes are case-insensitive: a target
+// written "HTTPS://..." is a URL as written, with no issue, and is not
+// normalised to lowercase. A type is not a scheme, so a mistyped type written
+// in mixed case is still reported as links_syntax rather than taken for a URL.
+func TestParseLinksSchemeCase(t *testing.T) {
+	for _, tc := range []struct {
+		target         string
+		typed, untyped string // the resolved target, or "" for links_syntax
+	}{
+		{"https://example.com/a", "https://example.com/a", "https://example.com/a"},
+		{"HTTPS://example.com/a", "HTTPS://example.com/a", "HTTPS://example.com/a"},
+		{"HtTp://example.org", "HtTp://example.org", "HtTp://example.org"},
+		{"MAILTO:a@example.com", "MAILTO:a@example.com", ""},
+	} {
+		for _, c := range []struct{ line, want string }{{"- cites: " + tc.target, tc.typed}, {"- " + tc.target, tc.untyped}} {
+			ls := scanLines([]byte("# t\n## Links\n"+c.line+"\n"), 1)
+			start, _, _ := headings(ls)
+			links, issues := parseLinks(ls[start:], "d/p.md")
+			if c.want == "" && (len(links) != 0 || len(issues) != 1) || c.want != "" && (len(links) != 1 || links[0].Target != c.want || !links[0].IsURL || len(issues) != 0) {
+				t.Errorf("%q: links=%+v issues=%+v, want %q", c.line, links, issues, c.want)
+			}
+		}
+	}
+	// An untyped line that starts with "<word>:" and is no "<scheme>://..."
+	// is a mistyped type, reported as links_syntax whatever the case of the
+	// word, as "see_also: foo" is.
+	for _, target := range []string{"SeeAlso: foo", "See_Also: foo", "SeeAlso:foo.md", "Cites: x.md"} {
+		ls := scanLines([]byte("# t\n## Links\n- "+target+"\n"), 1)
+		start, _, _ := headings(ls)
+		links, issues := parseLinks(ls[start:], "d/p.md")
+		if len(links) != 0 || len(issues) != 1 || issues[0].Code != "links_syntax" {
+			t.Errorf("- %s: links=%+v issues=%+v, want one links_syntax", target, links, issues)
+		}
+	}
+}
+
+// TestLinkSchemeRegexpCase checks the invariant the three regexps of a scheme
+// must keep: reScheme, which takes a target for a URL, rePrefix, which sees a
+// target that starts with "<word>:", and reURL, which tells a URL from a
+// mistyped type, all ignore the case of the scheme. Were only reScheme to
+// ignore it, a mistyped type such as "SeeAlso: foo" would pass for a URL,
+// because the check of parseLinks that reports it is rePrefix without reURL.
+// reTyped matches the name of a type, not a scheme, and stays lowercase.
+func TestLinkSchemeRegexpCase(t *testing.T) {
+	for _, s := range []string{"https://e/", "mailto:a@e", "see_also: x", "x.md", "a+b-c.d://e/"} {
+		up := strings.ToUpper(s)
+		for _, re := range []struct {
+			name string
+			re   *regexp.Regexp
+		}{{"reScheme", reScheme}, {"rePrefix", rePrefix}, {"reURL", reURL}} {
+			if re.re.MatchString(s) != re.re.MatchString(up) {
+				t.Errorf("%s: %q matches %v but %q matches %v", re.name, s, re.re.MatchString(s), up, re.re.MatchString(up))
+			}
+		}
+		// Every target taken for a URL is one rePrefix sees, in either case.
+		for _, t2 := range []string{s, up} {
+			if reScheme.MatchString(t2) && !rePrefix.MatchString(t2) {
+				t.Errorf("%q: reScheme matches but rePrefix does not", t2)
+			}
+		}
+	}
+	if reTyped.MatchString("SeeAlso: foo") {
+		t.Error("reTyped must match lowercase type names only")
 	}
 }
 

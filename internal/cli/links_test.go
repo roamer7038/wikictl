@@ -268,6 +268,49 @@ func TestLinksOneGrep(t *testing.T) {
 	}
 }
 
+// TestLinksUppercaseScheme checks that a Links target whose scheme is written
+// in uppercase is listed as a URL, as written, and that lint reports nothing
+// about it: URI schemes are case-insensitive. A mistyped type written in mixed
+// case, which is no URL, is still reported as links_syntax.
+func TestLinksUppercaseScheme(t *testing.T) {
+	cfg := setup(t)
+	pushFiles(t, cfg, map[string]string{
+		"global/upper.md": "---\nsummary: upper\n---\n# upper\n\n## Links\n" +
+			"- see_also: HTTPS://example.com | upper\n" +
+			"- see_also: https://example.com | lower\n" +
+			"- HtTp://example.org\n",
+	})
+	var res struct{ Items []linkItem }
+	code, out, errs := runCLI(t, cfg, "", "links", "--json", "-o", "global/upper.md")
+	mustUnmarshal(t, out, &res)
+	want := []linkItem{
+		{"global/upper.md", "out", "see_also", "HTTPS://example.com", "upper", 7, true},
+		{"global/upper.md", "out", "see_also", "https://example.com", "lower", 8, true},
+		{"global/upper.md", "out", "see_also", "HtTp://example.org", "", 9, true},
+	}
+	if code != ExitOK || !slices.Equal(res.Items, want) {
+		t.Errorf("links -o: code=%d items=%+v want=%+v errs=%q", code, res.Items, want, errs)
+	}
+	if code, out, errs := runCLI(t, cfg, "", "lint", "--json", "global/upper.md"); code != ExitOK || out != `{"items":[]}`+"\n" {
+		t.Errorf("lint: code=%d out=%q errs=%q", code, out, errs)
+	}
+	// A mistyped type is no URL, whatever its case.
+	pushFiles(t, cfg, map[string]string{
+		"global/typo.md": "---\nsummary: typo\n---\n# typo\n\n## Links\n- SeeAlso: foo\n",
+	})
+	code, out, errs = runCLI(t, cfg, "", "lint", "--json", "global/typo.md")
+	var issues struct {
+		Items []struct {
+			Code string
+			Line int
+		}
+	}
+	mustUnmarshal(t, out, &issues)
+	if code != ExitInvalid || len(issues.Items) != 1 || issues.Items[0].Code != "links_syntax" || issues.Items[0].Line != 7 {
+		t.Errorf("lint of a mistyped type: code=%d out=%q errs=%q", code, out, errs)
+	}
+}
+
 // TestLinksHelp checks that the help says which page the line of an item is
 // in, and recommends -o for a graph of the whole wiki.
 func TestLinksHelp(t *testing.T) {
