@@ -31,6 +31,18 @@ const description = `wikictl reads and writes a Markdown wiki in a Git repositor
 git: no daemon, no index, no working tree. Pages are found with git grep and
 written as commits pushed with --force-with-lease.`
 
+const readingHelp = "Reading many files:\n" + `  Each command fetches the wiki before it reads, so one command per file
+  takes minutes for hundreds of them. Narrow first with grep -l, grep -c or
+  find -meta KEY=VALUE, then read only what is left: cat, stat and ls -l take
+  many paths at once, as in
+    wikictl find global -name '*.md' | tr '\n' '\0' | xargs -0 -r wikictl stat
+  find --frontmatter=KEY,... reads the frontmatter of every page under a path
+  in one command, and links takes several paths, a directory or none at all,
+  finding the links to them in one search. With --json, pick the values out of
+  items[] with jq. For reading over time, set fetch_ttl in the configuration;
+  --no-fetch skips the fetch of a single read; see "wikictl help context".
+`
+
 const outputHelp = `Output:
   Text goes to standard output; with --json every command except help prints
   one JSON object, whose fields "wikictl help <command>" lists. Warnings go to
@@ -75,6 +87,8 @@ func printUsage(w io.Writer) {
 	fmt.Fprintf(tw, "  %s\t%s\n", "version", "Print the version")
 	fmt.Fprintf(tw, "  %s\t%s\n", "help", "Show help for a command")
 	tw.Flush()
+	fmt.Fprintln(w)
+	fmt.Fprint(w, readingHelp)
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Flags may come before or after the arguments. Every argument after -- is an")
 	fmt.Fprintln(w, "argument, even if it starts with -. Paths are relative to the wiki root: a")
