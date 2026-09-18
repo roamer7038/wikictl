@@ -71,7 +71,8 @@ exit code 4. A name holding a colon, allowed for a file that is not a page
 ambiguous, as it does in GNU grep; use --json for such names.
 
 Output: items[] {path, line, text}; with -l or -L, items[] {path}; with -c,
-items[] {path, count}; with -q, nothing.`,
+items[] {path, count}; with -q, nothing. A path or text that is not valid
+UTF-8 is path_base64 or text_base64 instead (see "wikictl help").`,
 		flags: grepFlags, check: (*app).checkGrep, run: (*app).cmdGrep},
 	{name: "cat", args: "<path>...", minArgs: 1, maxArgs: -1, paths: true,
 		summary: "Print files as stored",
@@ -96,7 +97,8 @@ The sha of a past version cannot be passed to "put --base", which takes the
 sha of the file as it is now. To restore an old version, read its content
 with "cat --at" and write it with "put --base" and the sha that "stat" shows.
 
-Output: items[] {path, sha, content}.`,
+Output: items[] {path, sha, content}. A path or content that is not valid
+UTF-8 is path_base64 or content_base64 instead (see "wikictl help").`,
 		flags: catFlags, run: (*app).cmdCat},
 	{name: "stat", args: "<path>...", minArgs: 1, maxArgs: -1, paths: true,
 		summary: "Show the sha, last update and attributes of files",
@@ -112,7 +114,10 @@ shown here is the one to pass to "put --base", while the sha "cat --at" prints
 for a past version is not.
 
 Output: items[] {path, sha, updated, title, summary, type, tags, status,
-aliases}.`,
+aliases}. A path that is not valid UTF-8 is path_base64 instead; the
+attributes are printed as the page holds them, so one of them can hold
+U+FFFD, and title is the file name for a page without a heading, so a name
+that is not valid UTF-8 becomes U+FFFD there (see "wikictl help").`,
 		run: (*app).cmdStat},
 	{name: "log", args: "[<path>...]", maxArgs: -1, paths: true,
 		summary: "Show the commits that changed files",
@@ -167,7 +172,10 @@ mirror's automatic gc (two weeks by default), after which a sha this command
 printed no longer resolves for "cat --at".
 
 Output: items[] {commit, author_date, commit_date, author, subject}; with
---follow every item also has paths[].`,
+--follow every item also has paths[]. An author or subject that is not valid
+UTF-8 is author_base64 or subject_base64 instead, and paths[] keeps its shape:
+a paths_base64[] of the same length and order follows it when a path is not
+valid UTF-8 (see "wikictl help").`,
 		flags: logFlags, check: (*app).checkLog, run: (*app).cmdLog},
 	{name: "links", args: "[<path>...]", maxArgs: -1, paths: true,
 		summary: "List the links in pages and to them",
@@ -196,7 +204,9 @@ exits with code 1.
 Output: items[] {path, direction, type, target, note, line, url}. line is the
 line the link is on in the page that holds it: the page of path for "out",
 and the page of target for "in". url tells whether target is a URL instead of
-a page.`,
+a page. A path or target that is not valid UTF-8 is path_base64 or
+target_base64 instead; note is prose rather than a value to pass back, so it
+keeps its key and can hold U+FFFD (see "wikictl help").`,
 		flags: linksFlags, run: (*app).cmdLinks},
 	{name: "ls", args: "[<path>...]", maxArgs: -1, paths: true,
 		summary: "List the entries of directories",
@@ -216,7 +226,10 @@ on standard error, also with --json, the others are still listed, and the
 command exits with code 1.
 
 Output: items[] {path, kind, type, summary, title, updated}; kind is "file"
-or "dir".`,
+or "dir". A path that is not valid UTF-8 is path_base64 instead; the type,
+summary and title are printed as the page holds them, so one of them can
+hold U+FFFD, and title is the file name for a page without a heading, so a
+name that is not valid UTF-8 becomes U+FFFD there (see "wikictl help").`,
 		flags: lsFlags, run: (*app).cmdLs},
 	{name: "find", args: "[<path>...] [<expression>]", maxArgs: -1, expr: true,
 		summary: "Find files and directories by name, type, update time or frontmatter",
@@ -270,7 +283,9 @@ Output: items[] {path, kind}; kind is "file" or "dir". With --frontmatter,
 each item also has frontmatter[] {key, line, value}, empty when no key is
 printed and absent when the file has no frontmatter at all, or
 frontmatter_error {code, message}, whose code is frontmatter_invalid or
-page_too_large.`,
+page_too_large. A path that is not valid UTF-8 is path_base64 instead; the
+frontmatter is printed as the page holds it, so a key or a value can hold
+U+FFFD (see "wikictl help").`,
 		flags: findFlags, check: (*app).checkFind, run: (*app).cmdFind},
 	{name: "put", args: "<path> < content", minArgs: 1, maxArgs: 1, paths: true, writes: true,
 		summary: "Create or replace a file from standard input",
@@ -314,7 +329,9 @@ re-read; run the command again. edit, mv and rm report a conflict the same
 way.
 
 Output: {path, sha, commit}; with -v, text output is
-"<path><TAB><sha><TAB><commit>".`,
+"<path><TAB><sha><TAB><commit>". A path that is not valid UTF-8 is
+path_base64 instead, in the conflict output as well, where a content that is
+not valid UTF-8 is content_base64 (see "wikictl help").`,
 		flags: putFlags, run: (*app).cmdPut},
 	{name: "edit", args: "<path>", minArgs: 1, maxArgs: 1, paths: true, writes: true,
 		summary: "Edit a file in an editor and commit it",
@@ -334,7 +351,8 @@ interrupt is left to the editor. Standard input must be a terminal; otherwise
 the command exits with code 2. Without -m, the commit message is the default
 that "help put" describes.
 
-Output: {path, sha, commit}, printed only when the file is committed.`,
+Output: {path, sha, commit}, printed only when the file is committed. A path
+that is not valid UTF-8 is path_base64 instead (see "wikictl help").`,
 		flags: editFlags, check: (*app).checkEdit, run: (*app).cmdEdit},
 	{name: "mv", args: "<src>... <dst>", minArgs: 1, maxArgs: -1, writes: true,
 		summary: "Move or rename files and directories, rewriting links",
@@ -385,7 +403,8 @@ help put"); run it again. Without -m, the commit message is the default that
 Output: {moved[] {from, to}, rewritten, commit}; moved lists every moved file,
 rewritten counts the other pages whose links were rewritten, and commit is
 empty when nothing was moved. With -v, text output is
-"<from><TAB><to><TAB><commit>" for each moved file.`,
+"<from><TAB><to><TAB><commit>" for each moved file. A from or to that is not
+valid UTF-8 is from_base64 or to_base64 instead (see "wikictl help").`,
 		flags: mvFlags, check: (*app).checkMv, run: (*app).cmdMv},
 	{name: "rm", args: "<path>...", maxArgs: -1, paths: true, writes: true,
 		summary: "Delete files or directories",
@@ -408,7 +427,8 @@ Without -m, the commit message is the default that "help put" describes.
 
 Output: {paths, commit}; paths lists the deleted files, and commit is empty
 when nothing was deleted. With -v, text output is "<path><TAB><commit>" for
-each deleted file.`,
+each deleted file. paths keeps its shape: a paths_base64 of the same length
+and order follows it when a path is not valid UTF-8 (see "wikictl help").`,
 		flags: rmFlags, check: (*app).checkRm, run: (*app).cmdRm},
 	{name: "lint", args: "[<path>...]", maxArgs: -1, paths: true,
 		summary: "Report pages that violate the wiki format",
@@ -489,7 +509,11 @@ The title of a page is the text of its first heading outside code fences and
 before the Links section, else the file name. A closing sequence of # is
 removed only when a space or a tab precedes it, so "# C#" has the title "C#".
 
-Output: items[] {path, line, code, message}.`,
+Output: items[] {path, line, code, message}. A path that is not valid UTF-8
+is path_base64 instead. The message of frontmatter_invalid comes from the
+YAML parser and can hold U+FFFD for a page that is not valid UTF-8, while
+path and line still say where it is; the other messages quote the name or
+the target they report, so none of its bytes is lost.`,
 		run: (*app).cmdLint},
 	{name: "tree", args: "[<dir>...]", maxArgs: -1, paths: true,
 		summary: "Show files and directories as a tree",
@@ -504,7 +528,8 @@ neither, and naming one reports "is a submodule". A path that does not exist
 ("is a submodule") is reported on standard error, also with --json, and the
 command exits with code 1.
 
-Output: {items[] {path, kind}, directories, files}; kind is "file" or "dir".`,
+Output: {items[] {path, kind}, directories, files}; kind is "file" or "dir".
+A path that is not valid UTF-8 is path_base64 instead (see "wikictl help").`,
 		flags: treeFlags, run: (*app).cmdTree},
 	{name: "context", maxArgs: 0,
 		summary: "Show the resolved configuration",

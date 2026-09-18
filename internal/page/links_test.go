@@ -286,6 +286,21 @@ func TestParseLinksTargets(t *testing.T) {
 	}
 }
 
+// TestParseLinksInvalidUTF8Message checks that the message of a typed link
+// whose destination does not resolve quotes that destination, so that a byte
+// which is not valid UTF-8 is written as \xNN instead of being lost to
+// U+FFFD when the message is printed as JSON. The message carries no base64
+// key of its own, so the quoting is all that keeps the bytes.
+func TestParseLinksInvalidUTF8Message(t *testing.T) {
+	ls := scanLines([]byte("# t\n## Links\n- cites: ../../outside\xff.md\n"), 1)
+	start, _, _ := headings(ls)
+	_, issues := parseLinks(ls[start:], "bad/refs.md")
+	want := `invalid link destination: "../../outside\xff.md"`
+	if len(issues) != 1 || issues[0].Code != "links_syntax" || issues[0].Message != want {
+		t.Errorf("issues=%+v, want one links_syntax with the message %q", issues, want)
+	}
+}
+
 // TestParseLinks checks the links and the links_syntax issues that parseLinks
 // reads from the lines of a Links section, which start at line 3.
 func TestParseLinks(t *testing.T) {

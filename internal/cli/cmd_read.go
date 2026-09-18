@@ -37,9 +37,15 @@ func (v *positiveInt) Set(s string) error {
 func (v *positiveInt) Type() string { return "int" }
 
 type catItem struct {
-	Path    string `json:"path"`
-	SHA     string `json:"sha"`
-	Content string `json:"content"`
+	Path    string
+	SHA     string
+	Content string
+}
+
+// MarshalJSON writes every key of the item; a path or content that is not
+// valid UTF-8 goes to path_base64 or content_base64; see jsonout.go.
+func (it catItem) MarshalJSON() ([]byte, error) {
+	return jsonObject(nil).text("path", it.Path).add("sha", it.SHA).text("content", it.Content).MarshalJSON()
 }
 
 func catFlags(a *app, fs *pflag.FlagSet) {
@@ -112,15 +118,25 @@ func (a *app) cmdCat(c *command, args []string) error {
 }
 
 type statItem struct {
-	Path    string   `json:"path"`
-	SHA     string   `json:"sha"`
-	Updated string   `json:"updated"`
-	Title   string   `json:"title"`
-	Summary string   `json:"summary"`
-	Type    string   `json:"type"`
-	Tags    []string `json:"tags"`
-	Status  string   `json:"status"`
-	Aliases []string `json:"aliases"`
+	Path    string
+	SHA     string
+	Updated string
+	Title   string
+	Summary string
+	Type    string
+	Tags    []string
+	Status  string
+	Aliases []string
+}
+
+// MarshalJSON writes every key of the item; a path that is not valid UTF-8
+// goes to path_base64; see jsonout.go. The attributes come from the page,
+// which is not a value to pass back to another command, so they keep their
+// own keys.
+func (it statItem) MarshalJSON() ([]byte, error) {
+	return jsonObject(nil).text("path", it.Path).add("sha", it.SHA).add("updated", it.Updated).
+		add("title", it.Title).add("summary", it.Summary).add("type", it.Type).add("tags", it.Tags).
+		add("status", it.Status).add("aliases", it.Aliases).MarshalJSON()
 }
 
 // cmdStat shows the blob sha, the time of the last change and the attributes
@@ -287,13 +303,22 @@ func (a *app) reportMissing(paths []string, msg func(string) string) error {
 }
 
 type linkItem struct {
-	Path      string `json:"path"`
-	Direction string `json:"direction"`
-	Type      string `json:"type"`
-	Target    string `json:"target"`
-	Note      string `json:"note"`
-	Line      int    `json:"line"`
-	URL       bool   `json:"url"`
+	Path      string
+	Direction string
+	Type      string
+	Target    string
+	Note      string
+	Line      int
+	URL       bool
+}
+
+// MarshalJSON writes every key of the item; a path or a target that is not
+// valid UTF-8 goes to path_base64 or target_base64; see jsonout.go. The note
+// is prose rather than a value to pass back to another command, so it keeps
+// its key; the type is matched as ASCII, so it cannot be invalid.
+func (it linkItem) MarshalJSON() ([]byte, error) {
+	return jsonObject(nil).text("path", it.Path).add("direction", it.Direction).add("type", it.Type).
+		text("target", it.Target).add("note", it.Note).add("line", it.Line).add("url", it.URL).MarshalJSON()
 }
 
 // filenameMode is what -H and -h choose: whether the path is printed before

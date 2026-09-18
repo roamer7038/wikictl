@@ -225,7 +225,11 @@ func BrokenLinks(s Store, pages []*page.Page) ([]page.Issue, error) {
 	for _, pg := range pages {
 		for _, l := range append(pg.Links, pg.Mentions...) {
 			if _, ok := found[l.Target]; !l.IsURL && !ok {
-				items = append(items, page.Issue{Path: pg.Path, Line: l.Line, Code: "broken_link", Message: "link target does not exist: " + l.Target})
+				// The target is quoted, so that a byte of a target that is
+				// not valid UTF-8 is written as \xNN rather than lost to
+				// U+FFFD when the message is printed as JSON.
+				items = append(items, page.Issue{Path: pg.Path, Line: l.Line, Code: "broken_link",
+					Message: fmt.Sprintf("link target does not exist: %q", l.Target)})
 			}
 		}
 	}

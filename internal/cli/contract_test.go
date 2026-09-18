@@ -13,6 +13,11 @@ import (
 // exit code or a key on purpose updates this table.
 func TestJSONContract(t *testing.T) {
 	cfg := setup(t)
+	// A second wiki whose names, content, link target, commit author and
+	// commit subject are not valid UTF-8, for the cases of the base64 keys:
+	// the key set of a conditional key is only fixed here when a case
+	// produces it.
+	badCfg := setupInvalidUTF8(t)
 
 	// The page links to an existing page and a missing one, so that links has
 	// both directions and lint has items.
@@ -64,6 +69,50 @@ func TestJSONContract(t *testing.T) {
 		{"mv/not_replacing", "", "", []string{"mv", "global/push.md", "global/index.md"}, ExitError, []string{"commit", "moved", "rewritten"}},
 		{"rm", "", "", []string{"rm", "global/new2.md"}, ExitOK, []string{"commit", "paths"}},
 		{"unknown", "", "", []string{"nope"}, ExitUsage, errKeys},
+
+		// The values that are not valid UTF-8 are printed in base64 under
+		// another key, and the key they replace is absent.
+		{"cat/invalid_path", badCfg, "", []string{"cat", badName}, ExitOK,
+			[]string{"items", "items[].content", "items[].path_base64", "items[].sha"}},
+		{"cat/invalid_content", badCfg, "", []string{"cat", "bad/content.md"}, ExitOK,
+			[]string{"items", "items[].content_base64", "items[].path", "items[].sha"}},
+		{"grep/invalid_text", badCfg, "", []string{"grep", "zzmark"}, ExitOK,
+			[]string{"items", "items[].line", "items[].path", "items[].text_base64"}},
+		{"grep/invalid_path", badCfg, "", []string{"grep", "-l", "zzname"}, ExitOK,
+			[]string{"items", "items[].path_base64"}},
+		{"grep/invalid_count", badCfg, "", []string{"grep", "-c", "zzname"}, ExitOK,
+			[]string{"items", "items[].count", "items[].path_base64"}},
+		{"ls/invalid_path", badCfg, "", []string{"ls", "bad"}, ExitOK,
+			[]string{"items", "items[].kind", "items[].path", "items[].path_base64", "items[].summary",
+				"items[].title", "items[].type", "items[].updated"}},
+		{"tree/invalid_path", badCfg, "", []string{"tree"}, ExitOK,
+			[]string{"directories", "files", "items", "items[].kind", "items[].path", "items[].path_base64"}},
+		{"find/invalid_path", badCfg, "", []string{"find"}, ExitOK,
+			[]string{"items", "items[].kind", "items[].path", "items[].path_base64"}},
+		{"stat/invalid_path", badCfg, "", []string{"stat", badName}, ExitOK,
+			[]string{"items", "items[].aliases", "items[].path_base64", "items[].sha", "items[].status",
+				"items[].summary", "items[].tags", "items[].title", "items[].type", "items[].updated"}},
+		{"log/invalid", badCfg, "", []string{"log", "-n", "1", "bad"}, ExitOK,
+			[]string{"items", "items[].author_base64", "items[].author_date", "items[].commit",
+				"items[].commit_date", "items[].subject_base64"}},
+		{"log/follow/invalid", badCfg, "", []string{"log", "--follow", "-n", "1", badName}, ExitOK,
+			[]string{"items", "items[].author_base64", "items[].author_date", "items[].commit",
+				"items[].commit_date", "items[].paths", "items[].paths_base64", "items[].subject_base64"}},
+		{"links/invalid_target", badCfg, "", []string{"links", "-o", "bad/content.md"}, ExitOK,
+			[]string{"items", "items[].direction", "items[].line", "items[].note", "items[].path",
+				"items[].target_base64", "items[].type", "items[].url"}},
+		{"lint/invalid_path", badCfg, "", []string{"lint"}, ExitInvalid,
+			[]string{"items", "items[].code", "items[].line", "items[].message", "items[].path_base64"}},
+		{"put/invalid_path", badCfg, newPage, []string{"put", "bad/" + badByte + "new.md"}, ExitOK,
+			[]string{"commit", "path_base64", "sha"}},
+		{"put/conflict/invalid_path", badCfg, newPage, []string{"put", "bad/" + badByte + "new.md"}, ExitConflict,
+			[]string{"content", "error", "message", "path_base64", "reason", "sha"}},
+		{"put/conflict/invalid_content", badCfg, newPage, []string{"put", "bad/content.md"}, ExitConflict,
+			[]string{"content_base64", "error", "message", "path", "reason", "sha"}},
+		{"mv/invalid_path", badCfg, "", []string{"mv", "bad/" + badByte + "new.md", "bad/" + badByte + "moved.md"}, ExitOK,
+			[]string{"commit", "moved", "moved[].from_base64", "moved[].to_base64", "rewritten"}},
+		{"rm/invalid_path", badCfg, "", []string{"rm", "bad/" + badByte + "moved.md"}, ExitOK,
+			[]string{"commit", "paths", "paths_base64"}},
 	}
 	for _, c := range cases {
 		cf := cfg

@@ -533,7 +533,10 @@ func TestLinkTargetsNonRegular(t *testing.T) {
 	mustRun(t, work, "git", "update-index", "--add", "--cacheinfo", "160000,"+gitOut(t, "--git-dir", remote, "rev-parse", "main")+",global/sub.md")
 	mustRun(t, work, "git", "update-index", "--add", "--cacheinfo", "160000,1234567890123456789012345678901234567890,global/other.md")
 	commitAndPush(t, work)
-	want := []string{"global/sub.md", "global/other.md", "global/linkdir.md/app/x.md", "global/dir.md", "global/missing.md"}
+	// The message quotes the target; see wiki.BrokenLinks. The quotation
+	// marks are part of the expected value.
+	want := []string{`"global/sub.md"`, `"global/other.md"`, `"global/linkdir.md/app/x.md"`,
+		`"global/dir.md"`, `"global/missing.md"`}
 	code, out, errs := runCLI(t, cfg, "", "--json", "lint", "global/refs.md")
 	var res struct {
 		Items []struct{ Code, Message string }
