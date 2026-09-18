@@ -110,6 +110,14 @@ type lsItem struct {
 	Updated string `json:"updated"`
 }
 
+// MarshalJSON puts a path that is not valid UTF-8 in base64 under another
+// key; see jsonout.go. The type, summary and title come from the page, not
+// from a value to pass back to another command, so they keep their own keys.
+func (it lsItem) MarshalJSON() ([]byte, error) {
+	return jsonObject(nil).text("path", it.Path).add("kind", it.Kind).add("type", it.Type).
+		add("summary", it.Summary).add("title", it.Title).add("updated", it.Updated).MarshalJSON()
+}
+
 func lsFlags(a *app, fs *pflag.FlagSet) {
 	fs.BoolVarP(&a.long, "long", "l", false, "show the type, last update and summary of each entry")
 	fs.BoolVarP(&a.recursive, "recursive", "R", false, "list subdirectories recursively")
@@ -303,6 +311,12 @@ func writeLs(w io.Writer, rows [][4]string, long bool) {
 type treeItem struct {
 	Path string `json:"path"`
 	Kind string `json:"kind"`
+}
+
+// MarshalJSON puts a path that is not valid UTF-8 in base64 under another
+// key; see jsonout.go.
+func (it treeItem) MarshalJSON() ([]byte, error) {
+	return jsonObject(nil).text("path", it.Path).add("kind", it.Kind).MarshalJSON()
 }
 
 func treeFlags(a *app, fs *pflag.FlagSet) {

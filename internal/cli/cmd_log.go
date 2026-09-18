@@ -24,6 +24,19 @@ type logItem struct {
 	Paths      *[]string `json:"paths,omitempty"`
 }
 
+// MarshalJSON puts an author or a subject that is not valid UTF-8 in base64
+// under another key, and joins paths[] by a paths_base64[] of the same length
+// and order when a path is not valid UTF-8; see jsonout.go. The commit sha
+// and the two dates are written by git and hold ASCII only.
+func (it logItem) MarshalJSON() ([]byte, error) {
+	o := jsonObject(nil).add("commit", it.Commit).add("author_date", it.AuthorDate).
+		add("commit_date", it.CommitDate).text("author", it.Author).text("subject", it.Subject)
+	if it.Paths != nil {
+		o = o.list("paths", *it.Paths)
+	}
+	return o.MarshalJSON()
+}
+
 // optString is a string flag that records whether it was given, so that a
 // value that is empty is reported instead of read as the flag being absent.
 // git aborts on an empty -S, and an empty --since would select every commit

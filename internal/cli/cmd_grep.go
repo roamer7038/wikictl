@@ -19,13 +19,31 @@ type grepLine struct {
 	Text string `json:"text"`
 }
 
+// MarshalJSON puts a path or a matched line that is not valid UTF-8 in base64
+// under another key; see jsonout.go.
+func (it grepLine) MarshalJSON() ([]byte, error) {
+	return jsonObject(nil).text("path", it.Path).add("line", it.Line).text("text", it.Text).MarshalJSON()
+}
+
 type grepPath struct {
 	Path string `json:"path"`
+}
+
+// MarshalJSON puts a path that is not valid UTF-8 in base64 under another
+// key; see jsonout.go.
+func (it grepPath) MarshalJSON() ([]byte, error) {
+	return jsonObject(nil).text("path", it.Path).MarshalJSON()
 }
 
 type grepCount struct {
 	Path  string `json:"path"`
 	Count int    `json:"count"`
+}
+
+// MarshalJSON puts a path that is not valid UTF-8 in base64 under another
+// key; see jsonout.go.
+func (it grepCount) MarshalJSON() ([]byte, error) {
+	return jsonObject(nil).text("path", it.Path).add("count", it.Count).MarshalJSON()
 }
 
 func grepFlags(a *app, fs *pflag.FlagSet) {

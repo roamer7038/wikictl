@@ -42,6 +42,12 @@ type catItem struct {
 	Content string `json:"content"`
 }
 
+// MarshalJSON puts a path or content that is not valid UTF-8 in base64 under
+// another key; see jsonout.go.
+func (it catItem) MarshalJSON() ([]byte, error) {
+	return jsonObject(nil).text("path", it.Path).add("sha", it.SHA).text("content", it.Content).MarshalJSON()
+}
+
 func catFlags(a *app, fs *pflag.FlagSet) {
 	fs.Var(&a.at, "at", "read the files as of the commit `rev`, not the current version")
 }
@@ -121,6 +127,15 @@ type statItem struct {
 	Tags    []string `json:"tags"`
 	Status  string   `json:"status"`
 	Aliases []string `json:"aliases"`
+}
+
+// MarshalJSON puts a path that is not valid UTF-8 in base64 under another
+// key; see jsonout.go. The attributes come from the frontmatter, which is not
+// a value to pass back to another command, so they keep their own keys.
+func (it statItem) MarshalJSON() ([]byte, error) {
+	return jsonObject(nil).text("path", it.Path).add("sha", it.SHA).add("updated", it.Updated).
+		add("title", it.Title).add("summary", it.Summary).add("type", it.Type).add("tags", it.Tags).
+		add("status", it.Status).add("aliases", it.Aliases).MarshalJSON()
 }
 
 // cmdStat shows the blob sha, the time of the last change and the attributes
@@ -294,6 +309,13 @@ type linkItem struct {
 	Note      string `json:"note"`
 	Line      int    `json:"line"`
 	URL       bool   `json:"url"`
+}
+
+// MarshalJSON puts a path or a target that is not valid UTF-8 in base64 under
+// another key; see jsonout.go.
+func (it linkItem) MarshalJSON() ([]byte, error) {
+	return jsonObject(nil).text("path", it.Path).add("direction", it.Direction).add("type", it.Type).
+		text("target", it.Target).add("note", it.Note).add("line", it.Line).add("url", it.URL).MarshalJSON()
 }
 
 // filenameMode is what -H and -h choose: whether the path is printed before

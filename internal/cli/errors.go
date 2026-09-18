@@ -118,6 +118,13 @@ type conflictOut struct {
 	Message string `json:"message"`
 }
 
+// MarshalJSON puts a path or content that is not valid UTF-8 in base64 under
+// another key; see jsonout.go.
+func (c conflictOut) MarshalJSON() ([]byte, error) {
+	return jsonObject(nil).add("error", c.Error).add("reason", c.Reason).text("path", c.Path).
+		add("sha", c.SHA).text("content", c.Content).add("message", c.Message).MarshalJSON()
+}
+
 // movedOut is the conflict of a push that lost every race. It has no path,
 // sha or content: no file was read, checked or written. detail is what git
 // reported, so that the cause stays visible.

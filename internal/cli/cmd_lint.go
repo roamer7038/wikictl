@@ -11,6 +11,19 @@ import (
 	"github.com/roamer7038/wikictl/internal/wiki"
 )
 
+// lintItem is one finding of lint in JSON output. It wraps page.Issue so that
+// a path that is not valid UTF-8 is printed in base64, which is a concern of
+// the output rather than of the check.
+type lintItem struct{ page.Issue }
+
+// MarshalJSON puts a path that is not valid UTF-8 in base64 under another
+// key; see jsonout.go. The message is prose rather than a value to pass back
+// to another command, so it keeps its key; see the help of lint.
+func (it lintItem) MarshalJSON() ([]byte, error) {
+	return jsonObject(nil).text("path", it.Path).add("line", it.Line).
+		add("code", it.Code).add("message", it.Message).MarshalJSON()
+}
+
 func (a *app) cmdLint(c *command, args []string) error {
 	t, err := a.readTree(false)
 	if err != nil {
@@ -91,7 +104,11 @@ func (a *app) cmdLint(c *command, args []string) error {
 		}
 		return items[i].Line < items[j].Line
 	})
-	a.emit(map[string]any{"items": items}, func(w io.Writer) {
+	out := make([]lintItem, len(items))
+	for i, is := range items {
+		out[i] = lintItem{is}
+	}
+	a.emit(map[string]any{"items": out}, func(w io.Writer) {
 		for _, it := range items {
 			fmt.Fprintf(w, "%s:%d: %s: %s\n", escapeControl(it.Path), it.Line, it.Code, escapeControl(it.Message))
 		}

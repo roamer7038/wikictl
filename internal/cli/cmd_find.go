@@ -56,6 +56,19 @@ type findItem struct {
 	FrontmatterError *frontmatterError      `json:"frontmatter_error,omitempty"`
 }
 
+// MarshalJSON puts a path that is not valid UTF-8 in base64 under another
+// key; see jsonout.go. The frontmatter is printed as the page holds it.
+func (it findItem) MarshalJSON() ([]byte, error) {
+	o := jsonObject(nil).text("path", it.Path).add("kind", it.Kind)
+	if it.Frontmatter != nil {
+		o = o.add("frontmatter", *it.Frontmatter)
+	}
+	if it.FrontmatterError != nil {
+		o = o.add("frontmatter_error", it.FrontmatterError)
+	}
+	return o.MarshalJSON()
+}
+
 // frontmatterError is a frontmatter that find could not read, with the code
 // and the message that lint reports for it.
 type frontmatterError struct {

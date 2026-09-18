@@ -123,7 +123,8 @@ func (a *app) writeFile(p string, content []byte, base, cmd string) error {
 		return err
 	}
 	a.flushWarnings()
-	out := map[string]string{"path": p, "sha": res.SHAs[p], "commit": res.Commit}
+	out := map[string]any{"sha": res.SHAs[p], "commit": res.Commit}
+	setText(out, "path", p)
 	a.emit(out, func(w io.Writer) {
 		if a.verbose {
 			fmt.Fprintf(w, "%s\t%s\t%s\n", escapeControl(p), res.SHAs[p], res.Commit)
@@ -257,7 +258,12 @@ func (a *app) cmdRm(c *command, args []string) error {
 		}
 		commit = res.Commit
 	}
-	a.emit(map[string]any{"paths": deleted, "commit": commit}, func(w io.Writer) {
+	// paths is an array of strings, so a path that is not valid UTF-8 cannot
+	// be given a key of its own; setList adds a second array of the same
+	// length and order instead, leaving the shape of paths alone.
+	out := map[string]any{"commit": commit}
+	setList(out, "paths", deleted)
+	a.emit(out, func(w io.Writer) {
 		if a.verbose {
 			for _, p := range deleted {
 				fmt.Fprintf(w, "%s\t%s\n", escapeControl(p), commit)
@@ -280,6 +286,13 @@ func mvFlags(a *app, fs *pflag.FlagSet) {
 type movedFile struct {
 	From string `json:"from"`
 	To   string `json:"to"`
+}
+
+// MarshalJSON puts a path that is not valid UTF-8 in base64 under another
+// key; see jsonout.go. The keys of mv are from and to, so the base64 keys are
+// from_base64 and to_base64.
+func (m movedFile) MarshalJSON() ([]byte, error) {
+	return jsonObject(nil).text("from", m.From).text("to", m.To).MarshalJSON()
 }
 
 func (a *app) checkMv(c *command, args []string) error {
