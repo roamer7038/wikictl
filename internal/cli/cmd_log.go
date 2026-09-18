@@ -16,18 +16,19 @@ import (
 // is a pointer so that the key is absent without --follow while every item of
 // one run has the same shape, a commit that changed no path included.
 type logItem struct {
-	Commit     string    `json:"commit"`
-	AuthorDate string    `json:"author_date"`
-	CommitDate string    `json:"commit_date"`
-	Author     string    `json:"author"`
-	Subject    string    `json:"subject"`
-	Paths      *[]string `json:"paths,omitempty"`
+	Commit     string
+	AuthorDate string
+	CommitDate string
+	Author     string
+	Subject    string
+	Paths      *[]string
 }
 
-// MarshalJSON puts an author or a subject that is not valid UTF-8 in base64
-// under another key, and joins paths[] by a paths_base64[] of the same length
-// and order when a path is not valid UTF-8; see jsonout.go. The commit sha
-// and the two dates are written by git and hold ASCII only.
+// MarshalJSON writes every key of the item: an author or a subject that is
+// not valid UTF-8 goes to author_base64 or subject_base64, and paths[] is
+// joined by a paths_base64[] of the same length and order when a path is not
+// valid UTF-8; see jsonout.go. The commit sha and the two dates are written
+// by git and hold ASCII only.
 func (it logItem) MarshalJSON() ([]byte, error) {
 	o := jsonObject(nil).add("commit", it.Commit).add("author_date", it.AuthorDate).
 		add("commit_date", it.CommitDate).text("author", it.Author).text("subject", it.Subject)

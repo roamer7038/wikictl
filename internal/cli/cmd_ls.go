@@ -102,17 +102,18 @@ func (t *fileTree) entries(dir string, all bool) []string {
 }
 
 type lsItem struct {
-	Path    string `json:"path"`
-	Kind    string `json:"kind"`
-	Type    string `json:"type"`
-	Summary string `json:"summary"`
-	Title   string `json:"title"`
-	Updated string `json:"updated"`
+	Path    string
+	Kind    string
+	Type    string
+	Summary string
+	Title   string
+	Updated string
 }
 
-// MarshalJSON puts a path that is not valid UTF-8 in base64 under another
-// key; see jsonout.go. The type, summary and title come from the page, not
-// from a value to pass back to another command, so they keep their own keys.
+// MarshalJSON writes every key of the item; a path that is not valid UTF-8
+// goes to path_base64; see jsonout.go. The type, summary and title come from
+// the page, not from a value to pass back to another command, so they keep
+// their own keys.
 func (it lsItem) MarshalJSON() ([]byte, error) {
 	return jsonObject(nil).text("path", it.Path).add("kind", it.Kind).add("type", it.Type).
 		add("summary", it.Summary).add("title", it.Title).add("updated", it.Updated).MarshalJSON()
@@ -309,12 +310,12 @@ func writeLs(w io.Writer, rows [][4]string, long bool) {
 }
 
 type treeItem struct {
-	Path string `json:"path"`
-	Kind string `json:"kind"`
+	Path string
+	Kind string
 }
 
-// MarshalJSON puts a path that is not valid UTF-8 in base64 under another
-// key; see jsonout.go.
+// MarshalJSON writes every key of the item; a path that is not valid UTF-8
+// goes to path_base64; see jsonout.go.
 func (it treeItem) MarshalJSON() ([]byte, error) {
 	return jsonObject(nil).text("path", it.Path).add("kind", it.Kind).MarshalJSON()
 }

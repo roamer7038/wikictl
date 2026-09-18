@@ -284,13 +284,13 @@ func mvFlags(a *app, fs *pflag.FlagSet) {
 }
 
 type movedFile struct {
-	From string `json:"from"`
-	To   string `json:"to"`
+	From string
+	To   string
 }
 
-// MarshalJSON puts a path that is not valid UTF-8 in base64 under another
-// key; see jsonout.go. The keys of mv are from and to, so the base64 keys are
-// from_base64 and to_base64.
+// MarshalJSON writes both keys of the moved file; the keys of mv are from and
+// to, so a path that is not valid UTF-8 goes to from_base64 or to_base64; see
+// jsonout.go.
 func (m movedFile) MarshalJSON() ([]byte, error) {
 	return jsonObject(nil).text("from", m.From).text("to", m.To).MarshalJSON()
 }

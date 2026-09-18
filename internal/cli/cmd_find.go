@@ -50,14 +50,16 @@ type findEntry struct {
 // them empty: the list is a pointer so that a frontmatter holding no key is
 // printed as [] while a file that has none has no field at all.
 type findItem struct {
-	Path             string                 `json:"path"`
-	Kind             string                 `json:"kind"`
-	Frontmatter      *[]page.FrontmatterKey `json:"frontmatter,omitempty"`
-	FrontmatterError *frontmatterError      `json:"frontmatter_error,omitempty"`
+	Path             string
+	Kind             string
+	Frontmatter      *[]page.FrontmatterKey
+	FrontmatterError *frontmatterError
 }
 
-// MarshalJSON puts a path that is not valid UTF-8 in base64 under another
-// key; see jsonout.go. The frontmatter is printed as the page holds it.
+// MarshalJSON writes every key of the item, leaving out the two frontmatter
+// keys that are not filled in; a path that is not valid UTF-8 goes to
+// path_base64; see jsonout.go. The frontmatter is printed as the page holds
+// it.
 func (it findItem) MarshalJSON() ([]byte, error) {
 	o := jsonObject(nil).text("path", it.Path).add("kind", it.Kind)
 	if it.Frontmatter != nil {

@@ -16,9 +16,10 @@ import (
 // the output rather than of the check.
 type lintItem struct{ page.Issue }
 
-// MarshalJSON puts a path that is not valid UTF-8 in base64 under another
-// key; see jsonout.go. The message is prose rather than a value to pass back
-// to another command, so it keeps its key; see the help of lint.
+// MarshalJSON writes every key of the finding; a path that is not valid
+// UTF-8 goes to path_base64; see jsonout.go. The message is prose rather than
+// a value to pass back to another command, so it keeps its key; see the help
+// of lint.
 func (it lintItem) MarshalJSON() ([]byte, error) {
 	return jsonObject(nil).text("path", it.Path).add("line", it.Line).
 		add("code", it.Code).add("message", it.Message).MarshalJSON()

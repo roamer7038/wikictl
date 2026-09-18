@@ -110,16 +110,16 @@ type errorOut struct {
 }
 
 type conflictOut struct {
-	Error   string `json:"error"`
-	Reason  string `json:"reason"`
-	Path    string `json:"path"`
-	SHA     string `json:"sha"`
-	Content string `json:"content"`
-	Message string `json:"message"`
+	Error   string
+	Reason  string
+	Path    string
+	SHA     string
+	Content string
+	Message string
 }
 
-// MarshalJSON puts a path or content that is not valid UTF-8 in base64 under
-// another key; see jsonout.go.
+// MarshalJSON writes every key of the conflict; a path or content that is not
+// valid UTF-8 goes to path_base64 or content_base64; see jsonout.go.
 func (c conflictOut) MarshalJSON() ([]byte, error) {
 	return jsonObject(nil).add("error", c.Error).add("reason", c.Reason).text("path", c.Path).
 		add("sha", c.SHA).text("content", c.Content).add("message", c.Message).MarshalJSON()

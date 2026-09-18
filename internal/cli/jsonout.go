@@ -23,6 +23,12 @@ import (
 // objects are therefore built key by key rather than described by struct
 // tags; jsonObject keeps the keys in the order the struct fields are written
 // in, so that the output of a valid value is the same as before.
+//
+// A struct that has a MarshalJSON of its own therefore carries no json tag
+// on any field: every key of it is written by that method, so that a key name
+// has one home and no tag can drift away from the output unnoticed. The
+// structs without such a method, errorOut and movedOut among them, keep their
+// tags.
 
 // jsonField is one key of a jsonObject.
 type jsonField struct {
