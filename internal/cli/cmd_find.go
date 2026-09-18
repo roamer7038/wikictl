@@ -142,11 +142,15 @@ var findValue = map[string]bool{"-name": true, "-path": true, "-type": true, "-m
 
 // splitExpr separates the flags of wikictl, which are the arguments starting
 // with "--" and -h, from the paths and the expression of find. The value of a
-// primary or of a flag is kept with it.
+// primary or of a flag is kept with it. "--" ends the flags: it and every
+// argument after it go to the expression, even when they start with "-".
 func splitExpr(fs *pflag.FlagSet, args []string) (flags, expr []string) {
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch {
+		case arg == "--":
+			expr = append(expr, args[i:]...)
+			return flags, expr
 		case findValue[arg] && i+1 < len(args):
 			expr = append(expr, arg, args[i+1])
 			i++
@@ -193,11 +197,26 @@ func findHint(msg string) string {
 
 func (a *app) checkFind(c *command, args []string) error {
 	q := &findQuery{maxDepth: -1}
+	var raw []string
 	i := 0
-	for i < len(args) && !strings.HasPrefix(args[i], "-") && args[i] != "!" {
+	afterDash := false
+	for i < len(args) {
+		arg := args[i]
+		if arg == "--" {
+			afterDash = true
+			i++
+			continue
+		}
+		if arg == "!" || findValue[arg] {
+			break
+		}
+		if !afterDash && strings.HasPrefix(arg, "-") {
+			break
+		}
+		raw = append(raw, arg)
 		i++
 	}
-	paths, err := cleanPaths(args[:i])
+	paths, err := cleanPaths(raw)
 	if err != nil {
 		return err
 	}
