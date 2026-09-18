@@ -192,7 +192,7 @@ func TestTopHelpShowsHowToReadManyFiles(t *testing.T) {
 		`cat, stat and ls -l take many paths at once`,
 		`wikictl find global -name '*.md' | tr '\n' '\0' | xargs -0 -r wikictl stat`,
 		// The commands that read many pages by themselves.
-		`find --frontmatter=KEY,... reads the frontmatter of every page`,
+		`find --frontmatter=KEY,... reads the frontmatter of every file that has one`,
 		`links takes several paths, a directory or none at all`,
 		`pick the values out of items[] with jq`,
 		// fetch_ttl for reading over time, --no-fetch for a single read.
@@ -201,6 +201,12 @@ func TestTopHelpShowsHowToReadManyFiles(t *testing.T) {
 		if !strings.Contains(flat, want) {
 			t.Errorf("wikictl help must say %s", want)
 		}
+	}
+	// The section follows the list of commands and comes before the rules on
+	// paths and arguments, so that it is read before one file is read per command.
+	list, reading, rules := strings.Index(out, "\nCommands:\n"), strings.Index(out, "\nReading many files:\n"), strings.Index(out, "Flags may come before or after the arguments.")
+	if list < 0 || reading < list || rules < reading {
+		t.Errorf("Reading many files must follow Commands and precede the rules on paths: %d %d %d", list, reading, rules)
 	}
 }
 
