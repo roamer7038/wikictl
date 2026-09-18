@@ -129,6 +129,69 @@ func TestHelpNotesFilesAddedWhileReading(t *testing.T) {
 	}
 }
 
+// TestHelpPutDescribesConflicts checks that "help put", where put, edit, mv
+// and rm send the reader, holds the output of a conflict and the default
+// commit message, which the top-level help only points to.
+func TestHelpPutDescribesConflicts(t *testing.T) {
+	_, out, _ := runNoConfig(t, "help", "put")
+	flat := strings.Join(strings.Fields(out), " ")
+	for _, want := range []string{
+		`The commit message is -m, else "wikictl: <command> "`,
+		`"<first path> and <n> more"`,
+		`"wikictl: conflict (<reason>): <path> sha=<sha>"`,
+		`{error, reason, path, sha, content, message}`,
+		`reason is "exists"`,
+		`or "changed"`,
+		`reason "moved"`,
+		`"wikictl: conflict (moved): <message>"`,
+		`{error, reason, message, detail}`,
+	} {
+		if !strings.Contains(flat, want) {
+			t.Errorf("help put must describe %s", want)
+		}
+	}
+}
+
+// TestTopHelpKeepsCommonRulesAndPoints checks that the top-level help keeps
+// what every command shares and points to the help that holds the rest.
+func TestTopHelpKeepsCommonRulesAndPoints(t *testing.T) {
+	_, out, _ := runNoConfig(t, "help")
+	flat := strings.Join(strings.Fields(out), " ")
+	for _, want := range []string{
+		// Output stays at the top: it covers every command, not only writes.
+		`{"error": "<kind>", "message": "..."}`,
+		`control characters other than tab are printed as \xNN`,
+		// Writes keeps the exit code and points to where the output is.
+		`exits with code 3; "wikictl help put" lists the reasons and the output`,
+		// A push that retrying would not fix exits with 5.
+		`a hook that rejects it`,
+		// Mirror keeps the path and points to where the rest is.
+		`(~/.cache/wikictl)`,
+		`"wikictl help context" for fetching, fetch_ttl`,
+	} {
+		if !strings.Contains(flat, want) {
+			t.Errorf("wikictl help must say %s", want)
+		}
+	}
+}
+
+// TestHelpContextDescribesMirror checks that the details of the mirror, which
+// the top-level help points to, are in "help context".
+func TestHelpContextDescribesMirror(t *testing.T) {
+	_, out, _ := runNoConfig(t, "help", "context")
+	flat := strings.Join(strings.Fields(out), " ")
+	for _, want := range []string{
+		`"git rev-parse --local-env-vars"`,
+		`GIT_QUARANTINE_PATH`,
+		`--no-fetch skips a single read regardless of fetch_ttl`,
+		`put, edit, mv and rm always fetch when --no-fetch is not given`,
+	} {
+		if !strings.Contains(flat, want) {
+			t.Errorf("help context must describe %s", want)
+		}
+	}
+}
+
 // TestHelpFitsEightyColumns keeps every line of the help within 80 columns,
 // so that it reads in a terminal of that width. The help is ASCII, so one
 // rune is one column.
