@@ -154,7 +154,7 @@ wikictl は、`--config <path>`、`$WIKICTL_CONFIG`、`$XDG_CONFIG_HOME/wikictl/
 | キー | 必須 | 意味 |
 |---|---|---|
 | `repo` | 必須 | wiki リポジトリの URL またはパス。ローカルのパスは設定ファイルのあるディレクトリからの相対パスでもよい。プロファイル側で設定してもよい |
-| `branch` | 任意 | 使うブランチ。省略時はミラーに保存したブランチ、なければリモートの HEAD、なければ `main` で、保存したブランチに固定される（`wikictl help context` を参照） |
+| `branch` | 任意 | 使うブランチ。省略時はミラーに保存したブランチ、なければリモートの HEAD（保存する）、なければ `main` で、保存したブランチに固定される。保存するのはリモートから検出したブランチだけで、ここで指定したブランチはそのまま使い、ミラーを共有する他のプロファイル・設定ファイルのために保存することはない（`wikictl help context` を参照） |
 | `author.name`, `author.email` | 任意 | コミットの author。それぞれ `git config user.name`、`user.email` にフォールバックする |
 | `lint.ignore` | 任意 | `lint` の報告と、`put`・`edit`・`mv` の同名の警告から外す規則名。`name_style` と `missing_summary` の 2 つだけ指定できる（`wikictl help lint` を参照） |
 | `fetch_ttl` | 任意 | 直前の fetch からこの秒数以内であれば、読み取りの前の fetch を省く。既定の 0 は省かない。`put`・`edit`・`mv`・`rm` には効かず、必ず fetch する（ミラーの節を参照） |

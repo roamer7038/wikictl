@@ -153,3 +153,93 @@ func TestFetchIfStaleNoTrackingRef(t *testing.T) {
 		t.Errorf("second call: git fetch ran %d times, want 1", n)
 	}
 }
+
+// lsRemoteTraceCount reads the number of "git ls-remote" invocations GIT_TRACE
+// logged to trace since the last call, and empties the file, as
+// fetchTraceCount does for git fetch.
+func lsRemoteTraceCount(t *testing.T, trace string) int {
+	t.Helper()
+	b, err := os.ReadFile(trace)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if err := os.Remove(trace); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	return strings.Count(string(b), "built-in: git ls-remote ")
+}
+
+// savedBranch returns the branch saved in the mirror's git configuration, or
+// "" when none is saved.
+func savedBranch(t *testing.T, r *Repo) string {
+	t.Helper()
+	out, _ := r.Git("config", "--get", "wikictl.branch")
+	return strings.TrimSpace(out)
+}
+
+// TestOpenDoesNotSaveGivenBranch checks that a branch given to Open, which
+// comes from the configuration, is used but never saved in the mirror. One
+// mirror is shared by every profile and configuration file naming the same
+// repository, so a saved branch would be read by the ones that name no
+// branch, making them read and write a branch they never asked for.
+func TestOpenDoesNotSaveGivenBranch(t *testing.T) {
+	remote := newRemote(t, true)
+	run(t, "", "git", "--git-dir", remote, "branch", "docs", "main")
+	dir := filepath.Join(t.TempDir(), "m")
+
+	r, err := Open(dir, remote, "docs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Branch != "docs" {
+		t.Errorf("Branch with branch=docs = %q, want docs", r.Branch)
+	}
+	if got := savedBranch(t, r); got != "" {
+		t.Errorf("wikictl.branch = %q, want it unset: a branch given in the configuration must not be saved", got)
+	}
+
+	// The same mirror, opened without a branch as another profile would: the
+	// remote HEAD is used, not the branch the previous Open was given.
+	r, err = Open(dir, remote, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Branch != "main" {
+		t.Errorf("Branch with no branch given = %q, want main (the remote HEAD)", r.Branch)
+	}
+}
+
+// TestOpenSavesDetectedBranch checks that the branch detected from the remote
+// HEAD is saved in the mirror, so that a later Open reads it instead of
+// querying the remote again.
+func TestOpenSavesDetectedBranch(t *testing.T) {
+	remote := newRemote(t, true)
+	dir := filepath.Join(t.TempDir(), "m")
+	trace := filepath.Join(t.TempDir(), "trace")
+	t.Setenv("GIT_TRACE", trace)
+
+	r, err := Open(dir, remote, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Branch != "main" {
+		t.Errorf("Branch of the first Open = %q, want main", r.Branch)
+	}
+	if n := lsRemoteTraceCount(t, trace); n != 1 {
+		t.Errorf("first Open: git ls-remote ran %d times, want 1", n)
+	}
+	if got := savedBranch(t, r); got != "main" {
+		t.Errorf("wikictl.branch = %q, want main", got)
+	}
+
+	r, err = Open(dir, remote, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Branch != "main" {
+		t.Errorf("Branch of the second Open = %q, want main", r.Branch)
+	}
+	if n := lsRemoteTraceCount(t, trace); n != 0 {
+		t.Errorf("second Open: git ls-remote ran %d times, want 0", n)
+	}
+}

@@ -558,9 +558,12 @@ from what they read, and a stale read could leave a file added on the remote
 out of an rm -r or a mv.
 
 The branch is branch in the config file, else the branch saved in the mirror,
-else the remote HEAD, else main. The saved branch is kept, so a change of the
-remote default branch is not followed until branch is set or the mirror is
-deleted.
+else the remote HEAD, which is then saved, else main. The saved branch is
+kept, so a change of the remote default branch is not followed until branch is
+set or the mirror is deleted. Only a branch detected from the remote is saved:
+one mirror is shared by every profile and config file naming the same
+repository, so branch in a config file is used as it is and is never saved for
+the others to read.
 
 A profile is selected by --profile, else $WIKICTL_PROFILE, else match, else
 default_profile. A profile matches when one of its match.remotes globs matches
