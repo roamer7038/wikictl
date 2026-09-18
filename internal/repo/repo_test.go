@@ -472,6 +472,53 @@ func TestReadQuotedNames(t *testing.T) {
 	}
 }
 
+// TestCatNamesWithSpaces checks the reads of names holding spaces: an absent
+// one is left out, and the files read with it keep their sha and content.
+// cat-file answers an absent name with "<name> missing", so a name of several
+// words fills as many fields as the "<sha> <type> <size>" of a found object;
+// taking such an answer for a found object shifted the rest of the batch,
+// which cut the sha of the next file and invented an entry for the absent
+// name.
+func TestCatNamesWithSpaces(t *testing.T) {
+	remote := newRemote(t, true)
+	seedRemote(t, remote, map[string]string{"global/meeting notes.txt": "notes\n"})
+	r := openFetched(t, remote)
+	out, err := r.Git("rev-parse", r.snapshot+":global/index.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexSHA := strings.TrimSpace(out)
+
+	absent := []string{"a b.md", "x blob 12", "c d.md"}
+	paths := append(append([]string{}, absent...), "global/meeting notes.txt", "global/index.md")
+	c, shas, err := r.CatSHA(paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c) != 2 || len(shas) != 2 {
+		t.Fatalf("CatSHA = %q, %q", c, shas)
+	}
+	if shas["global/index.md"] != indexSHA || !strings.HasPrefix(string(c["global/index.md"]), "---\nsummary:") {
+		t.Errorf("index.md: sha %q, want %q; content %q", shas["global/index.md"], indexSHA, c["global/index.md"])
+	}
+	if string(c["global/meeting notes.txt"]) != "notes\n" || len(shas["global/meeting notes.txt"]) != 40 {
+		t.Errorf("meeting notes.txt: content %q, sha %q", c["global/meeting notes.txt"], shas["global/meeting notes.txt"])
+	}
+	for _, p := range absent {
+		if _, ok := c[p]; ok || shas[p] != "" {
+			t.Errorf("absent %q: content %q, sha %q", p, c[p], shas[p])
+		}
+	}
+	// Stat reads the same names with --batch-check and must agree.
+	objs, err := r.Stat(paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(objs) != 2 || objs["global/index.md"].SHA != indexSHA || objs["global/meeting notes.txt"].Size != 6 {
+		t.Errorf("Stat = %v", objs)
+	}
+}
+
 func TestCommitAndConflict(t *testing.T) {
 	remote := newRemote(t, true)
 	r := openFetched(t, remote)
