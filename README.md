@@ -139,7 +139,7 @@ Body. Link to other pages with relative paths: [push](git-push.md).
 
 Paths printed one per line, such as those of `grep -l`, are passed to another command with `| tr '\n' '\0' | xargs -0 -r wikictl ls -lt`: names holding quotation marks or spaces stay intact, and `-r` runs nothing when nothing matched. With `set -o pipefail`, the pipeline exits with 1 when `grep` matched nothing. A name holding a newline cannot be passed this way, and neither can one holding a control character, which text output escapes as `\xNN`; `--json` prints the exact names, but wikictl rejects a path holding a control character with exit code 4.
 
-`find --frontmatter=KEY,...` reads the frontmatter of every file that has one, not only of the pages, and prints each key with the line it is written on, so that the attributes of many pages can be collected in one command. Without keys it prints every key; the `=` is required.
+`find --frontmatter=KEY,...` reads the frontmatter of every file that has one, not only of the pages, and prints each key with the line it is written on, so that the attributes of many pages can be collected in one command. To print every key, write `--frontmatter` on its own: the keys follow an `=`, and `--frontmatter=` with no key is a usage error.
 
 To update an existing page, pass the `sha` printed by `stat` to `put --base`. If the page changed in between, `put` exits with code 3 and prints the current content; wikictl never merges.
 
@@ -199,6 +199,7 @@ The profile is chosen by `--profile`, else `$WIKICTL_PROFILE`, else `match` (the
 | 3 | conflict: the page already exists, or changed or was deleted since it was read, or another push moved the branch while the change was being pushed |
 | 4 | the page or path violates the wiki format; `lint` exits with 4 on any finding, or with 1 when a path does not exist |
 | 5 | a git command failed, while reading or writing |
+| 128+N | `edit` was ended by signal N while the editor was running, such as 143 for SIGTERM (see `wikictl help edit`) |
 
 `grep` is the exception: it exits with 1 when no line matched, and with 2 when a path does not exist, while the other paths are still searched.
 

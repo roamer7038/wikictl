@@ -126,6 +126,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "Exit codes:")
 	fmt.Fprintln(w, "  0 success   1 error   2 usage or configuration   3 conflict")
 	fmt.Fprintln(w, "  4 invalid path or page   5 git failure")
+	fmt.Fprintln(w, `  128+N ended by signal N while the editor of "edit" ran (143 for SIGTERM)`)
 	fmt.Fprintln(w, "  A write that lost the push race on every attempt also exits with 3, with")
 	fmt.Fprintln(w, "  reason \"moved\". A git failure while reading the wiki also exits with 5 and")
 	fmt.Fprintln(w, "  prints no partial result; so does a page that exists but cannot be read,")

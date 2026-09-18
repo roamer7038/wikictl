@@ -263,9 +263,10 @@ submodules, matches neither -mtime nor -newer.
 
 --frontmatter=KEY,... prints the frontmatter of every file that has one, as
 -meta reads it, not only of the pages: each top-level key, the line it is
-written on counted from the start of the file, and its value. The "=" is
-required, so "--frontmatter status" reads status as a path; without keys
-every key is printed. Text output becomes a list of the frontmatter keys,
+written on counted from the start of the file, and its value. The keys
+follow an "=", so "--frontmatter status" reads status as a path; to print
+every key write "--frontmatter" on its own, as "--frontmatter=" with no key
+is a usage error. Text output becomes a list of the frontmatter keys,
 one line per key as "<path><TAB><line><TAB><key><TAB><value>", where the
 key and the value are JSON, so a file without frontmatter, or without any
 of the keys given, prints no line at all. A key that a merge key ("<<")

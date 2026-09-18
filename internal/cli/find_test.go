@@ -282,10 +282,16 @@ func TestFindFrontmatter(t *testing.T) {
 		}
 	}
 
-	// The "=" is required: a key written as a separate argument is a path.
+	// The keys follow an "=": a key written as a separate argument is a path,
+	// and an "=" with no key is a usage error, so "--frontmatter" on its own is
+	// the only way to print every key.
 	if code, out, errs := runCLI(t, cfg, "", "find", "fm/plain.md", "--frontmatter", "status"); code != ExitError ||
 		errs != "wikictl: status: no such file or directory\n" {
 		t.Errorf("--frontmatter with a separate key: code=%d out=%q errs=%q", code, out, errs)
+	}
+	if code, out, errs := runCLI(t, cfg, "", "find", "fm/plain.md", "--frontmatter="); code != ExitUsage ||
+		!strings.Contains(errs, "a key must not be empty") {
+		t.Errorf("--frontmatter with no key: code=%d out=%q errs=%q", code, out, errs)
 	}
 }
 
