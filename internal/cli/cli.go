@@ -276,10 +276,12 @@ number that is not finite is ".inf", "-.inf" or ".nan". A frontmatter that
 does not parse, or a file over 1 MiB, is a warning on standard error that
 does not change the exit code, or frontmatter_error with --json.
 
-Only -h and the arguments starting with "--", such as --json, are flags. A
-path that does not exist ("no such file or directory") or is a submodule ("is
-a submodule") is reported on standard error, the other paths are still
-searched, and the command exits with code 1.
+Only -h and the arguments starting with "--", such as --json, are flags.
+"--" ends the flags, so a path that starts with - can follow, as it can
+for the other commands. A path that does not exist ("no such file or
+directory") or is a submodule ("is a submodule") is reported on standard
+error, the other paths are still searched, and the command exits with
+code 1.
 
 Output: items[] {path, kind}; kind is "file" or "dir". With --frontmatter,
 each item also has frontmatter[] {key, line, value}, empty when no key is

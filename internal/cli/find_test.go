@@ -63,6 +63,31 @@ func TestFind(t *testing.T) {
 	}
 }
 
+// TestFindDashDash checks that "--" ends the flags of find, so a path that
+// starts with - is searched instead of being read as a primary, matching
+// cat and the top-level help.
+func TestFindDashDash(t *testing.T) {
+	cfg := setup(t)
+	pushFiles(t, cfg, map[string]string{
+		"-dash.md": "---\nsummary: dash\n---\n# dash\n",
+	})
+	if code, out, errs := runCLI(t, cfg, "", "find", "--", "-dash.md"); code != 0 || out != "-dash.md\n" {
+		t.Errorf("find -- -dash.md: code=%d out=%q errs=%q", code, out, errs)
+	}
+	if code, out, errs := runCLI(t, cfg, "", "find", "--json", "--", "-dash.md"); code != 0 || out != `{"items":[{"path":"-dash.md","kind":"file"}]}`+"\n" {
+		t.Errorf("find --json -- -dash.md: code=%d out=%q errs=%q", code, out, errs)
+	}
+	if code, out, errs := runCLI(t, cfg, "", "find", "global", "--", "-dash.md"); code != 0 || out != "global\nglobal/index.md\nglobal/push.md\n-dash.md\n" {
+		t.Errorf("find global -- -dash.md: code=%d out=%q errs=%q", code, out, errs)
+	}
+	if code, _, errs := runCLI(t, cfg, "", "find", "-dash.md"); code != ExitUsage || !strings.Contains(errs, "unknown primary: -dash.md") {
+		t.Errorf("find -dash.md without --: code=%d errs=%q", code, errs)
+	}
+	if code, out, errs := runCLI(t, cfg, "", "find", "--", "--json"); code != ExitError || out != "" || !strings.Contains(errs, "--json: no such file or directory") {
+		t.Errorf("find -- --json: code=%d out=%q errs=%q", code, out, errs)
+	}
+}
+
 func TestFindUsage(t *testing.T) {
 	for args, msg := range map[string]string{
 		"-bogus":               "unknown primary: -bogus",
