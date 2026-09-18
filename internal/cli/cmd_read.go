@@ -42,10 +42,49 @@ type catItem struct {
 	Content string `json:"content"`
 }
 
+func catFlags(a *app, fs *pflag.FlagSet) {
+	fs.Var(&a.at, "at", "read the files as of the commit `rev`, not the current version")
+}
+
+// snapshotAt points every read of the command at the version --at names, so
+// that the content, the sha and the report that tells a file from a directory
+// or a submodule all come from that one version; reading the content along
+// one path and the reports along another would describe two versions at once.
+// A rev that names no commit the mirror holds is a usage error: a sha, a tag
+// and a tracking ref such as origin/main resolve, since the mirror keeps
+// those, while HEAD and a local branch name do not. The message also says
+// that the current version needs no --at, which is what a reader who reached
+// for HEAD usually wanted. An empty value is refused rather than read as the
+// current version, which would pass for a past one when the rev a script
+// meant to pass is unset.
+func (a *app) snapshotAt(c *command) error {
+	if !a.at.set {
+		return nil
+	}
+	if a.at.value == "" {
+		return &usageError{c, `--at was given no commit; pass a sha that "wikictl log" printed, or omit --at to read the current version`}
+	}
+	ok, err := a.repo.SnapshotAt(a.at.value)
+	if err != nil {
+		return &gitError{err}
+	}
+	if !ok {
+		return &usageError{c, "--at " + a.at.value + " does not name a commit in the mirror\n" +
+			`pass a commit sha or an abbreviation of one that "wikictl log" printed, a tag, ` +
+			"or a tracking ref such as origin/main; HEAD and a local branch name are not kept " +
+			"in the mirror, and to read the current version omit --at"}
+	}
+	return nil
+}
+
 // cmdCat prints the files as stored, in the order given. As GNU cat does, a
 // path that is not a file is reported on standard error, the other files are
-// still printed, and the command exits with 1.
+// still printed, and the command exits with 1. With --at the files are read
+// as of a past commit.
 func (a *app) cmdCat(c *command, args []string) error {
+	if err := a.snapshotAt(c); err != nil {
+		return err
+	}
 	contents, shas, err := a.repo.CatSHA(notEmpty(args))
 	if err != nil {
 		return &gitError{err}

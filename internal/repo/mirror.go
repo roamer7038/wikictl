@@ -298,6 +298,49 @@ func (r *Repo) Snapshot() error {
 	return err
 }
 
+// SnapshotAt fixes the commit that the reads of r use to the commit that rev
+// names, instead of the current commit of the tracking ref, so that every
+// read of the command, and with it the reports that tell a file from a
+// directory or a submodule, sees one past version of the wiki.
+//
+// ok is false when rev names no commit the mirror holds. rev is resolved as
+// "<rev>^{commit}": "rev-parse --verify" on its own returns a full object
+// name it never looked up, so it accepts a sha the mirror does not have, and
+// it also accepts a tree or a blob. -q is not given, so that a rev that does
+// not resolve, which git reports on stderr, is told from noResult; the
+// resolved name is checked as well, so that a rev read as an option of
+// rev-parse cannot pass for a commit.
+func (r *Repo) SnapshotAt(rev string) (ok bool, err error) {
+	out, err := r.Git("rev-parse", "--verify", rev+"^{commit}")
+	if err != nil {
+		var ge *GitError
+		if errors.As(err, &ge) && reportsError(ge.Stderr) {
+			return false, nil
+		}
+		return false, err
+	}
+	sha := strings.TrimSpace(out)
+	if !isObjectName(sha) {
+		return false, nil
+	}
+	r.snapshot = sha
+	return true, nil
+}
+
+// isObjectName reports whether s is a full object name, which is what
+// rev-parse prints for a rev it resolved.
+func isObjectName(s string) bool {
+	if len(s) != 40 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 // trackingHead returns the commit sha of the tracking ref, or "" when the
 // branch does not exist yet. A failure of git is an error.
 func (r *Repo) trackingHead() (string, error) {

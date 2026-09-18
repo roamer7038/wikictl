@@ -27,6 +27,14 @@ func escapeControl(s string) string {
 	return b.String()
 }
 
+// escapeField is escapeControl for one field of a line whose fields are
+// separated by tabs, where a tab in the value would shift the columns: it is
+// printed as \x09 like every other control character. log needs it, since an
+// author's name and a commit subject may hold a tab.
+func escapeField(s string) string {
+	return escapeControl(strings.ReplaceAll(s, "\t", `\x09`))
+}
+
 // escapeMessage is escapeControl for a message that may span several lines,
 // such as git's stderr in an error: each newline is kept and followed by an
 // indent of two spaces, so that no line of the message can pass for a line

@@ -82,8 +82,22 @@ is a submodule ("is a submodule") is reported on standard error, also with
 The sha in the JSON output is the one to pass to "put --base" when updating
 the page.
 
+With --at, every file is read as of that commit instead of the current
+version, and what a path is at that commit decides the report: a file added
+later is "no such file or directory" there. <rev> may be a commit sha (or an
+abbreviation of one) that "wikictl log" printed, a tag, or a tracking ref
+such as origin/main or origin/main~1, which are the refs the mirror keeps.
+HEAD and a local branch name such as main do not resolve, because the mirror
+keeps neither, and neither does a sha the mirror does not hold or one that
+names a tree or a blob. Such a rev, and an --at without a value, are usage
+errors with exit code 2. To read the current version, omit --at.
+
+The sha of a past version cannot be passed to "put --base", which takes the
+sha of the file as it is now. To restore an old version, read its content
+with "cat --at" and write it with "put --base" and the sha that "stat" shows.
+
 Output: items[] {path, sha, content}.`,
-		run: (*app).cmdCat},
+		flags: catFlags, run: (*app).cmdCat},
 	{name: "stat", args: "<path>...", minArgs: 1, maxArgs: -1, paths: true,
 		summary: "Show the sha, last update and attributes of files",
 		detail: `Show, for each page, its blob sha, the time of the last commit that changed
@@ -91,11 +105,70 @@ it, and the attributes read from it: title (the first heading, else the file
 name), summary (or description), type, tags, status and aliases. A file that
 is not a page, as "help lint" defines one, is shown too, with its sha and
 update time and with the attributes empty. A path that does not exist, is a
-directory or is a submodule is reported as cat reports it.
+directory or is a submodule is reported as cat reports it. The commits behind
+updated are listed by log; its newest commit for a file can be a merge, which
+lists no file of its own, and then updated shows the commit before it. The sha
+shown here is the one to pass to "put --base", while the sha "cat --at" prints
+for a past version is not.
 
 Output: items[] {path, sha, updated, title, summary, type, tags, status,
 aliases}.`,
 		run: (*app).cmdStat},
+	{name: "log", args: "[<path>...]", maxArgs: -1, paths: true,
+		summary: "Show the commits that changed files",
+		detail: `Show the commits that changed the files under each path, or any file of the
+wiki without paths, newest first, one line per commit with the fields
+separated by tabs: the commit sha, the author date, the commit date, the
+author's name and the subject. A tab inside a field is printed as \x09, so
+that the columns stay where they are, and the other control characters are
+escaped as they are everywhere else. Pass a sha to "cat --at" to read a file
+as of that commit.
+
+The whole history is read, as git's --full-history does it: a commit whose
+change a merge did not keep is shown too, so that the newest commit of a
+file is the one whose time stat shows as updated. A merge commit lists no
+file of its own, so when one is the newest commit here, stat's updated shows
+the commit before it instead.
+
+At most -n commits are shown, 20 by default; -n 0 shows every one of them.
+When as many commits come back as -n allows, there may be more: raise -n, or
+narrow the range. --since and --until take a date (YYYY-MM-DD), read as a
+whole day in UTC, or an RFC 3339 time with an offset, such as
+2024-01-02T15:04:05Z; any other value, a relative one such as "2 weeks ago"
+included, is a usage error. Both bounds include the time given. They prune
+the history by commit date, taken to grow along the history, so a history
+whose dates run backwards can hide a commit in between; that is git's own
+limit.
+
+-S <string> keeps the commits that changed how often the string occurs,
+which is how the history of a value is found without reading every version;
+a commit that changed the file without changing that count is left out.
+
+--follow takes exactly one path, which is all git allows, and follows it
+across renames; any other number of paths, none included, is a usage error.
+A directory is a path like any other. With it every item also has paths[],
+the paths the commit changed inside the path given, so that a commit from
+before a rename can be read with "cat --at" under the name it had then; in
+text output those paths follow the five fields. Without --follow the key is
+absent, and the path given is the path of every commit.
+
+A path may be a directory, which stands for the files under it. git tells a
+path with no history from one that does not exist in no way, both being no
+commit at all, so the paths are checked against the wiki as the other reads
+check them: one that does not exist ("no such file or directory") or is a
+submodule ("is a submodule") is reported on standard error, also with --json,
+the other paths are still read, and the command exits with code 1. A path
+that exists but was never committed on this branch gives no commit and code 0.
+
+The commits come from the mirror, which limits what can be read. A tag is
+neither updated nor deleted by a fetch, so one moved on the remote stays as
+it was; and a commit made unreachable by a force push can be removed by the
+mirror's automatic gc (two weeks by default), after which a sha this command
+printed no longer resolves for "cat --at".
+
+Output: items[] {commit, author_date, commit_date, author, subject}; with
+--follow every item also has paths[].`,
+		flags: logFlags, check: (*app).checkLog, run: (*app).cmdLog},
 	{name: "links", args: "[<path>...]", maxArgs: -1, paths: true,
 		summary: "List the links in pages and to them",
 		detail: `List the links of each page, one per line as
@@ -506,6 +579,13 @@ type app struct {
 	msg       string
 	verbose   bool
 	force     bool
+
+	at         optString
+	logMax     int
+	logFollow  bool
+	logSince   optString
+	logUntil   optString
+	logChanged optString
 
 	noTargetDir bool
 	targetDir   string

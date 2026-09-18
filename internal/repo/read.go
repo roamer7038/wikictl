@@ -148,6 +148,11 @@ func (r *Repo) GrepRecords(flags, patterns, dirs []string) ([][]string, error) {
 // --batch" call, so that a change built from the contents can use the sha as
 // its Base. Paths that do not exist or are not files are absent from the
 // result.
+//
+// The sha is the blob of the version read, which is the current one unless
+// SnapshotAt pointed the reads at another commit. The sha of a past version
+// is not a Base: a Base is the blob the change replaces, which is the one of
+// the current version.
 func (r *Repo) CatSHA(paths []string) (map[string][]byte, map[string]string, error) {
 	res, shas := map[string][]byte{}, map[string]string{}
 	names, err := r.refPaths(paths)

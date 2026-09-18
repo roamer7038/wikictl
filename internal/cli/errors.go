@@ -37,11 +37,13 @@ func (e *usageError) Error() string {
 // most often. An empty value is a name wikictl has no command for yet. A value
 // may carry a flag, such as "cat --at"; its first word names the help topic.
 var nearestCommands = map[string]string{
-	"search": "grep",
-	"read":   "cat",
-	"list":   "ls",
-	"blame":  "",
-	"diff":   "",
+	"search":  "grep",
+	"read":    "cat",
+	"list":    "ls",
+	"history": "log",
+	"show":    "cat --at",
+	"blame":   "",
+	"diff":    "",
 }
 
 // unknownCommand returns the usage error of a name wikictl has no command for,

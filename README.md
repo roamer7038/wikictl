@@ -108,6 +108,7 @@ Body. Link to other pages with relative paths: [push](git-push.md).
 | `grep <pattern> [<path>...]` | Print the lines that match a pattern |
 | `cat <path>...` | Print files as stored |
 | `stat <path>...` | Show the sha, last update and attributes of files |
+| `log [<path>...]` | Show the commits that changed files |
 | `links [<path>...]` | List the links in pages and to them |
 | `ls [<path>...]` | List the entries of directories |
 | `find [<path>...] [<expression>]` | Find files and directories by name, type, update time or frontmatter |
@@ -128,6 +129,10 @@ Paths printed one per line, such as those of `grep -l`, are passed to another co
 `find --frontmatter=KEY,...` reads the frontmatter of every file that has one, not only of the pages, and prints each key with the line it is written on, so that the attributes of many pages can be collected in one command. Without keys it prints every key; the `=` is required.
 
 To update an existing page, pass the `sha` printed by `stat` to `put --base`. If the page changed in between, `put` exits with code 3 and prints the current content; wikictl never merges.
+
+`wikictl log [<path>...]` reads the history: one line per commit, newest first, with the commit sha, the author date, the commit date, the author and the subject. At most 20 commits are shown, `-n 0` shows all of them, `--since` and `--until` take a date (`YYYY-MM-DD`, read as a whole day in UTC) or an RFC 3339 time, `-S <string>` keeps the commits that changed how often a string occurs, and `--follow`, which takes exactly one path, follows a file across renames and adds the path each commit held. `wikictl cat --at <rev> <path>...` then reads a file as of a commit that `log` printed.
+
+The `sha` of a past version is not a `--base`: to restore an old version, read its content with `cat --at` and write it with `put --base` and the `sha` that `stat` shows now.
 
 ## Configuration
 
@@ -177,7 +182,7 @@ The profile is chosen by `--profile`, else `$WIKICTL_PROFILE`, else `match` (the
 |---|---|
 | 0 | success |
 | 1 | error, for example a missing page |
-| 2 | usage or configuration error, including a mirror that cannot be prepared, such as a cache directory that cannot be created |
+| 2 | usage or configuration error, including a mirror that cannot be prepared, such as a cache directory that cannot be created, and a `cat --at` rev that names no commit in the mirror |
 | 3 | conflict: the page already exists, or changed or was deleted since it was read, or another push moved the branch while the change was being pushed |
 | 4 | the page or path violates the wiki format; `lint` exits with 4 on any finding, or with 1 when a path does not exist |
 | 5 | a git command failed, while reading or writing |
@@ -191,6 +196,8 @@ A conflict never writes anything: re-read the page and reapply the change, or, w
 wikictl keeps a bare mirror of each wiki repository under `$XDG_CACHE_HOME/wikictl/` (`~/.cache/wikictl/`), readable only by the user. `wikictl context` shows its path. The wiki content is on the remote, so a mirror can be deleted at any time; the next command creates it again.
 
 A read fetches before every command, like a write, unless `fetch_ttl` (see the Configuration section) says the mirror was already fetched within that many seconds, or `--no-fetch` skips a single read regardless of `fetch_ttl`. `fetch_ttl` is meant for reads repeated over time, such as a shell session or an agent's use of wikictl; it never applies to `put`, `edit`, `mv` or `rm`, which always fetch, because they decide what they change from what they read, and a stale read could leave a file added on the remote out of an `rm -r` or a `mv`. `fetch_ttl` also has no effect while the mirror has no tracking ref yet, such as right after it was created. `wikictl context` shows `fetch_ttl` and `fetched`, the last fetch time recorded in the mirror.
+
+The mirror also limits what the history can show. `cat --at` resolves a commit sha, a tag, and a tracking ref such as `origin/main` or `origin/main~1`, which are the refs the mirror keeps; `cat --at HEAD` and a local branch name such as `cat --at main` do not resolve, because the mirror keeps neither. A tag is neither updated nor deleted by a fetch, so one moved on the remote stays as it was; and a commit made unreachable by a force push can be removed by the mirror's automatic gc (two weeks by default), after which a sha that `log` printed no longer resolves.
 
 ## Development
 

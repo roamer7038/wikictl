@@ -313,6 +313,7 @@ func TestSubmoduleReads(t *testing.T) {
 		out  string
 	}{
 		{[]string{"cat", "projects/subm"}, `{"items":[]}`},
+		{[]string{"log", "projects/subm"}, `{"items":[]}`},
 		{[]string{"stat", "global/mod.md"}, `{"items":[]}`},
 		{[]string{"links", "projects/subm"}, `{"items":[]}`},
 		{[]string{"lint", "global/mod.md"}, `{"items":[]}`},
