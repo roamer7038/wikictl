@@ -260,11 +260,30 @@ func TestBrokenLinks(t *testing.T) {
 			t.Errorf("issue: %+v", is)
 		}
 		// The message quotes the target, so that no byte of one that is not
-		// valid UTF-8 is lost when it is printed as JSON.
-		targets = append(targets, strings.Trim(strings.TrimPrefix(is.Message, "link target does not exist: "), `"`))
+		// valid UTF-8 is lost when it is printed as JSON; the quotation marks
+		// are part of the expected value.
+		targets = append(targets, strings.TrimPrefix(is.Message, "link target does not exist: "))
 	}
-	if !slices.Equal(targets, []string{"global/missing.md", "global/sub.md"}) {
+	if !slices.Equal(targets, []string{`"global/missing.md"`, `"global/sub.md"`}) {
 		t.Errorf("broken targets: %v", targets)
+	}
+}
+
+// TestBrokenLinksInvalidUTF8Message checks that the message quotes the
+// target, so that a byte which is not valid UTF-8 is written as \xNN instead
+// of being lost to U+FFFD when the message is printed as JSON. The message
+// carries no base64 key of its own, so the quoting is all that keeps the
+// bytes.
+func TestBrokenLinksInvalidUTF8Message(t *testing.T) {
+	s := fakeStore{"bad/a.md": "# a\n"}
+	pg := page.Parse("bad/a.md", []byte("# a\n[x](\xffgone.md)\n"))
+	got, err := BrokenLinks(s, []*page.Page{pg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `link target does not exist: "bad/\xffgone.md"`
+	if len(got) != 1 || got[0].Code != "broken_link" || got[0].Message != want {
+		t.Errorf("issues=%+v, want one broken_link with the message %q", got, want)
 	}
 }
 

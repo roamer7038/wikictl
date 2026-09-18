@@ -533,7 +533,10 @@ func TestLinkTargetsNonRegular(t *testing.T) {
 	mustRun(t, work, "git", "update-index", "--add", "--cacheinfo", "160000,"+gitOut(t, "--git-dir", remote, "rev-parse", "main")+",global/sub.md")
 	mustRun(t, work, "git", "update-index", "--add", "--cacheinfo", "160000,1234567890123456789012345678901234567890,global/other.md")
 	commitAndPush(t, work)
-	want := []string{"global/sub.md", "global/other.md", "global/linkdir.md/app/x.md", "global/dir.md", "global/missing.md"}
+	// The message quotes the target; see wiki.BrokenLinks. The quotation
+	// marks are part of the expected value.
+	want := []string{`"global/sub.md"`, `"global/other.md"`, `"global/linkdir.md/app/x.md"`,
+		`"global/dir.md"`, `"global/missing.md"`}
 	code, out, errs := runCLI(t, cfg, "", "--json", "lint", "global/refs.md")
 	var res struct {
 		Items []struct{ Code, Message string }
@@ -542,8 +545,7 @@ func TestLinkTargetsNonRegular(t *testing.T) {
 	var broken []string
 	for _, it := range res.Items {
 		if it.Code == "broken_link" {
-			// The message quotes the target; see wiki.BrokenLinks.
-			broken = append(broken, strings.Trim(strings.TrimPrefix(it.Message, "link target does not exist: "), `"`))
+			broken = append(broken, strings.TrimPrefix(it.Message, "link target does not exist: "))
 		}
 	}
 	if code != ExitInvalid || !slices.Equal(broken, want) {
@@ -553,7 +555,7 @@ func TestLinkTargetsNonRegular(t *testing.T) {
 	var warned []string
 	for l := range strings.Lines(errs) {
 		if _, target, ok := strings.Cut(strings.TrimSuffix(l, "\n"), "broken_link: link target does not exist: "); ok {
-			warned = append(warned, strings.Trim(target, `"`))
+			warned = append(warned, target)
 		}
 	}
 	if code != ExitOK || !slices.Equal(warned, want) {

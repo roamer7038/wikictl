@@ -375,6 +375,44 @@ func TestInvalidUTF8TextOutput(t *testing.T) {
 	}
 }
 
+// TestInvalidUTF8LintMessage checks that the two messages naming a link keep
+// the bytes of a target that is not valid UTF-8, written as \xNN, instead of
+// losing them to U+FFFD: broken_link and links_syntax quote the target with
+// %q. The messages are prose and get no base64 key, so the quoting is all
+// that keeps the bytes. The wiki is one of its own, so that the key sets the
+// contract test fixes are not touched.
+func TestInvalidUTF8LintMessage(t *testing.T) {
+	cfg := setupEmpty(t)
+	pushFiles(t, cfg, map[string]string{
+		"bad/refs.md": "---\nsummary: refs\n---\n# refs\n[x](" + badByte + "gone.md)\n" +
+			"\n## Links\n- cites: ../../outside" + badByte + ".md\n",
+	})
+	code, out, errs := runCLI(t, cfg, "", "--json", "lint", "bad/refs.md")
+	if code != ExitInvalid {
+		t.Fatalf("lint: code=%d, want %d\n%s%s", code, ExitInvalid, out, errs)
+	}
+	var res struct {
+		Items []struct{ Code, Message string }
+	}
+	mustUnmarshal(t, out, &res)
+	want := map[string]string{
+		"broken_link":  `link target does not exist: "bad/\xffgone.md"`,
+		"links_syntax": `invalid link destination: "../../outside\xff.md"`,
+	}
+	got := map[string]string{}
+	for _, it := range res.Items {
+		got[it.Code] = it.Message
+		if strings.ContainsRune(it.Message, '�') {
+			t.Errorf("%s: the message lost a byte to U+FFFD: %q", it.Code, it.Message)
+		}
+	}
+	for c, w := range want {
+		if got[c] != w {
+			t.Errorf("%s: message %q, want %q", c, got[c], w)
+		}
+	}
+}
+
 // TestInvalidUTF8NoHTMLEscape checks that building the object key by key did
 // not start escaping HTML characters, which --json has never escaped.
 func TestInvalidUTF8NoHTMLEscape(t *testing.T) {
