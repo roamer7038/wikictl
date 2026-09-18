@@ -110,13 +110,14 @@ type lsItem struct {
 	Updated string
 }
 
-// MarshalJSON writes every key of the item; a path that is not valid UTF-8
-// goes to path_base64; see jsonout.go. The type, summary and title come from
-// the page, not from a value to pass back to another command, so they keep
-// their own keys.
+// MarshalJSON writes every key of the item; a path or title that is not
+// valid UTF-8 goes to path_base64 or title_base64; see jsonout.go. The title
+// is the file name without .md for a page with no heading, so it comes from
+// the path and is kept like it. The type and summary come from the page, not
+// from a value to pass back to another command, so they keep their own keys.
 func (it lsItem) MarshalJSON() ([]byte, error) {
 	return jsonObject(nil).text("path", it.Path).add("kind", it.Kind).add("type", it.Type).
-		add("summary", it.Summary).add("title", it.Title).add("updated", it.Updated).MarshalJSON()
+		add("summary", it.Summary).text("title", it.Title).add("updated", it.Updated).MarshalJSON()
 }
 
 func lsFlags(a *app, fs *pflag.FlagSet) {
