@@ -2105,6 +2105,17 @@ func TestGrepQuietAndErrors(t *testing.T) {
 	}
 }
 
+// TestGrepMissingPathsHintOnce checks that the way to list the directories is
+// printed once under the report of the paths that do not exist, however many
+// of them there are.
+func TestGrepMissingPathsHintOnce(t *testing.T) {
+	cfg := setup(t)
+	want := "wikictl: none: no such file or directory\nwikictl: other: no such file or directory\n" + grepMissingHint + "\n"
+	if code, out, errs := runCLI(t, cfg, "", "grep", "lease", "none", "other"); code != ExitUsage || out != "" || errs != want {
+		t.Errorf("grep with two missing paths: code=%d out=%q errs=%q, want %q", code, out, errs, want)
+	}
+}
+
 // TestGrepGitCalls checks that -L, whose output does not say whether a line
 // was selected, runs a second search for the exit code only when its output is
 // printed: with -q one search answers both.

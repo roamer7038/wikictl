@@ -100,7 +100,11 @@ func TestFindUsageHints(t *testing.T) {
 		"-iname A*": "wikictl: find: unknown primary: -iname\n" +
 			"  -name matches the last element of the path; it is case-sensitive\n",
 		"-name a -o -name b": "wikictl: find: unknown primary: -o\n" +
-			"  the primaries must all be true; there is no OR, so run find once per pattern or use grep\n",
+			"  the primaries must all be true; there is no OR\n" +
+			"  run find once per pattern, or search the paths with grep\n",
+		"-name a -or -name b": "wikictl: find: unknown primary: -or\n" +
+			"  the primaries must all be true; there is no OR\n" +
+			"  run find once per pattern, or search the paths with grep\n",
 		"--type f -name x": "wikictl: find: unknown flag: --type\n" +
 			"  a primary takes one dash: write -type, not --type\n",
 		"--name x": "wikictl: find: unknown flag: --name\n" +

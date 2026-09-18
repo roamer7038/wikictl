@@ -166,7 +166,8 @@ func findHint(msg string) string {
 		case "-iname":
 			return "-name matches the last element of the path; it is case-sensitive"
 		case "-o", "-or":
-			return "the primaries must all be true; there is no OR, so run find once per pattern or use grep"
+			return "the primaries must all be true; there is no OR\n" +
+				"run find once per pattern, or search the paths with grep"
 		}
 	}
 	if flag, ok := strings.CutPrefix(msg, "unknown flag: --"); ok && findValue["-"+flag] {

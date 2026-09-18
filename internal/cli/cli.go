@@ -152,9 +152,10 @@ of the wiki without paths, that matches the expression, one per line, starting
 with the path itself, as "find" does. Pages with status: deprecated and names
 starting with a dot are included; submodules are not listed, and naming one
 reports "is a submodule". The expression is a list of primaries that must all
-be true; "!" negates the primary that follows it.
+be true; there is no OR. "!" negates the primary that follows it.
 
-  -name PATTERN    the last element of the path matches the shell pattern
+  -name PATTERN    the last element of the path matches the shell pattern;
+                   the match is case-sensitive
   -path PATTERN    the path as printed, without a leading "./", matches the
                    shell pattern; * and ? also match "/"
 
