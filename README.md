@@ -13,6 +13,19 @@ flowchart LR
   person["person"] <-->|"web UI, or clone and push"| repo
 ```
 
+## wikictl or a clone
+
+The wiki is plain Markdown in a Git repository, so it can also be read with `git clone` and the standard commands, and written by committing and pushing. wikictl is worth using where not keeping a working tree is the point:
+
+- Reading and writing with no working tree on hand: no clone to pull, no tree that goes stale, and no local change to reconcile before a write.
+- Several agents, or several machines, writing to the same wiki at the same time. Each write fetches, commits and pushes, so it either applies to the current remote or is refused as a conflict, and nothing is written from a stale read.
+- Treating the remote as the only source of truth. Every command works from a mirror of the remote, not from whatever a tree happens to hold.
+- Keeping a write to one commit. `put`, `edit`, `mv` and `rm` each write their changes as one commit with the configured author, and `mv` rewrites the links to a moved page in that same commit.
+
+A clone can be faster. Once it is there, the standard commands read it from the local filesystem, while each wikictl command is a separate process that fetches the remote, unless `fetch_ttl` skips it (see the Mirror section). For work that stays on one machine and reads much more than it writes, a clone is a reasonable choice.
+
+[roamer7038/wikictl-eval](https://github.com/roamer7038/wikictl-eval) measures this on agent tasks, reporting the quality, the cost and the time of reading a wiki with wikictl, with a clone, and with neither. The numbers are kept there rather than repeated here, because they change with the version, but two of its conclusions are worth knowing before choosing: whether the documents could be read at all made a far larger difference than how they were read, and no condition it measured beat a clone on cost or time. The evaluation also identified where the difference from a clone came from, and wikictl has since added what it pointed at: reading the frontmatter of many pages in one command (`find --frontmatter`), the history (`log` and `cat --at`), skipping the fetch (`fetch_ttl`), and a help text reorganized for an agent that reads it first. Those were measured as a prototype, and the current commands have not been measured again; writing pages out to local files, which the prototype also had, is not implemented.
+
 ## Requirements
 
 - Linux or macOS.
