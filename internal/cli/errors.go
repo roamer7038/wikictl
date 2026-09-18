@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/roamer7038/wikictl/internal/repo"
 )
@@ -29,6 +30,34 @@ func (e *usageError) Error() string {
 		return e.cmd.name + ": " + e.msg
 	}
 	return e.msg
+}
+
+// nearestCommands maps a name wikictl has no command for to the command that
+// does its work, for the names taken from Unix and git that are reached for
+// most often. An empty value is a name wikictl has no command for yet. A value
+// may carry a flag, such as "cat --at"; its first word names the help topic.
+var nearestCommands = map[string]string{
+	"search": "grep",
+	"read":   "cat",
+	"list":   "ls",
+	"blame":  "",
+	"diff":   "",
+}
+
+// unknownCommand returns the usage error of a name wikictl has no command for,
+// with the way on from it on a second line. Running the name and asking help
+// for it both report it, so that the two say the same thing.
+func unknownCommand(name string) *usageError {
+	msg := "unknown command: " + name + "\n"
+	near, known := nearestCommands[name]
+	switch {
+	case near != "":
+		topic, _, _ := strings.Cut(near, " ")
+		return &usageError{msg: msg + "the nearest command is " + near + `; run "wikictl help ` + topic + `" for its usage`}
+	case known:
+		return &usageError{msg: msg + "wikictl has no " + name + ` command yet; run "wikictl help" for the list of commands`}
+	}
+	return &usageError{msg: msg + `run "wikictl help" for the list of commands`}
 }
 
 // invalidError is a page or path that violates the wiki format. The message

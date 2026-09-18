@@ -92,6 +92,32 @@ func TestFindUsage(t *testing.T) {
 	}
 }
 
+// TestFindUsageHints checks that the syntax of GNU find that wikictl does not
+// take reports the way to write it, and that a message which already says what
+// to do is left as it is.
+func TestFindUsageHints(t *testing.T) {
+	for args, want := range map[string]string{
+		"-iname A*": "wikictl: find: unknown primary: -iname\n" +
+			"  -name matches the last element of the path; it is case-sensitive\n",
+		"-name a -o -name b": "wikictl: find: unknown primary: -o\n" +
+			"  the primaries must all be true; there is no OR\n" +
+			"  run find once per pattern, or search the paths with grep\n",
+		"-name a -or -name b": "wikictl: find: unknown primary: -or\n" +
+			"  the primaries must all be true; there is no OR\n" +
+			"  run find once per pattern, or search the paths with grep\n",
+		"--type f -name x": "wikictl: find: unknown flag: --type\n" +
+			"  a primary takes one dash: write -type, not --type\n",
+		"--name x": "wikictl: find: unknown flag: --name\n" +
+			"  a primary takes one dash: write -name, not --name\n",
+		"-meta k=v projects": "wikictl: find: paths must precede the expression: projects\n",
+	} {
+		code, _, errs := runNoConfig(t, append([]string{"find"}, strings.Fields(args)...)...)
+		if code != ExitUsage || !strings.HasPrefix(errs, want+"Usage: wikictl find") {
+			t.Errorf("find %s: code=%d errs=%q, want the prefix %q", args, code, errs, want)
+		}
+	}
+}
+
 // TestFindTimes checks -mtime and -newer against files committed three days
 // ago, one with a name that git log quotes, in a directory from which a file
 // was deleted since: a deleted file does not change the time of a directory.

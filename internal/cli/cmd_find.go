@@ -148,6 +148,34 @@ func splitExpr(fs *pflag.FlagSet, args []string) (flags, expr []string) {
 	return flags, expr
 }
 
+// findUsage returns a usage error of find with the way to write the expression
+// under its message, when the message is one that has one.
+func findUsage(c *command, msg string) *usageError {
+	if hint := findHint(msg); hint != "" {
+		msg += "\n" + hint
+	}
+	return &usageError{c, msg}
+}
+
+// findHint returns the way to write in the expression of find what msg
+// rejected, or "" when there is none. It covers the syntax of GNU find that
+// wikictl does not take.
+func findHint(msg string) string {
+	if primary, ok := strings.CutPrefix(msg, "unknown primary: "); ok {
+		switch primary {
+		case "-iname":
+			return "-name matches the last element of the path; it is case-sensitive"
+		case "-o", "-or":
+			return "the primaries must all be true; there is no OR\n" +
+				"run find once per pattern, or search the paths with grep"
+		}
+	}
+	if flag, ok := strings.CutPrefix(msg, "unknown flag: --"); ok && findValue["-"+flag] {
+		return "a primary takes one dash: write -" + flag + ", not --" + flag
+	}
+	return ""
+}
+
 func (a *app) checkFind(c *command, args []string) error {
 	q := &findQuery{maxDepth: -1}
 	i := 0
@@ -170,7 +198,7 @@ func (a *app) checkFind(c *command, args []string) error {
 			return &usageError{c, "paths must precede the expression: " + arg}
 		}
 		if !findValue[arg] {
-			return &usageError{c, "unknown primary: " + arg}
+			return findUsage(c, "unknown primary: "+arg)
 		}
 		if i+1 == len(args) {
 			return &usageError{c, "missing argument to " + arg}

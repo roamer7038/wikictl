@@ -212,7 +212,7 @@ func (a *app) cmdHelp(args []string) error {
 	}
 	c := lookup(args[0])
 	if c == nil {
-		return &usageError{msg: "unknown command: " + args[0]}
+		return unknownCommand(args[0])
 	}
 	printCommandHelp(a.stdout, c)
 	return nil

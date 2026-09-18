@@ -33,6 +33,31 @@ func TestVersion(t *testing.T) {
 	}
 }
 
+// TestUnknownCommandHint checks that a name wikictl has no command for names
+// the command that does its work, in the same wording whether the name was run
+// or given to help.
+func TestUnknownCommandHint(t *testing.T) {
+	for name, want := range map[string]string{
+		"search":    "wikictl: unknown command: search\n  the nearest command is grep; run \"wikictl help grep\" for its usage\n",
+		"read":      "wikictl: unknown command: read\n  the nearest command is cat; run \"wikictl help cat\" for its usage\n",
+		"list":      "wikictl: unknown command: list\n  the nearest command is ls; run \"wikictl help ls\" for its usage\n",
+		"blame":     "wikictl: unknown command: blame\n  wikictl has no blame command yet; run \"wikictl help\" for the list of commands\n",
+		"diff":      "wikictl: unknown command: diff\n  wikictl has no diff command yet; run \"wikictl help\" for the list of commands\n",
+		"nosuchcmd": "wikictl: unknown command: nosuchcmd\n  run \"wikictl help\" for the list of commands\n",
+	} {
+		for _, args := range [][]string{{name}, {"help", name}} {
+			if code, out, errs := runNoConfig(t, args...); code != ExitUsage || out != "" || errs != want {
+				t.Errorf("%v: code=%d out=%q errs=%q, want %q", args, code, out, errs, want)
+			}
+		}
+	}
+	// With --json the guidance is part of the message, newline and all.
+	want := `{"error":"usage","message":"unknown command: search\nthe nearest command is grep; run \"wikictl help grep\" for its usage"}` + "\n"
+	if code, out, errs := runNoConfig(t, "--json", "search"); code != ExitUsage || out != want || errs != "" {
+		t.Errorf("--json search: code=%d out=%q errs=%q, want %q", code, out, errs, want)
+	}
+}
+
 func TestUsageErrorsNeedNoConfig(t *testing.T) {
 	if code, _, errs := runNoConfig(t); code != ExitUsage || !strings.Contains(errs, "Usage: wikictl") {
 		t.Errorf("no command: code=%d errs=%q", code, errs)

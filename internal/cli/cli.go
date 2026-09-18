@@ -152,9 +152,10 @@ of the wiki without paths, that matches the expression, one per line, starting
 with the path itself, as "find" does. Pages with status: deprecated and names
 starting with a dot are included; submodules are not listed, and naming one
 reports "is a submodule". The expression is a list of primaries that must all
-be true; "!" negates the primary that follows it.
+be true; there is no OR. "!" negates the primary that follows it.
 
-  -name PATTERN    the last element of the path matches the shell pattern
+  -name PATTERN    the last element of the path matches the shell pattern;
+                   the match is case-sensitive
   -path PATTERN    the path as printed, without a leading "./", matches the
                    shell pattern; * and ? also match "/"
 
@@ -594,7 +595,7 @@ func (a *app) run(args []string) error {
 	}
 	c := lookup(name)
 	if c == nil {
-		return &usageError{msg: "unknown command: " + name + `; run "wikictl help" for the list of commands`}
+		return unknownCommand(name)
 	}
 	if c.flags != nil {
 		c.flags(a, fs)
@@ -611,6 +612,9 @@ func (a *app) run(args []string) error {
 			return nil
 		}
 		a.json = a.json || jsonRequested(fs, args)
+		if c.expr {
+			return findUsage(c, err.Error())
+		}
 		return &usageError{c, err.Error()}
 	}
 	if a.version {
