@@ -17,7 +17,7 @@ flowchart LR
 
 - Linux or macOS.
 - `git` on `PATH`.
-- Fetch and push access to the wiki repository without any prompt (a credential helper, an SSH agent or file access for a local path). Every command fetches first, so this applies to reading as well, unless `fetch_ttl` skips it (see [Mirror](#mirror)).
+- Fetch and push access to the wiki repository without any prompt (a credential helper, an SSH agent or file access for a local path). Every command fetches first, so this applies to reading as well, unless `fetch_ttl` skips it (see the Mirror section).
 - Direct pushes to the wiki branch. Branch protection that requires pull requests blocks every write.
 - For the install script: `curl`, and `sha256sum` or `shasum`. For building from source: Go 1.26.5 or later.
 
@@ -139,7 +139,7 @@ wikictl reads the configuration from `--config <path>`, else `$WIKICTL_CONFIG`, 
 | `branch` | no | Branch to use; defaults to the branch saved in the mirror, else the remote HEAD, else `main`, and the saved branch is kept (see `wikictl help context`) |
 | `author.name`, `author.email` | no | Commit author; each falls back to `git config user.name` or `user.email` |
 | `lint.ignore` | no | Rule names left out of `lint`'s report and the same warnings from `put`, `edit` and `mv`; only `name_style` and `missing_summary` may be listed (see `wikictl help lint`) |
-| `fetch_ttl` | no | Seconds within which a read skips fetching, if the mirror was already fetched that recently; 0, the default, never skips. Ignored by `put`, `edit`, `mv` and `rm`, which always fetch (see [Mirror](#mirror)) |
+| `fetch_ttl` | no | Seconds within which a read skips fetching, if the mirror was already fetched that recently; 0, the default, never skips. Ignored by `put`, `edit`, `mv` and `rm`, which always fetch (see the Mirror section) |
 | `profiles` | no | Named profiles that override the keys above |
 | `default_profile` | no | Profile to use when no other rule selects one |
 
@@ -190,7 +190,7 @@ A conflict never writes anything: re-read the page and reapply the change, or, w
 
 wikictl keeps a bare mirror of each wiki repository under `$XDG_CACHE_HOME/wikictl/` (`~/.cache/wikictl/`), readable only by the user. `wikictl context` shows its path. The wiki content is on the remote, so a mirror can be deleted at any time; the next command creates it again.
 
-A read fetches before every command, like a write, unless `fetch_ttl` (see [Configuration](#configuration)) says the mirror was already fetched within that many seconds, or `--no-fetch` skips a single read regardless of `fetch_ttl`. `fetch_ttl` is meant for reads repeated over time, such as a shell session or an agent's use of wikictl; it never applies to `put`, `edit`, `mv` or `rm`, which always fetch, because they decide what they change from what they read, and a stale read could leave a file added on the remote out of an `rm -r` or a `mv`. `fetch_ttl` also has no effect while the mirror has no tracking ref yet, such as right after it was created. `wikictl context` shows `fetch_ttl` and `fetched`, the last fetch time recorded in the mirror.
+A read fetches before every command, like a write, unless `fetch_ttl` (see the Configuration section) says the mirror was already fetched within that many seconds, or `--no-fetch` skips a single read regardless of `fetch_ttl`. `fetch_ttl` is meant for reads repeated over time, such as a shell session or an agent's use of wikictl; it never applies to `put`, `edit`, `mv` or `rm`, which always fetch, because they decide what they change from what they read, and a stale read could leave a file added on the remote out of an `rm -r` or a `mv`. `fetch_ttl` also has no effect while the mirror has no tracking ref yet, such as right after it was created. `wikictl context` shows `fetch_ttl` and `fetched`, the last fetch time recorded in the mirror.
 
 ## Development
 
