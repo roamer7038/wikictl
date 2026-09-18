@@ -259,7 +259,9 @@ func TestBrokenLinks(t *testing.T) {
 		if is.Code != "broken_link" || is.Path != "global/a.md" || is.Line != 3 && is.Line != 4 {
 			t.Errorf("issue: %+v", is)
 		}
-		targets = append(targets, strings.TrimPrefix(is.Message, "link target does not exist: "))
+		// The message quotes the target, so that no byte of one that is not
+		// valid UTF-8 is lost when it is printed as JSON.
+		targets = append(targets, strings.Trim(strings.TrimPrefix(is.Message, "link target does not exist: "), `"`))
 	}
 	if !slices.Equal(targets, []string{"global/missing.md", "global/sub.md"}) {
 		t.Errorf("broken targets: %v", targets)

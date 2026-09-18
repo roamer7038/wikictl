@@ -542,7 +542,8 @@ func TestLinkTargetsNonRegular(t *testing.T) {
 	var broken []string
 	for _, it := range res.Items {
 		if it.Code == "broken_link" {
-			broken = append(broken, strings.TrimPrefix(it.Message, "link target does not exist: "))
+			// The message quotes the target; see wiki.BrokenLinks.
+			broken = append(broken, strings.Trim(strings.TrimPrefix(it.Message, "link target does not exist: "), `"`))
 		}
 	}
 	if code != ExitInvalid || !slices.Equal(broken, want) {
@@ -552,7 +553,7 @@ func TestLinkTargetsNonRegular(t *testing.T) {
 	var warned []string
 	for l := range strings.Lines(errs) {
 		if _, target, ok := strings.Cut(strings.TrimSuffix(l, "\n"), "broken_link: link target does not exist: "); ok {
-			warned = append(warned, target)
+			warned = append(warned, strings.Trim(target, `"`))
 		}
 	}
 	if code != ExitOK || !slices.Equal(warned, want) {

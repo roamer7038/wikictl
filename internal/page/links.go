@@ -1,6 +1,7 @@
 package page
 
 import (
+	"fmt"
 	"path"
 	"regexp"
 	"sort"
@@ -104,7 +105,10 @@ func parseLinks(lines []Line, pagePath string) ([]Link, []Issue) {
 		if !ok {
 			msg := syntaxMsg
 			if typ != "" {
-				msg = "invalid link destination: " + target
+				// The target is quoted, so that a byte of a target that is
+				// not valid UTF-8 is written as \xNN rather than lost to
+				// U+FFFD when the message is printed as JSON.
+				msg = fmt.Sprintf("invalid link destination: %q", target)
 			}
 			issues = append(issues, Issue{Path: pagePath, Line: l.N, Code: "links_syntax", Message: msg})
 			continue
