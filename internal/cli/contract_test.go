@@ -34,7 +34,7 @@ func TestJSONContract(t *testing.T) {
 		{"ls", "", "", []string{"ls", "-R"}, ExitOK,
 			[]string{"items", "items[].kind", "items[].path", "items[].summary", "items[].title", "items[].type", "items[].updated"}},
 		{"context", "", "", []string{"context"}, ExitOK,
-			[]string{"author", "branch", "config", "mirror", "profile", "profile_source", "remote", "repo"}},
+			[]string{"author", "branch", "config", "fetch_ttl", "fetched", "mirror", "profile", "profile_source", "remote", "repo"}},
 		{"tree", "", "", []string{"tree"}, ExitOK, []string{"directories", "files", "items", "items[].kind", "items[].path"}},
 		{"find", "", "", []string{"find"}, ExitOK, []string{"items", "items[].kind", "items[].path"}},
 		{"find/usage", "", "", []string{"find", "-bogus"}, ExitUsage, errKeys},

@@ -287,6 +287,48 @@ profiles:
 	}
 }
 
+// TestFetchTTL checks that FetchTTL tells "not set" (nil) apart from 0, and
+// that a profile can set it to 0 to disable a top-level value, which a plain
+// int could not do because apply only overrides non-empty keys.
+func TestFetchTTL(t *testing.T) {
+	t.Setenv("WIKICTL_PROFILE", "")
+	d := t.TempDir()
+	p := filepath.Join(d, "c.yaml")
+
+	// Not set at all: nil, not 0.
+	os.WriteFile(p, []byte("repo: r\n"), 0o600)
+	c, err := Load(p, Selector{})
+	if err != nil || c.FetchTTL != nil {
+		t.Fatalf("unset: %+v %v", c, err)
+	}
+
+	// Set at the top level.
+	os.WriteFile(p, []byte("repo: r\nfetch_ttl: 300\n"), 0o600)
+	c, err = Load(p, Selector{})
+	if err != nil || c.FetchTTL == nil || *c.FetchTTL != 300 {
+		t.Fatalf("top-level: %+v %v", c, err)
+	}
+
+	// A profile that sets fetch_ttl to 0 overrides, rather than inherits, a
+	// top-level value; a profile that does not set it inherits.
+	yml := `repo: r
+fetch_ttl: 300
+profiles:
+  off:
+    fetch_ttl: 0
+  inherit: {}
+`
+	os.WriteFile(p, []byte(yml), 0o600)
+	c, err = Load(p, Selector{Profile: "off"})
+	if err != nil || c.FetchTTL == nil || *c.FetchTTL != 0 {
+		t.Fatalf("profile fetch_ttl: 0: %+v %v", c, err)
+	}
+	c, err = Load(p, Selector{Profile: "inherit"})
+	if err != nil || c.FetchTTL == nil || *c.FetchTTL != 300 {
+		t.Fatalf("profile inherits: %+v %v", c, err)
+	}
+}
+
 func TestMatchPaths(t *testing.T) {
 	d := t.TempDir()
 	real := filepath.Join(d, "real")

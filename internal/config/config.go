@@ -25,6 +25,13 @@ type Config struct {
 	Author Author `yaml:"author"` // commit author; falls back to git config user.*
 	Lint   *Lint  `yaml:"lint"`   // rules that lint, put, edit and mv do not report; nil when not set, as opposed to an empty list
 
+	// FetchTTL is the number of seconds a fetch before a read may be skipped
+	// for, when the mirror was fetched within that many seconds of the read;
+	// put, edit, mv and rm always fetch regardless. nil, as opposed to 0,
+	// means it is not set, so that a profile can set it to 0 to disable a
+	// top-level value.
+	FetchTTL *int `yaml:"fetch_ttl"`
+
 	DefaultProfile string              `yaml:"default_profile"` // profile used when no other rule selects one
 	Profiles       map[string]*Profile `yaml:"profiles"`        // named overrides of the top-level keys
 
@@ -53,7 +60,10 @@ type Profile struct {
 	Branch string `yaml:"branch"` // not inherited when the profile sets repo
 	Author Author `yaml:"author"`
 	Lint   *Lint  `yaml:"lint"` // replaces, not merges, the top-level Lint when set
-	Match  Match  `yaml:"match"`
+	// FetchTTL overrides the top-level FetchTTL when set, including to 0 to
+	// disable it; nil inherits the top-level value.
+	FetchTTL *int  `yaml:"fetch_ttl"`
+	Match    Match `yaml:"match"`
 }
 
 // Match selects a profile automatically from the current directory.
@@ -340,6 +350,9 @@ func (c *Config) apply(pr *Profile) {
 	}
 	if pr.Lint != nil {
 		c.Lint = pr.Lint
+	}
+	if pr.FetchTTL != nil {
+		c.FetchTTL = pr.FetchTTL
 	}
 }
 

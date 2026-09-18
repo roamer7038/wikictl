@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Repo is the bare mirror of a wiki repository.
@@ -200,8 +201,16 @@ const fetchAttempts = 10
 // "cannot lock ref ...: is at X but expected Y"; that fetch is run again. Other
 // failures to lock the ref, such as a stale lock file, are not retried. The
 // lock of the mirror is not used, so that a read does not wait for a write
-// that is pushing.
+// that is pushing. On success, the modification time of the marker file that
+// FetchedAt reads is set to the current time.
 func (r *Repo) Fetch() error {
+	if err := r.fetch(); err != nil {
+		return err
+	}
+	return r.touchFetched()
+}
+
+func (r *Repo) fetch() error {
 	for attempt := 1; ; attempt++ {
 		_, err := r.Git("fetch", "-q", "origin", "+refs/heads/"+r.Branch+":"+r.trackingRef())
 		var ge *GitError
@@ -218,6 +227,64 @@ func (r *Repo) Fetch() error {
 			return err
 		}
 	}
+}
+
+// FetchIfStale fetches unless ttl is positive, the tracking ref already
+// exists and FetchedAt is not zero and is within ttl of now. ttl <= 0 (no
+// fetch_ttl configured) always fetches, matching Fetch. The tracking ref is
+// required so that a mirror without it, whose reads find no file at all
+// (see Snapshot), is never treated as freshly fetched. The elapsed time must
+// be non-negative as well as less than ttl, so that a marker file whose
+// modification time is in the future, for instance because the clock was
+// changed, is not mistaken for a recent fetch.
+func (r *Repo) FetchIfStale(ttl time.Duration) error {
+	if ttl > 0 {
+		head, err := r.trackingHead()
+		if err != nil {
+			return err
+		}
+		if head != "" {
+			if fetched := r.FetchedAt(); !fetched.IsZero() {
+				if elapsed := time.Since(fetched); elapsed >= 0 && elapsed < ttl {
+					return nil
+				}
+			}
+		}
+	}
+	return r.Fetch()
+}
+
+// fetchedMarker is the file in the mirror whose modification time FetchedAt
+// and touchFetched use to record the last time Fetch updated the tracking
+// ref. It is not a file git itself creates or removes, so it survives until
+// the mirror is deleted.
+func (r *Repo) fetchedMarker() string { return filepath.Join(r.Dir, "wikictl.fetched") }
+
+// FetchedAt returns the last time Fetch recorded successfully updating the
+// mirror, or the zero Time when Fetch has never run.
+func (r *Repo) FetchedAt() time.Time {
+	fi, err := os.Stat(r.fetchedMarker())
+	if err != nil {
+		return time.Time{}
+	}
+	return fi.ModTime()
+}
+
+// touchFetched sets the modification time of the marker file to now,
+// creating it when it does not exist yet.
+func (r *Repo) touchFetched() error {
+	now := time.Now()
+	p := r.fetchedMarker()
+	if err := os.Chtimes(p, now, now); err == nil {
+		return nil
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	f, err := os.OpenFile(p, os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	return f.Close()
 }
 
 // Snapshot fixes the commit that the reads of r use to the current commit of

@@ -407,11 +407,15 @@ func union(a, b []string) []string {
 // remote that profile selection compared against match.remotes.
 func (a *app) cmdContext(c *command, args []string) error {
 	au, _ := a.author()
+	ttl := 0
+	if a.cfg.FetchTTL != nil {
+		ttl = *a.cfg.FetchTTL
+	}
 	out := map[string]any{"config": a.cfg.Path, "profile": a.cfg.Profile, "profile_source": a.cfg.ProfileSource,
-		"repo": repo.RedactURL(a.cfg.Repo), "mirror": a.repo.Dir, "branch": a.repo.Branch, "author": au.Name,
-		"remote": repo.RedactURL(a.remote)}
+		"repo": repo.RedactURL(a.cfg.Repo), "fetch_ttl": ttl, "fetched": fmtTime(a.repo.FetchedAt()),
+		"mirror": a.repo.Dir, "branch": a.repo.Branch, "author": au.Name, "remote": repo.RedactURL(a.remote)}
 	a.emit(out, func(w io.Writer) {
-		for _, k := range []string{"config", "profile", "profile_source", "repo", "mirror", "branch", "author", "remote"} {
+		for _, k := range []string{"config", "profile", "profile_source", "repo", "fetch_ttl", "fetched", "mirror", "branch", "author", "remote"} {
 			fmt.Fprintf(w, "%s: %s\n", k, escapeControl(fmt.Sprint(out[k])))
 		}
 	})
