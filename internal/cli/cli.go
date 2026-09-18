@@ -116,8 +116,9 @@ for a past version is not.
 Output: items[] {path, sha, updated, title, summary, type, tags, status,
 aliases}. A path that is not valid UTF-8 is path_base64 instead; the
 attributes are printed as the page holds them, so one of them can hold
-U+FFFD, and title is the file name for a page without a heading, so a name
-that is not valid UTF-8 becomes U+FFFD there (see "wikictl help").`,
+U+FFFD, and title is the file name without .md for a page without a
+heading, so a name that is not valid UTF-8 becomes U+FFFD there (see
+"wikictl help").`,
 		run: (*app).cmdStat},
 	{name: "log", args: "[<path>...]", maxArgs: -1, paths: true,
 		summary: "Show the commits that changed files",
@@ -228,8 +229,9 @@ command exits with code 1.
 Output: items[] {path, kind, type, summary, title, updated}; kind is "file"
 or "dir". A path that is not valid UTF-8 is path_base64 instead; the type,
 summary and title are printed as the page holds them, so one of them can
-hold U+FFFD, and title is the file name for a page without a heading, so a
-name that is not valid UTF-8 becomes U+FFFD there (see "wikictl help").`,
+hold U+FFFD, and title is the file name without .md for a page without a
+heading, so a name that is not valid UTF-8 becomes U+FFFD there (see
+"wikictl help").`,
 		flags: lsFlags, run: (*app).cmdLs},
 	{name: "find", args: "[<path>...] [<expression>]", maxArgs: -1, expr: true,
 		summary: "Find files and directories by name, type, update time or frontmatter",
@@ -506,8 +508,9 @@ tabs; a line such as "` + "```bash" + `" inside a fence does not close it. A fen
 that is never closed runs to the end of the page.
 
 The title of a page is the text of its first heading outside code fences and
-before the Links section, else the file name. A closing sequence of # is
-removed only when a space or a tab precedes it, so "# C#" has the title "C#".
+before the Links section, else the file name without .md. A closing sequence
+of # is removed only when a space or a tab precedes it, so "# C#" has the
+title "C#".
 
 Output: items[] {path, line, code, message}. A path that is not valid UTF-8
 is path_base64 instead. The message of frontmatter_invalid comes from the

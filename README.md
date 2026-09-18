@@ -79,7 +79,7 @@ Binaries for Linux and macOS (x86_64 and arm64) are on the [releases page](https
 
 ## Wiki layout
 
-wikictl gives no meaning to directory names: a page can be placed in any directory, and commands whose paths are optional (`grep`, `links`, `ls`, `find`, `lint`, `tree`) read the whole wiki when the paths are omitted. wikictl does not choose directories from the current directory.
+wikictl gives no meaning to directory names: a page can be placed in any directory, and commands whose paths are optional (`grep`, `log`, `links`, `ls`, `find`, `lint`, `tree`) read the whole wiki when the paths are omitted. wikictl does not choose directories from the current directory.
 
 For a new wiki, one layout is to make each top-level directory a scope that answers "where is this knowledge valid?" and to place a page in the narrowest scope that fits:
 
@@ -132,8 +132,8 @@ Body. Link to other pages with relative paths: [push](git-push.md).
 | `lint [<path>...]` | Report pages that violate the wiki format |
 | `tree [<dir>...]` | Show files and directories as a tree |
 | `context` | Show the resolved configuration |
-| `help [<command>]` | Show help for a command |
 | `version` | Print the version |
+| `help [<command>]` | Show help for a command |
 
 `wikictl help <command>` describes the flags, the behavior and the JSON output of each command. Add `--json` to any command except `help` for machine-readable output.
 

@@ -49,9 +49,10 @@ const readingHelp = "Reading many files:\n" + `  Each command fetches the wiki b
 
 const outputHelp = `Output:
   Text goes to standard output; with --json every command except help prints
-  one JSON object, whose fields "wikictl help <command>" lists. Warnings go to
-  standard error as "wikictl: warning: <path>:<line>: <code>: <message>", or
-  "wikictl: warning: config file <path>: <message>" for the configuration.
+  one JSON object, whose fields "wikictl help <command>" lists; grep with -q
+  prints nothing. Warnings go to standard error as "wikictl: warning:
+  <path>:<line>: <code>: <message>", or "wikictl: warning: config file
+  <path>: <message>" for the configuration.
   Errors go to standard error as "wikictl: <message>", or with --json to
   standard output as {"error": "<kind>", "message": "..."}, where <kind> is
   error, usage, conflict, invalid or git. In text output, control characters
@@ -105,7 +106,8 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "that mv uses it to move a directory. A path outside the wiki or with a")
 	fmt.Fprintln(w, "control character is rejected with exit code 4. An empty path names no file:")
 	fmt.Fprintln(w, `the commands that read report it as "no such file or directory" (grep with`)
-	fmt.Fprintln(w, "code 2), and the commands that write reject it as bad_path with exit code 4.")
+	fmt.Fprintln(w, "code 2), and the commands that write reject it as bad_path with exit code 4;")
+	fmt.Fprintln(w, "rm -f ignores it.")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Global flags (before or after the command):")
 	fs := newFlagSet("wikictl")
