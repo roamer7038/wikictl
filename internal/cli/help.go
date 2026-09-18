@@ -60,7 +60,12 @@ const outputHelp = `Output:
   by two spaces; JSON output and the content of files printed by cat or on a
   conflict are not changed. A backslash is not escaped, so a name holding the
   four characters \x01 cannot be told from the byte 0x01; --json keeps the
-  control characters as stored, although invalid UTF-8 becomes U+FFFD there.
+  control characters as stored. A value of --json that is not valid UTF-8 is
+  left out and its bytes are printed in base64 under another key named after
+  it, "path_base64" for "path", so read "path" when it is there and
+  "path_base64" otherwise; "wikictl help <command>" names the keys it prints.
+  The frontmatter of a page and the messages of lint are not printed that way
+  and can hold U+FFFD; see "wikictl help lint".
 `
 
 const writesHelp = `Writes:
