@@ -18,12 +18,16 @@ type Link struct {
 	IsURL  bool
 }
 
-// Issue reports a violation of the wiki format.
+// Issue reports a violation of the wiki format. No field carries a json tag,
+// because no Issue is marshaled as it is: lint wraps each finding in a type of
+// its own whose MarshalJSON writes the keys, find prints the code and the
+// message of a frontmatter it could not read through a type of its own, and
+// the warnings of put, edit and mv are written as text on standard error.
 type Issue struct {
-	Path    string `json:"path"`
-	Line    int    `json:"line"` // 0 when the issue concerns the whole file
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Path    string
+	Line    int // 0 when the issue concerns the whole file
+	Code    string
+	Message string
 }
 
 var (
