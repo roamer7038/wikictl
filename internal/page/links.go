@@ -27,11 +27,16 @@ type Issue struct {
 }
 
 var (
-	reScheme = regexp.MustCompile(`^[a-z][a-z0-9+.-]*:`)
+	// The three regexps of a scheme match it whatever its case, since URI
+	// schemes are case-insensitive, and they do so together: were only
+	// reScheme to ignore the case, a mistyped type such as "SeeAlso: foo"
+	// would pass for a URL, because rePrefix without reURL is what reports
+	// it. reTyped matches the name of a type, not a scheme, and is lowercase.
+	reScheme = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.-]*:`)
 	reBullet = regexp.MustCompile(`^\s*[-*+]\s+(.+)$`)
 	reTyped  = regexp.MustCompile(`^([a-z][a-z0-9_]*): (.+)$`)
-	rePrefix = regexp.MustCompile(`^[a-z][a-z0-9_+.-]*:`)
-	reURL    = regexp.MustCompile(`^[a-z][a-z0-9+.-]*://\S`)
+	rePrefix = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_+.-]*:`)
+	reURL    = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.-]*://\S`)
 )
 
 // resolveDest normalizes a link destination written in pagePath to a path
