@@ -58,6 +58,11 @@ func parseFrontmatter(fm []byte) (map[string]any, error) {
 
 // FrontmatterKey is one top-level key of a frontmatter, with the line it is
 // written on, counted from the start of the file, and its value.
+//
+// The json tags name the keys of the output: find marshals the list as it is,
+// as the value of "frontmatter" of an item of --frontmatter, so these tags and
+// not a MarshalJSON of the output decide those key names. They are part of the
+// output of find and cannot be changed without changing it.
 type FrontmatterKey struct {
 	Key   string `json:"key"`
 	Line  int    `json:"line"`
