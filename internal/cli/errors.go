@@ -55,7 +55,7 @@ func unknownCommand(name string) *usageError {
 		topic, _, _ := strings.Cut(near, " ")
 		return &usageError{msg: msg + "the nearest command is " + near + `; run "wikictl help ` + topic + `" for its usage`}
 	case known:
-		return &usageError{msg: msg + "wikictl has no command for " + name + ` yet; run "wikictl help" for the list of commands`}
+		return &usageError{msg: msg + "wikictl has no " + name + ` command yet; run "wikictl help" for the list of commands`}
 	}
 	return &usageError{msg: msg + `run "wikictl help" for the list of commands`}
 }

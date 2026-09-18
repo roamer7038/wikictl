@@ -41,8 +41,8 @@ func TestUnknownCommandHint(t *testing.T) {
 		"search":    "wikictl: unknown command: search\n  the nearest command is grep; run \"wikictl help grep\" for its usage\n",
 		"read":      "wikictl: unknown command: read\n  the nearest command is cat; run \"wikictl help cat\" for its usage\n",
 		"list":      "wikictl: unknown command: list\n  the nearest command is ls; run \"wikictl help ls\" for its usage\n",
-		"blame":     "wikictl: unknown command: blame\n  wikictl has no command for blame yet; run \"wikictl help\" for the list of commands\n",
-		"diff":      "wikictl: unknown command: diff\n  wikictl has no command for diff yet; run \"wikictl help\" for the list of commands\n",
+		"blame":     "wikictl: unknown command: blame\n  wikictl has no blame command yet; run \"wikictl help\" for the list of commands\n",
+		"diff":      "wikictl: unknown command: diff\n  wikictl has no diff command yet; run \"wikictl help\" for the list of commands\n",
 		"nosuchcmd": "wikictl: unknown command: nosuchcmd\n  run \"wikictl help\" for the list of commands\n",
 	} {
 		for _, args := range [][]string{{name}, {"help", name}} {
