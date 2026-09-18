@@ -3,12 +3,15 @@ package cli
 import (
 	"encoding/base64"
 	"encoding/json"
-	"os"
+	"fmt"
+	"io/fs"
+	"maps"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // badByte is a byte that is not valid UTF-8 on its own, so that every value
@@ -20,45 +23,69 @@ const badByte = "\xff"
 // --json prints in base64 has a case here. The page bad/content.md has a
 // valid name and holds the byte in a line and in a link target; the other
 // page has the byte in its name and valid content.
+//
+// Nothing of the wiki reaches the file system: a file system may refuse a
+// name that is not valid UTF-8, as APFS does with "illegal byte sequence",
+// so the blobs, the trees and the commit are written straight into the bare
+// repository as objects, which is all wikictl ever reads. The commit is
+// written as an object for a second reason: "git commit" takes an author
+// name or a message that is not valid UTF-8 for Latin-1 and re-encodes it,
+// which would leave nothing invalid to check.
 func setupInvalidUTF8(t *testing.T) (cfgPath string) {
 	t.Helper()
 	cfgPath = setupEmpty(t)
-	work := cloneRemote(t, cfgPath)
-	files := map[string]string{
-		"bad/" + badByte + "name.md": "---\nsummary: bad name\n---\n# bad name\nzzname\n",
-		"bad/content.md": "---\nsummary: bad content\n---\n# bad content\nzzmark " + badByte + " here\n" +
-			"\n## Links\n- see_also: [name](" + badByte + "name.md)\n",
-	}
-	for p, c := range files {
-		f := filepath.Join(work, p)
-		if err := os.MkdirAll(filepath.Dir(f), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(f, []byte(c), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	mustRun(t, work, "git", "add", "-A")
-	// "git commit" takes an author name or a message that is not valid UTF-8
-	// for Latin-1 and re-encodes it, which would leave nothing invalid to
-	// check, so the commit carrying those bytes is written as an object of
-	// its own.
-	tree := gitCapture(t, work, "", "write-tree")
-	commit := gitCapture(t, work, "tree "+tree+"\n"+
+	remote := filepath.Join(filepath.Dir(cfgPath), "remote.git")
+	tree := writeTree(t, remote, map[string]string{
+		badName:          badNameContent,
+		"bad/content.md": badContent,
+	})
+	commit := gitObject(t, remote, "tree "+tree+"\n"+
 		"author a"+badByte+"gent <a@a> 1700000000 +0000\n"+
 		"committer a"+badByte+"gent <a@a> 1700000000 +0000\n\n"+
 		"zz"+badByte+"subject\n", "hash-object", "-w", "-t", "commit", "--stdin")
-	mustRun(t, work, "git", "update-ref", "refs/heads/main", commit)
-	mustRun(t, work, "git", "push", "-q", "origin", "refs/heads/main:main")
+	gitObject(t, remote, "", "update-ref", "refs/heads/main", commit)
 	return cfgPath
 }
 
-// gitCapture runs git in dir with stdin and returns its standard output
-// without the trailing newline.
-func gitCapture(t *testing.T, dir, stdin string, args ...string) string {
+// writeTree writes files, keyed by path, as blobs of the bare repository
+// remote and returns the sha of the tree that holds them, one tree per
+// directory. No name of them reaches the file system, so a name that is not
+// valid UTF-8 is written as readily as any other.
+func writeTree(t *testing.T, remote string, files map[string]string) string {
 	t.Helper()
-	c := exec.Command("git", args...)
-	c.Dir = dir
+	lines := map[string]string{}           // entry name -> its mode, type and sha
+	dirs := map[string]map[string]string{} // directory name -> the files below it
+	for _, p := range slices.Sorted(maps.Keys(files)) {
+		name, rest, nested := strings.Cut(p, "/")
+		if nested {
+			if dirs[name] == nil {
+				dirs[name] = map[string]string{}
+			}
+			dirs[name][rest] = files[p]
+			continue
+		}
+		lines[name] = "100644 blob " + gitObject(t, remote, files[p], "hash-object", "-w", "--stdin")
+	}
+	for _, name := range slices.Sorted(maps.Keys(dirs)) {
+		lines[name] = "040000 tree " + writeTree(t, remote, dirs[name])
+	}
+	// git mktree reads the entries as "git ls-tree" prints them and sorts
+	// them itself; they are written in order of name so that the tree of one
+	// set of files is always the same object.
+	var b strings.Builder
+	for _, name := range slices.Sorted(maps.Keys(lines)) {
+		fmt.Fprintf(&b, "%s\t%s\n", lines[name], name)
+	}
+	return gitObject(t, remote, b.String(), "mktree")
+}
+
+// gitObject runs git on the bare repository remote with stdin and returns its
+// standard output without the trailing newline, which for the commands used
+// here is the sha of the object it wrote. There is no work tree to write to
+// and none is created.
+func gitObject(t *testing.T, remote, stdin string, args ...string) string {
+	t.Helper()
+	c := exec.Command("git", append([]string{"--git-dir", remote}, args...)...)
 	c.Stdin = strings.NewReader(stdin)
 	out, err := c.Output()
 	if err != nil {
@@ -67,11 +94,13 @@ func gitCapture(t *testing.T, dir, stdin string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// badName is the path of the page whose name is not valid UTF-8, and
-// badContent the content of the page whose content is not.
+// badName is the path of the page whose name is not valid UTF-8 and
+// badNameContent its content, which is valid; badContent is the content of
+// the page whose name is valid and whose content is not.
 var (
-	badName    = "bad/" + badByte + "name.md"
-	badContent = "---\nsummary: bad content\n---\n# bad content\nzzmark " + badByte + " here\n" +
+	badName        = "bad/" + badByte + "name.md"
+	badNameContent = "---\nsummary: bad name\n---\n# bad name\nzzname\n"
+	badContent     = "---\nsummary: bad content\n---\n# bad content\nzzmark " + badByte + " here\n" +
 		"\n## Links\n- see_also: [name](" + badByte + "name.md)\n"
 )
 
@@ -165,7 +194,7 @@ func TestInvalidUTF8Cat(t *testing.T) {
 		t.Fatalf("cat %q: %d items, want 1", badName, len(items))
 	}
 	wantBase64(t, items[0], "path", badName)
-	wantPlain(t, items[0], "content", "---\nsummary: bad name\n---\n# bad name\nzzname\n")
+	wantPlain(t, items[0], "content", badNameContent)
 
 	items = jsonItems(t, jsonOut(t, cfg, "", ExitOK, "cat", "bad/content.md"))
 	if len(items) != 1 {
@@ -372,6 +401,43 @@ func TestInvalidUTF8TextOutput(t *testing.T) {
 	}
 	if _, out, _ := runCLI(t, cfg, "", "ls", "bad"); !strings.Contains(out, badByte+"name.md") {
 		t.Errorf("ls text output lost the byte: %q", out)
+	}
+}
+
+// TestInvalidUTF8NoFileNames checks that no name of this wiki reaches the
+// file system, neither when the fixture builds it nor when wikictl writes to
+// it: a file system may refuse a name that is not valid UTF-8, as APFS does,
+// and wikictl keeps a bare mirror with no work tree. Everything the test
+// created lies under the directory of the configuration, the bare repository
+// and the mirror included, so walking it covers both.
+func TestInvalidUTF8NoFileNames(t *testing.T) {
+	cfg := setupInvalidUTF8(t)
+	// Read the wiki, which creates and fetches the mirror, then write to it
+	// under a name that is not valid UTF-8.
+	if code, out, errs := runCLI(t, cfg, "", "--json", "ls", "bad"); code != ExitOK {
+		t.Fatalf("ls: code=%d\n%s%s", code, out, errs)
+	}
+	newPage := "---\nsummary: new\n---\n# new\n"
+	if code, out, errs := runCLI(t, cfg, newPage, "--json", "put", "bad/"+badByte+"new.md"); code != ExitOK {
+		t.Fatalf("put: code=%d\n%s%s", code, out, errs)
+	}
+	root := filepath.Dir(cfg)
+	found := 0
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		found++
+		if !utf8.ValidString(d.Name()) {
+			t.Errorf("a name that is not valid UTF-8 reached the file system: %q", p)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", root, err)
+	}
+	if found == 0 {
+		t.Fatalf("walked nothing under %s", root)
 	}
 }
 
